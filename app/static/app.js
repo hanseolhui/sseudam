@@ -1685,7 +1685,7 @@ async function viewSettings(section) {
     else bStatus = mc.model ? `누르면 추천 모델 받기 (${gb((b.models.find(m => m.id === mc.model) || {}).size || 0)})` : '';
     const isMac = mc.os === 'mac';
     $('#ai-tiles').innerHTML =
-      (st.plus_enabled ? tileHtml('plus', '💜', '쓰담 플러스', '키·설치 없이 · 녹음만 하면 끝까지', plusOn ? `✓ ${esc(plusSt.sub.planName)} · ${ymd(plusSt.sub.endsAt)}까지` : (plusSt.loggedIn ? '구독 기간이 아니에요' : '로그인하면 시작'), choice === 'plus', false) : '') +
+      (st.plus_enabled ? tileHtml('plus', '💜', '쓰담 플러스 <small class="muted">베타</small>', '키·설치 없이 · 녹음만 하면 끝까지', plusOn ? `✓ ${esc(plusSt.sub.planName)} · ${ymd(plusSt.sub.endsAt)}까지` : (plusSt.loggedIn ? (plusSt.betaRequested ? '베타 신청함 · 승인 기다리는 중' : '베타 신청하면 1달 무상') : '로그인하면 시작'), choice === 'plus', false) : '') +
       tileHtml('builtin', '✨', '쓰담 AI 모델', '이 컴퓨터 안에서 · 무료 · 추천', bStatus, choice === 'builtin', !b.supported) +
       (isMac ? tileHtml('apple', '🍎', '기기 안 AI', '설치 없음 · 학생 나누기만', st.apple.state === 'ready' ? '✓ 바로 쓸 수 있어요' : '<span class="muted">이 맥에선 안 돼요</span>', choice === 'apple', st.apple.state !== 'ready') : '') +
       tileHtml('manual', '✋', 'AI 없이', '이름 기준 나누기 · 초안은 프롬프트 복사', '', choice === 'manual', false) +
@@ -1710,9 +1710,18 @@ async function viewSettings(section) {
           <div class="small muted" style="margin-top:4px">초안 · 분리 무제한 · 정성 초안 ${Math.max(0, (u.deepCap || 0) - (u.deepUsed || 0))}회 남음 · 등록된 컴퓨터 ${plusSt.devices.length}/${plusSt.deviceLimit}대 (${plusSt.devices.map(x => esc(x.device_name)).join(', ')})${plusSt.offline ? ' · 지금은 서버 확인이 안 돼서 마지막 상태를 보여요' : ''}</div>
           <div class="row" style="margin-top:8px">${choice !== 'plus' ? '<button class="sm primary shrink" id="plus-use">쓰담 플러스로 쓰기</button>' : ''}<a class="btn sm shrink" href="https://apps.seoriarts.com/sseudam/plus" target="_blank">구독·결제 관리 ↗</a><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`;
       } else {
-        d = `<div class="spec">💜 <b>${esc(plusSt.email)}</b>로 로그인했어요. 지금은 구독 기간이 아니에요.
+        d = plusSt.pay
+          ? `<div class="spec">💜 <b>${esc(plusSt.email)}</b>로 로그인했어요. 지금은 구독 기간이 아니에요.
           <div class="small muted" style="margin-top:4px">월 9,900원 · 반년 29,000원 · 1년 49,000원. 카드를 등록하면 처음 2주는 체험이에요(계정당 한 번).</div>
-          <div class="row" style="margin-top:8px"><a class="btn sm primary shrink" href="https://apps.seoriarts.com/sseudam/plus" target="_blank">구독 시작하기 ↗</a><button class="sm shrink" id="plus-refresh">구독 다시 확인</button><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`;
+          <div class="row" style="margin-top:8px"><a class="btn sm primary shrink" href="https://apps.seoriarts.com/sseudam/plus" target="_blank">구독 시작하기 ↗</a><button class="sm shrink" id="plus-refresh">구독 다시 확인</button><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`
+          : plusSt.betaRequested
+          ? `<div class="spec">💜 <b>${esc(plusSt.email)}</b> · <b>베타 신청을 받았어요.</b>
+          <div class="small muted" style="margin-top:4px">승인되면 메일로 알려 드리고, 1달 동안 결제 없이 쓰실 수 있어요. 승인 메일을 받으면 아래 '구독 다시 확인'을 눌러 주세요.</div>
+          <div class="row" style="margin-top:8px"><button class="sm primary shrink" id="plus-refresh">구독 다시 확인</button><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`
+          : `<div class="spec">💜 <b>${esc(plusSt.email)}</b>로 로그인했어요. 쓰담 플러스는 지금 <b>베타</b>예요.
+          <div class="small muted" style="margin-top:4px">신청하시면 확인 후 <b>1달 동안 결제 없이</b> 써 보실 수 있어요. 대신 쓰면서 느낀 점을 '아이디어 · 오류 보내기'로 알려 주세요.</div>
+          <label class="field" style="margin-top:8px"><span>하고 싶은 말 (선택)</span><input id="plus-beta-msg" placeholder="예: 고2 과학 4개 반, 세특 정리에 쓰고 싶어요"></label>
+          <div class="row" style="margin-top:8px"><button class="sm primary shrink" id="plus-beta">베타 신청하기</button><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button><span id="plus-r" class="small"></span></div></div>`;
       }
     } else if (choice === 'builtin') {
       const spec = `<div class="spec">💻 <b>${isMac ? '이 맥' : '이 컴퓨터'}</b>: ${esc(mc.chip || '')}${mc.ram ? ' · 메모리 ' + mc.ram + 'GB' : ''}<div class="small">${mc.model ? '→ <b>' + esc((b.models.find(m => m.id === mc.model) || {}).name) + '</b> 모델 추천 · ' : ''}${esc(mc.why || '')}</div></div>`;
@@ -1757,6 +1766,10 @@ async function viewSettings(section) {
     };
     if ($('#plus-use')) $('#plus-use').onclick = () => aiChoose('plus', $('.ai-tile[data-choice=plus]'));
     if ($('#plus-refresh')) $('#plus-refresh').onclick = () => { plusFresh = false; aiLoad(); };
+    if ($('#plus-beta')) $('#plus-beta').onclick = async () => {
+      try { await api('/api/plus/beta', { message: $('#plus-beta-msg').value }, { silent: true }); toast('베타 신청을 받았어요. 승인되면 메일로 알려 드려요 ✓'); plusFresh = false; aiLoad(); }
+      catch (e) { $('#plus-r').innerHTML = `<span class="bad-text">${esc(e.message)}</span>`; }
+    };
     if ($('#plus-out')) $('#plus-out').onclick = async () => {
       if (!confirmBox('이 컴퓨터에서 쓰담 플러스 로그아웃할까요?')) return;
       await api('/api/plus/logout', {}); showPlus = false; toast('로그아웃했어요'); aiLoad(); updateModeBadge();

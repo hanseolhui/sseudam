@@ -1171,6 +1171,16 @@ def plus_verify(h, q, b):
     return dict(d, token=None, loggedIn=True)
 
 
+@route("POST", "/api/plus/beta")
+def plus_beta(h, q, b):
+    if not plus.ENABLED:
+        raise ApiError("쓰담 플러스는 아직 열리지 않았어요.")
+    try:
+        return plus.beta_request(b.get("message") or "")
+    except plus.PlusError as e:
+        raise ApiError(str(e))
+
+
 @route("POST", "/api/plus/logout")
 def plus_logout(h, q, b):
     plus.logout()

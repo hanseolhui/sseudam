@@ -13,8 +13,9 @@ import gemini
 import version
 
 URL = os.environ.get("SSEUDAM_PLUS_URL", "https://apps.seoriarts.com/api/sseudam-plus")
-# 아직 열지 않음: 결제(정기결제 심사)·서버 준비가 끝나면 True 로 바꿔 배포. 시험은 SSEUDAM_PLUS=1 로.
-ENABLED = os.environ.get("SSEUDAM_PLUS") == "1"
+# 베타로 열어 둠: 로그인 → 베타 신청 → 관리자가 고른 선생님께 1달 시험 구독. 정식 결제는 서버가 열면(pay) 보임.
+# 급히 숨겨야 하면 SSEUDAM_PLUS=0
+ENABLED = os.environ.get("SSEUDAM_PLUS", "1") != "0"
 
 
 class PlusError(Exception):
@@ -88,6 +89,15 @@ def status(refresh=True):
             cached = json.loads(s.get("plus_status") or "{}")
             return dict(cached, loggedIn=True, offline=str(e))
     return dict(json.loads(s.get("plus_status") or "{}"), loggedIn=True)
+
+
+def beta_request(message=""):
+    t = token()
+    if not t:
+        raise PlusError("먼저 로그인해 주세요.", logged_out=True)
+    d = _call("beta-request", token=t, message=(message or "")[:300])
+    status(True)
+    return d
 
 
 def logout():
