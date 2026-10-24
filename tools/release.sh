@@ -11,7 +11,7 @@ if [ -n "$(git status --porcelain)" ]; then echo "커밋하지 않은 변경이 
 sed -i '' "s/^VERSION = .*/VERSION = \"$V\"/" app/version.py
 ./macos/build_app.sh                       # 맥: 서명·공증 DMG, 앱 zip, 업데이트용 코드, 단축어
 ./windows/build_windows.sh                 # 윈도우: Sseudam-Setup.exe
-(cd mobile/android && ./gradlew -q assembleRelease) && cp mobile/android/app/build/outputs/apk/release/app-release.apk dist/Sseudam-Android.apk
+(cd mobile/android && ./gradlew -q assembleGithubRelease bundlePlayRelease) && cp mobile/android/app/build/outputs/apk/github/release/app-github-release.apk dist/Sseudam-Android.apk
 git add app/version.py 프롬프트_모음.md
 git commit -m "Release v$V"
 git tag "v$V"
