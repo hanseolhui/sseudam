@@ -168,6 +168,7 @@ def apply_segment(rid, text):
                 conn.execute("UPDATE recordings SET class_id=? WHERE id=?", (class_id, rid))
         students = _students(conn, class_id)
         everyone = _term_students(conn)   # 반이 없거나 다른 반 학생일 때 찾아볼 명단
+        prefer = _preferrer(r["kind"], (r["title"] or "") + " " + (r["transcript"] or "")[:300])
         date = (r["recorded_at"] or "")[:10] or datetime.date.today().isoformat()
         # 재분리 시 이전 결과 교체
         conn.execute("DELETE FROM notes WHERE recording_id=?", (rid,))
@@ -178,13 +179,13 @@ def apply_segment(rid, text):
             content = (it.get("observation") or it.get("content") or "").strip()
             if not content:
                 continue
-            st = match_student(students, it.get("number"), it.get("name")) if students else None
+            st = match_student(students, it.get("number"), it.get("name"), prefer) if students else None
             if not st:
                 # 학급 미지정이거나 명단에 없는 경우: 이번 학기 전체 명단에서 이름으로 (번호는 반마다 겹치므로 쓰지 않음)
                 cands = everyone
                 if students:
                     cands = [s for s in everyone if s["class_id"] != class_id]
-                st = match_student(cands, None, it.get("name"))
+                st = match_student(cands, None, it.get("name"), prefer)
                 if st and not class_id:
                     found_classes.add(st["class_id"])
             if st:
@@ -248,7 +249,38 @@ def _aliases(s):
     return [a.strip() for a in re.split(r"[,，/]", s.get("aliases") or "") if a.strip()]
 
 
-def match_student(students, number, name):
+def _room(s):
+    """같은 학년·반이면 담임/교과 명단이 달라도 같은 학생으로 본다."""
+    if s.get("grade") is not None and s.get("class_no") is not None:
+        return "%s-%s" % (s["grade"], s["class_no"])
+    return "c%s" % s.get("class_id")
+
+
+def _one(cands, prefer=None):
+    """후보가 모두 같은 반(담임·교과 명단 중복)이면 한 명으로 — prefer 순서로 고름. 여러 반이면 None."""
+    if not cands:
+        return None
+    if len({_room(s) for s in cands}) > 1:
+        return None
+    return sorted(cands, key=prefer)[0] if prefer else cands[0]
+
+
+def _preferrer(kind, hint=""):
+    """수업 녹음은 교과(말한 과목 우선), 상담은 담임 명단을 고른다."""
+    want = "담임" if kind == "상담" else "교과"
+
+    def key(s):
+        r = 0
+        if (s.get("ckind") or s.get("kind")) == want:
+            r -= 2
+        sub = s.get("subject") or ""
+        if sub and sub in (hint or ""):
+            r -= 3
+        return r
+    return key
+
+
+def match_student(students, number, name, prefer=None):
     name = re.sub(r"\s+", "", str(name or ""))
     # AI가 '3번 김민수', '김민수 학생', '2-3 김민수', '김민수(3번)'처럼 돌려줘도 이름만 남김
     name = re.sub(r"^\d+\s*-\s*\d+", "", name)
@@ -262,26 +294,29 @@ def match_student(students, number, name):
         return None
     if name:
         exact = [s for s in students if s["name"] == name]
-        if len(exact) == 1:
-            return exact[0]
         if exact and number is not None:
             for s in exact:
                 if s["number"] == number:
                     return s
+        if _one(exact, prefer):
+            return _one(exact, prefer)
         al = [s for s in students if name in _aliases(s)]
-        if len(al) == 1:
-            return al[0]
-        given = [s for s in students if len(s["name"]) >= 3 and s["name"][1:] == name]
-        if len(given) == 1:
-            return given[0]
+        if _one(al, prefer):
+            return _one(al, prefer)
+        # 성 빼고 부른 이름 ("민수", "민수가", "서연이")
+        for g in (name, re.sub(r"(이가|이는|이도|이랑|이를|이|가|는|도|랑|를|야|아)$", "", name)):
+            given = [s for s in students if len(s["name"]) >= 3 and s["name"][1:] == g]
+            if _one(given, prefer):
+                return _one(given, prefer)
     if number is not None:
         by_num = [s for s in students if s["number"] == number]
         if by_num and (not name or _lev(by_num[0]["name"], name) <= 1):
             return by_num[0]
     if name:
-        near = [s for s in students if _lev(s["name"], name) <= 1]
-        if len(near) == 1:
-            return near[0]
+        # 받아쓰기가 한 글자 틀린 이름 ("박지운" → 박지훈) — 성이 같을 때만
+        near = [s for s in students if _lev(s["name"], name) <= 1 and s["name"][:1] == name[:1]]
+        if _one(near, prefer):
+            return _one(near, prefer)
     return None
 
 
@@ -428,6 +463,18 @@ def rule_segment(rid):
             for n in names:
                 if len(n) >= 2:
                     keys.append((n, s))
+        # 같은 반의 담임·교과 명단에 같은 학생이 두 번 있으면 녹음 종류(수업→교과, 상담→담임)에 맞는 쪽 하나만
+        prefer = _preferrer(r["kind"], (r["title"] or "") + " " + text[:300])
+        by_key = {}
+        for n, s in keys:
+            by_key.setdefault(n, []).append(s)
+        keys = []
+        for n, cands in by_key.items():
+            pick = _one(cands, prefer)
+            if pick:
+                keys.append((n, pick))
+            else:  # 다른 반에 같은 이름 → 말투상 가장 맞는 반으로 담되 어느 반인지는 선생님이 확인
+                keys.append((n, sorted(cands, key=prefer)[0]))
         keys.sort(key=lambda x: -len(x[0]))
         hits = []
         for n, s in keys:
@@ -435,6 +482,20 @@ def rule_segment(rid):
                 if any(h[0] <= m.start() < h[1] for h in hits):
                     continue
                 hits.append((m.start(), m.end(), s))
+        # 받아쓰기가 이름을 한 글자 틀리게 적은 경우 ("박지운" → 박지훈): 성이 같은 3글자 이름 하나에만 가까우면
+        full = {}
+        for n, s in keys:
+            if len(n) == 3 and n == s["name"]:
+                full[n] = s
+        for m in re.finditer(r"[가-힣]{3,6}", text):
+            if any(h[0] <= m.start() < h[1] for h in hits):
+                continue
+            core = m.group(0)[:3]
+            if core in full:
+                continue
+            near = [s for n, s in full.items() if n[0] == core[0] and _lev(n, core) == 1]
+            if len(near) == 1:
+                hits.append((m.start(), m.start() + 3, near[0]))
         for m in re.finditer(r"(?:^|[\s.,])(\d{1,2})\s*번(?=[\s,.]|$)", text):
             num = int(m.group(1))
             st = [s for s in students if s["number"] == num]
