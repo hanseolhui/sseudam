@@ -1126,6 +1126,21 @@ def _plus_loop():
         time.sleep(3600)
 
 
+@route("POST", "/api/feedback/send")
+def feedback_send(h, q, b):
+    import feedback
+    try:
+        return feedback.send(b.get("kind"), b.get("message"), b.get("email"), b.get("diag", True) is not False)
+    except ValueError as e:
+        raise ApiError(str(e))
+
+
+@route("GET", "/api/feedback/preview")
+def feedback_preview(h, q, b):
+    import feedback
+    return {"text": feedback.diagnostics()}
+
+
 @route("GET", "/api/plus")
 def plus_status(h, q, b):
     if not plus.ENABLED:

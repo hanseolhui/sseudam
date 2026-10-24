@@ -64,6 +64,9 @@ def segment(kind, class_label, students, transcript, date):
 9. 수업 진행 발언, 출결 호명처럼 평가 내용이 없는 언급은 제외.
 10. 학생 관찰이 아닌 녹음(교사 회의, 개인 메모·할 일, 업무 통화, 수업 내용 설명만 있는 경우 등)이면
     items와 unmatched를 비우고 "general": true 로 표시.
+11. 한 교시를 통째로 녹음한 경우 대부분이 수업 설명·진행 발언이고 학생 관찰은 중간중간 짧게 나옴.
+    수업 설명, 질문에 답해 주는 설명, 출석·질서 지도("앉아", "조용히")는 무시하고 학생에 대한 관찰·평가만 뽑을 것.
+    학생 관찰이 하나라도 있으면 "general": false.
 
 [출력 형식 — 이 JSON만 출력]
 {"class_hint": "", "general": false, "items": [{"number": 3, "name": "김민수", "category": "발표", "observation": "...", "evidence": "..."}], "unmatched": [{"name_heard": "...", "category": "기타", "observation": "...", "evidence": "..."}]}

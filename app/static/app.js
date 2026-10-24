@@ -1444,6 +1444,19 @@ async function viewSettings(section) {
         <div style="margin-top:8px"><button class="sm ghost" id="tm-preview">보내는 내용 그대로 보기</button></div>
         <pre id="tm-out" class="small hidden" style="white-space:pre-wrap;background:var(--bg-2, var(--panel));padding:10px;border-radius:10px;margin-top:8px"></pre>
       </div>
+      <div class="card" data-pane="data" id="fb-card" style="grid-column:1 / -1;order:3">
+        <div class="section-title"><h2>💬 아이디어 · 오류 보내기</h2></div>
+        <p class="help" style="margin-top:-4px">쓰면서 불편한 점, 있으면 좋겠는 기능, 오류를 알려 주세요. 개발자에게 바로 가고, 적은 이메일로 답장드려요.</p>
+        <div class="seg-pick" role="radiogroup" aria-label="종류">
+          <label class="check shrink"><input type="radio" name="fb_kind" value="idea" checked> 아이디어 제안</label>
+          <label class="check shrink"><input type="radio" name="fb_kind" value="bug"> 오류 보고</label>
+          <label class="check shrink"><input type="radio" name="fb_kind" value="other"> 기타</label></div>
+        <label class="field" style="margin-top:8px"><span>내용</span><textarea id="fb-msg" rows="4" placeholder="예: 반 전체 초안을 한 번에 엑셀로 받고 싶어요 / 녹음을 넣었는데 '분리중'에서 멈춰요"></textarea></label>
+        <div class="row" style="margin-top:8px"><label class="field"><span>답장 받을 이메일</span><input id="fb-email" type="email" value="${esc(s.contact_email || s.plus_email || '')}" placeholder="이메일 주소"></label></div>
+        <label class="check" style="margin-top:6px"><input type="checkbox" id="fb-diag" checked> 진단 정보 함께 보내기 (컴퓨터 사양 · 설정 · 최근 오류, <b>학생 이름은 가려서</b>) <button class="sm ghost" id="fb-preview" type="button">미리 보기</button></label>
+        <pre id="fb-out" class="small hidden" style="white-space:pre-wrap;background:var(--bg-2, var(--panel));padding:10px;border-radius:10px;margin-top:8px;max-height:240px;overflow:auto"></pre>
+        <div class="row" style="margin-top:10px"><button class="primary shrink" id="fb-send" type="button">보내기</button><span id="fb-r" class="small"></span></div>
+      </div>
       <div class="card" data-pane="data" id="trash-card" style="order:9">
         <h2>🗑 휴지통</h2>
         <p class="muted small" style="margin-top:-4px">지운 학급·학생·녹음·관찰기록·초안은 30일 동안 휴지통에 있어요. 실수로 지워도 되살릴 수 있어요.</p>
@@ -1604,7 +1617,7 @@ async function viewSettings(section) {
   let saveT = null;
   $('#settings-grid').addEventListener('change', e => {
     const el = e.target;
-    if (!el.matches('input, select, textarea') || el.closest('#ai-ext') || el.name === 'stt_engine' || el.id === 'restore-file' || el.id === 'key') return;
+    if (!el.matches('input, select, textarea') || el.closest('#ai-ext') || el.closest('#fb-card') || el.name === 'stt_engine' || el.id === 'restore-file' || el.id === 'key') return;
     clearTimeout(saveT);
     saveT = setTimeout(async () => { try { await save(); flashSaved(el); updateModeBadge(); } catch (err) { /* toast 표시됨 */ } }, 250);
   });
@@ -1820,6 +1833,23 @@ async function viewSettings(section) {
   $('#rl-new').onclick = async () => { if (!confirmBox('새 QR을 만들면 지금 연결된 휴대폰은 끊겨요. 다시 찍어야 해요. 계속할까요?')) return; rlDraw(await api('/api/relay/pair', { new: true })); toast('새 QR을 만들었어요'); };
   $('#rl-off').onclick = async () => { if (!confirmBox('휴대폰 연결을 끊을까요?')) return; await api('/api/relay/unpair', {}); toast('연결을 끊었어요'); rlDraw(); };
   rlDraw();
+  // 💬 아이디어 · 오류 보내기
+  $('#fb-preview').onclick = async e => {
+    e.preventDefault();
+    const box = $('#fb-out');
+    if (!box.classList.contains('hidden')) { box.classList.add('hidden'); return; }
+    try { box.textContent = (await api('/api/feedback/preview')).text; box.classList.remove('hidden'); } catch (err) { /* */ }
+  };
+  $('#fb-send').onclick = async () => {
+    const r = $('#fb-r'), btn = $('#fb-send');
+    btn.disabled = true; r.textContent = '보내는 중…';
+    try {
+      await api('/api/feedback/send', { kind: ($('input[name=fb_kind]:checked') || {}).value || 'other', message: $('#fb-msg').value,
+        email: $('#fb-email').value, diag: $('#fb-diag').checked }, { silent: true });
+      r.innerHTML = '<span class="ok-text">✓ 보냈어요. 고맙습니다!</span>'; $('#fb-msg').value = ''; toast('보냈어요. 답장은 메일로 드릴게요 ✓');
+    } catch (err) { r.innerHTML = `<span class="bad-text">${esc(err.message)}</span>`; }
+    btn.disabled = false;
+  };
   $('#tm-preview').onclick = async () => {
     const out = $('#tm-out'); out.classList.toggle('hidden');
     if (!out.classList.contains('hidden')) out.textContent = JSON.stringify(await api('/api/telemetry/preview'), null, 2);

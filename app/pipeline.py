@@ -585,9 +585,14 @@ def rule_segment(rid):
             if starts and st <= starts[-1]:
                 st = start  # 같은 문장에 두 학생이 나오면 이름 위치에서 자름
             starts.append(st)
+        # 한 교시를 통째로 녹음한 긴 녹음: 이름 사이에 수업 설명이 길게 끼므로
+        # 이름이 나온 문장 + 뒤로 몇 문장만 그 학생 몫으로 (수업 설명이 학생 기록에 붙지 않게)
+        long_rec = len(text) > LONG_RECORDING_CHARS
         blocks = []  # [학생, 시작, 끝]
         for i, (_start, _end, s) in enumerate(hits):
             stop = starts[i + 1] if i + 1 < len(hits) else len(text)
+            if long_rec:
+                stop = min(stop, _follow_end(text, starts[i]))
             if blocks and blocks[-1][0]["id"] == s["id"]:
                 blocks[-1][2] = stop  # 연속된 같은 학생 언급은 합치기
             else:
@@ -600,6 +605,8 @@ def rule_segment(rid):
             chunk = strip_class_words(re.sub(r"\s+", " ", text[a:b]).strip())
             if len(chunk) < 6:
                 continue
+            if long_rec and len(chunk) < 30 and _is_talk(chunk):
+                continue        # 긴 수업 녹음 속 "OO 앉아요" 같은 지도 말은 기록으로 남기지 않음
             conn.execute("INSERT INTO notes(student_id, recording_id, date, kind, category, content, evidence) "
                          "VALUES (?,?,?,?,?,?,?)",
                          (s["id"], rid, date, r["kind"], "기타", chunk[:1200], ""))
@@ -609,6 +616,30 @@ def rule_segment(rid):
         return {"ok": True, "matched": count, "unmatched": 0}
     finally:
         conn.close()
+
+
+LONG_RECORDING_CHARS = 2500   # 대략 10분 넘게 말한 녹음
+FOLLOW_SENTENCES, FOLLOW_CHARS = 3, 300
+# 학생들에게 하는 말(수업 설명 · 지도)은 대개 해요체로 끝나고, 관찰 메모는 '~함 · ~임 · ~음'으로 끝남
+TALK_END = re.compile(r"(요|죠|까|세요|자|니다|니까|래|게)[.?!~…\s]*$")
+
+
+def _is_talk(sentence):
+    return bool(TALK_END.search(sentence.strip()))
+
+
+def _follow_end(text, start):
+    """start 문장(이름이 나온 문장)과 그 뒤 FOLLOW_SENTENCES 문장까지의 끝 — 단, 이름 문장 뒤로 FOLLOW_CHARS 넘지 않게."""
+    spans = [(a, b) for a, b in _sentences(text[start:])]
+    if not spans:
+        return len(text)
+    first_end = start + spans[0][1]
+    end = first_end
+    for a, b in spans[1:1 + FOLLOW_SENTENCES]:
+        if start + b - first_end > FOLLOW_CHARS or _is_talk(text[start + a:start + b]):
+            break       # 학생들에게 하는 말(수업 설명)이 나오면 거기서 끊음
+        end = start + b
+    return end
 
 
 def _sentences(text):
