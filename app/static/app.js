@@ -195,9 +195,9 @@ function kindBadge(kind) { return `<span class="badge ${kind === '상담' ? 'vio
 
 // ───────────────────────── AI 실행 (API / 수동) ─────────────────────────
 
-async function runAI(op, params, label, onDone) {
+async function runAI(op, params, label, onDone, opts) {
   let res;
-  try { res = await api('/api/ai/run', { op, params, label: label || '' }, { silent: true }); }
+  try { res = await api('/api/ai/run', { op, params, label: label || '', manual: !!(opts && opts.manual) }, { silent: true }); }
   catch (e) {
     if (e.message === 'NEED_WHISPER_MODEL') {
       modal(`<h2>받아쓰기 모델이 필요합니다</h2><p>녹음을 이 맥 안에서 글자로 바꾸려면 Whisper 모델(550MB)을 한 번 내려받아야 합니다. 받는 동안 다른 작업을 계속해도 되고, 끝나면 이 녹음이 자동으로 받아써집니다.</p>
@@ -215,13 +215,13 @@ async function runAI(op, params, label, onDone) {
 }
 
 function showManual(op, params, res, onDone) {
-  const titles = { transcribe: '전사 (수동)', segment: '학생별 분리 (수동)', draft: '세특 초안 (수동)', shorten: '초안 줄이기 (수동)' };
+  const titles = { transcribe: '받아쓰기 — ChatGPT·Gemini로', segment: '학생별 나누기 — ChatGPT·Gemini로', draft: '📋 세특 초안 — ChatGPT·Gemini로 쓰기', shorten: '초안 줄이기 — ChatGPT·Gemini로' };
   const audioStep = op === 'transcribe'
     ? `<li><b>녹음 파일도 함께 첨부</b>하세요. <button class="sm" id="m-reveal">녹음 파일 위치 열기</button> (Finder에서 파일을 Gemini 창으로 끌어다 놓기)</li>` : '';
   modal(`
     <h2>${titles[op] || 'AI 작업'}</h2>
     <div class="info-box"><ol>
-      <li>아래 <b>프롬프트 복사</b> → Gemini(gemini.google.com) 또는 ChatGPT 새 대화에 붙여넣기</li>
+      <li>아래 <b>프롬프트 복사</b> → ChatGPT·Gemini 앱(또는 웹) 새 대화에 붙여넣기 <a href="https://chatgpt.com" target="_blank">ChatGPT 열기</a> · <a href="https://gemini.google.com" target="_blank">Gemini 열기</a></li>
       ${audioStep}
       <li>AI의 답변 전체를 복사해서 아래 <b>결과 붙여넣기</b> 칸에 넣고 <b>적용</b></li>
     </ol></div>
@@ -313,6 +313,9 @@ async function router(soft) {
     a.classList.toggle('active', a.dataset.nav === nav);
     if (a.dataset.nav === nav) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
+  // 메뉴마다 마지막으로 보던 화면 기억 (학생 화면을 보다가 다른 메뉴에 다녀와도 그대로)
+  if (nav) { navMemory[nav] = '#' + hash; store('session', 'sseudam.navMemory', JSON.stringify(navMemory)); }
+  state.nav = nav;
   const scroll = soft ? window.scrollY : 0;
   if (!soft) { view.classList.remove('enter'); void view.offsetWidth; view.classList.add('enter'); }
   try {
@@ -340,6 +343,15 @@ async function router(soft) {
   $$('textarea, input', view).forEach(el => el.addEventListener('input', () => { el.dataset.dirty = '1'; }));
 }
 window.addEventListener('hashchange', () => { closeModal(); router(false); });
+
+// 왼쪽 메뉴: 다른 메뉴 → 그 메뉴에서 마지막으로 보던 화면 / 지금 메뉴를 한 번 더 → 그 메뉴 첫 화면 (휴대폰 탭처럼)
+const navMemory = (() => { try { return JSON.parse(store('session', 'sseudam.navMemory') || '{}'); } catch (e) { return {}; } })();
+document.addEventListener('click', e => {
+  const a = e.target.closest('.sidebar nav a[data-nav]');
+  if (!a || e.metaKey || e.ctrlKey) return;
+  const target = a.dataset.nav === state.nav ? a.getAttribute('href') : (navMemory[a.dataset.nav] || a.getAttribute('href'));
+  if (target !== location.hash) { e.preventDefault(); location.hash = target; }
+});
 
 // ───────────────────────── 대시보드 ─────────────────────────
 
@@ -1195,7 +1207,8 @@ async function viewStudent(id, areaParam) {
         <div class="card">
           <div class="section-title"><h2>${esc(area.full)}</h2>${current ? `<span class="badge ${current.status === '확정' ? 'green' : 'blue'}">${current.status}</span>` : ''}</div>
           <label class="field"><span>이번 초안에서 강조할 점 (선택)</span><input id="d-extra" placeholder="예: 탐구 보고서의 문제해결 과정, 진로(환경공학) 연계"></label>
-          <div class="row" style="margin-top:10px"><button class="primary shrink" id="d-gen" ${notesInArea.length ? '' : 'disabled'}>✨ AI 초안 생성</button><span></span></div>
+          <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap"><button class="primary shrink" id="d-gen" ${notesInArea.length ? '' : 'disabled'}>✨ AI 초안 생성</button>
+            <button class="shrink" id="d-ext" ${notesInArea.length ? '' : 'disabled'} title="프롬프트를 복사해서 ChatGPT·Gemini 앱에서 쓰고, 답을 붙여넣어 저장">📋 ChatGPT·Gemini로 쓰기</button><span></span></div>
           <textarea id="d-text" rows="12" style="margin-top:12px" placeholder="AI 초안이 여기에 표시됩니다. 직접 작성·수정해도 됩니다.">${esc(current ? current.content : '')}</textarea>
           <div class="row" style="margin-top:6px;align-items:center"><span class="counter" id="d-count"></span><span></span>
             <button class="shrink sm" id="d-short">AI로 줄이기</button><button class="shrink sm" id="d-copy">복사</button></div>
@@ -1237,6 +1250,7 @@ async function viewStudent(id, areaParam) {
     delete text.dataset.dirty;
     runAI('draft', { student_id: s.id, extra: $('#d-extra').value, area: area.id }, `${area.name} ${s.name}`, reload);
   };
+  $('#d-ext').onclick = () => runAI('draft', { student_id: s.id, extra: $('#d-extra').value, area: area.id }, `${area.name} ${s.name}`, reload, { manual: true });
   $('#d-short').onclick = () => {
     if (!text.value.trim()) return toast('줄일 내용이 없습니다', true);
     delete text.dataset.dirty;
@@ -1288,15 +1302,15 @@ async function viewDrafts(classId, areaParam) {
     <div class="card">
       <div class="section-title"><h2>${esc(c.label)} · ${esc(area.full)} <span class="muted small">확정 ${done}/${d.students.length}</span></h2>
         <span class="actions" style="display:flex;gap:6px;flex-wrap:wrap">
-          ${isApi ? `<button id="g-missing" ${missing ? '' : 'disabled'}>✨ 초안 없는 학생 생성 (${missing})</button>
-          <button id="g-all" ${withNotes ? '' : 'disabled'}>기록 있는 학생 전체 생성 (${withNotes})</button>`
-          : `<button class="primary" id="g-prompt" ${withNotes ? '' : 'disabled'}>📋 반 전체 프롬프트 복사 (${missing || withNotes}명)</button>
-          <button id="g-paste" ${withNotes ? '' : 'disabled'}>📥 AI 답 붙여넣기</button>`}
+          ${isApi ? `<button class="primary" id="g-missing" ${missing ? '' : 'disabled'}>✨ 초안 없는 학생 생성 (${missing})</button>
+          <button id="g-all" ${withNotes ? '' : 'disabled'}>기록 있는 학생 전체 생성 (${withNotes})</button>` : ''}
+          <button class="${isApi ? '' : 'primary'}" id="g-prompt" ${withNotes ? '' : 'disabled'} title="ChatGPT·Gemini 앱에 붙여넣을 반 전체 프롬프트">📋 반 전체 프롬프트 복사 (${missing || withNotes}명)</button>
+          <button id="g-paste" ${withNotes ? '' : 'disabled'}>📥 AI 답 붙여넣기</button>
           <button id="x-copy">표 복사</button>
           <button id="x-csv">CSV</button>
           <button id="x-xlsx">엑셀로 저장</button>
           <button class="primary" id="x-sheet">구글시트 지금 반영</button></span></div>
-      ${isApi ? '' : '<p class="help"><b>📋 반 전체 프롬프트 복사</b> → ChatGPT·Gemini 앱에 붙여넣기 → 나온 답을 통째로 복사해서 <b>📥 AI 답 붙여넣기</b>에 넣으면 학생마다 초안이 한꺼번에 들어가요.</p>'}
+      <p class="help">${isApi ? '<b>✨</b>는 이 컴퓨터의 AI로 바로 만들어요. 더 다듬고 싶으면 ' : ''}<b>📋 반 전체 프롬프트 복사</b> → ChatGPT·Gemini 앱에 붙여넣기 → 나온 답을 통째로 <b>📥 AI 답 붙여넣기</b>에 넣으면 학생마다 초안이 한꺼번에 들어가요.</p>
       <details class="lesson-ctx" id="lesson-ctx" ${ctxPreview ? '' : 'open'}>
         <summary class="ctx-toggle"><span class="ctx-title">📚 수업 정보</span>
           <span class="ctx-preview">${ctxPreview ? esc(ctxPreview.length > 70 ? ctxPreview.slice(0, 70) + '…' : ctxPreview) : '종목·역량·교사 철학을 적어 두면 초안이 수업에 맞게 나와요'}</span>
@@ -1391,6 +1405,17 @@ async function viewSettings(section) {
         <label class="field"><span>선생님 이름 (대시보드 인사·휴대폰 앱에 표시)</span><input id="teacher_name" value="${esc(s.teacher_name)}" placeholder="예: 김쓰담"></label>
         <p class="help">휴대폰 앱과 대시보드 인사에 이 이름이 나와요.</p>
       </div>
+      <div class="card" data-pane="data" id="help-card" style="grid-column:1 / -1;order:4">
+        <div class="section-title"><h2>📮 도움 · 소식 받기</h2></div>
+        <p class="help" style="margin-top:-4px">문제가 생겼을 때 도와드리고 업데이트를 맞춰 드리려고, 하루 한 번 <b>컴퓨터 사양과 쓰담 사용 정보</b>를 보내요. <b>학생 이름·기록·녹음은 절대 보내지 않아요.</b> <a href="https://hanseolhui.github.io/sseudam/privacy.html" target="_blank">개인정보 처리방침</a></p>
+        <label class="check"><input type="checkbox" id="telemetry" ${s.telemetry !== '0' ? 'checked' : ''}> 사용 정보 보내기 (익명 · 컴퓨터 사양 · 버전 · 고른 AI · 학급·학생·기록 개수)</label>
+        <div class="row" style="margin-top:10px">
+          <label class="field"><span>이메일 (선택)</span><input id="contact_email" type="email" value="${esc(s.contact_email || '')}" placeholder="업데이트·문제 해결 안내를 받을 주소"></label>
+          <label class="field"><span>학교 (선택)</span><input id="school_name" value="${esc(s.school_name || '')}" placeholder="예: 쓰담고등학교"></label></div>
+        <label class="check" style="margin-top:8px"><input type="checkbox" id="share_info" ${s.share_info === '1' ? 'checked' : ''}> 이름(${esc(s.teacher_name || '선생님 탭의 이름')}) · 학교 · 이메일도 함께 보내기</label>
+        <div style="margin-top:8px"><button class="sm ghost" id="tm-preview">보내는 내용 그대로 보기</button></div>
+        <pre id="tm-out" class="small hidden" style="white-space:pre-wrap;background:var(--bg-2, var(--panel));padding:10px;border-radius:10px;margin-top:8px"></pre>
+      </div>
       <div class="card" data-pane="data" id="trash-card" style="order:9">
         <h2>🗑 휴지통</h2>
         <p class="muted small" style="margin-top:-4px">지운 학급·학생·녹음·관찰기록·초안은 30일 동안 휴지통에 있어요. 실수로 지워도 되살릴 수 있어요.</p>
@@ -1436,17 +1461,18 @@ async function viewSettings(section) {
       </div>
       <div class="card" style="grid-column:1 / -1;order:1" id="ai-card" data-pane="ai">
         <div class="section-title"><h2>🧠 AI</h2><span id="ai-now" class="small"></span></div>
-        <p class="help" style="margin-top:-4px">학생별로 나누고 세특 초안을 쓰는 AI를 하나 골라요. <b>누르면 바로 바뀌어요.</b></p>
+        <p class="help" style="margin-top:-4px">학생별로 나누고 세특 초안을 쓰는 AI를 골라요. <b>누르면 바로 바뀌어요.</b> 어떤 걸 골라도 초안 화면의 <b>📋 ChatGPT·Gemini로 쓰기</b>로 외부 AI에서 쓸 수 있어요.</p>
         <div class="ai-tiles" id="ai-tiles"></div>
         <div id="ai-detail" class="ai-detail"></div>
-        <div id="ai-gemini" class="ai-detail hidden">
+        <details id="ai-ext" style="margin-top:12px"><summary class="small">고급 — 외부 AI 연결 (Gemini API 키 · Ollama · LM Studio)</summary>
+          <div id="ai-gemini" class="info-box" style="margin-top:8px"><b>Gemini API 키 (외부 AI)</b> <span class="small muted">— 이 컴퓨터 AI 대신 구글 Gemini로 나누고 초안 쓰기</span>
           <label class="field"><span>Gemini API 키 <a href="https://aistudio.google.com/apikey" target="_blank" class="small">무료로 받기 ↗</a></span>
             <input id="key" type="password" placeholder="${s.has_key ? esc(s.gemini_api_key_masked) + ' (저장됨 — 바꿀 때만 입력)' : 'AIza로 시작하는 키'}" autocomplete="off"></label>
-          <div class="row" style="margin-top:8px"><button class="shrink" id="test">연결 확인</button>${s.has_key ? '<button class="shrink danger" id="clear-key">키 삭제</button>' : ''}<span id="test-result" class="small"></span></div>
+          <div class="row" style="margin-top:8px"><button class="shrink" id="test">연결 확인</button><button class="shrink primary" id="use-gemini">Gemini로 쓰기</button>${s.has_key ? '<button class="shrink danger" id="clear-key">키 삭제</button>' : ''}<span id="test-result" class="small"></span></div>
           <label class="field" style="margin-top:10px"><span>모델</span><input id="model" value="${esc(s.gemini_model)}" list="model-list"><datalist id="model-list"></datalist></label>
           <p class="help">녹음 글이 구글 서버로 가요. 무료 등급은 구글이 서비스 개선에 쓸 수 있어서, AI Studio에서 결제 수단을 등록(유료 등급)하는 걸 권해요.</p>
         </div>
-        <details id="ai-ext" style="margin-top:12px"><summary class="small">Ollama · LM Studio를 이미 쓰고 있다면 (고급)</summary>
+
           <div class="info-box" style="margin-top:8px">
             <div id="la-detect" class="small" style="margin:6px 0">찾는 중…</div>
             <label class="field"><span>주소</span><input id="local_ai_url" value="${esc(s.local_ai_url === 'builtin' ? '' : (s.local_ai_url || ''))}" placeholder="http://127.0.0.1:11434/v1"></label>
@@ -1525,6 +1551,8 @@ async function viewSettings(section) {
     drive_inbox: $('#drive_inbox').checked ? '1' : '0', teacher_name: $('#teacher_name').value.trim(),
     auto_update: $('#auto_update').checked ? '1' : '0',
     ...($('#draft_local') ? { draft_local: $('#draft_local').checked ? '1' : '0' } : {}),
+    telemetry: $('#telemetry').checked ? '1' : '0', share_info: $('#share_info').checked ? '1' : '0',
+    contact_email: $('#contact_email').value.trim(), school_name: $('#school_name').value.trim(),
   });
   const save = async () => { await api('/api/settings', collect()); };
   // 자동 저장: 무엇이든 바꾸면 바로 저장하고, 바꾼 칸과 아래 표시가 초록으로 반짝
@@ -1580,14 +1608,14 @@ async function viewSettings(section) {
     $('#ai-tiles').innerHTML =
       tileHtml('builtin', '✨', '쓰담 AI 모델', '이 컴퓨터 안에서 · 무료 · 추천', bStatus, choice === 'builtin', !b.supported) +
       (isMac ? tileHtml('apple', '🍎', '기기 안 AI', '설치 없음 · 학생 나누기만', st.apple.state === 'ready' ? '✓ 바로 쓸 수 있어요' : '<span class="muted">이 맥에선 안 돼요</span>', choice === 'apple', st.apple.state !== 'ready') : '') +
-      tileHtml('gemini', '🔑', 'Gemini', '구글 서버 · API 키 필요', st.has_key ? '✓ 키 연결됨' : '키를 넣어야 해요', choice === 'gemini', false) +
       tileHtml('manual', '✋', 'AI 없이', '이름 기준 나누기 · 초안은 프롬프트 복사', '', choice === 'manual', false) +
+      (choice === 'gemini' ? tileHtml('gemini', '🔑', 'Gemini (외부 API)', '고급에서 연결함', st.has_key ? '✓ 키 연결됨' : '키를 넣어야 해요', true, false) : '') +
       (choice === 'external' ? tileHtml('external', '🖥️', '내 맥 AI 앱', 'Ollama · LM Studio', '✓ ' + esc(st.local_ai_model), true, false) : '');
     const draftTxt = { gemini: 'Gemini', local: choice === 'external' ? '내 맥 AI 앱' : '쓰담 AI 모델', manual: '프롬프트 복사(ChatGPT·Gemini 앱)' }[st.draft] || st.draft;
     const segTxt = { gemini: 'Gemini', local: choice === 'external' ? '내 맥 AI 앱' : '쓰담 AI 모델', apple: '기기 안 AI', rules: '이름 기준' }[st.active_seg] || st.active_seg;
     $('#ai-now').innerHTML = `학생 나누기: <b>${segTxt}</b> · 세특 초안: <b>${draftTxt}</b>`;
     // 고른 것에 맞는 설명·설정
-    $('#ai-gemini').classList.toggle('hidden', choice !== 'gemini');
+    if (choice === 'gemini' || choice === 'external') $('#ai-ext').open = true;
     let d = '';
     if (choice === 'builtin') {
       const spec = `<div class="spec">💻 <b>${isMac ? '이 맥' : '이 컴퓨터'}</b>: ${esc(mc.chip || '')}${mc.ram ? ' · 메모리 ' + mc.ram + 'GB' : ''}<div class="small">${mc.model ? '→ <b>' + esc((b.models.find(m => m.id === mc.model) || {}).name) + '</b> 모델 추천 · ' : ''}${esc(mc.why || '')}</div></div>`;
@@ -1655,11 +1683,20 @@ async function viewSettings(section) {
     $$('.la-fill').forEach(x => x.onclick = () => { $('#local_ai_url').value = x.dataset.url; if (!$('#local_ai_model').value) $('#local_ai_model').value = x.dataset.model; });
   };
   $('#la-test-local').onclick = () => laTest('local', $('#la-local-r'));
+  $('#use-gemini').onclick = async () => {
+    if ($('#key').value.trim()) { await save(); }
+    await aiChoose('gemini', null);
+  };
   $('#la-use-ext').onclick = async () => {
     try { await api('/api/ai/choose', { choice: 'external', url: $('#local_ai_url').value.trim(), model: $('#local_ai_model').value.trim() }); toast('내 맥 AI 앱으로 바꿨어요 ✓'); flashSaved($('#la-use-ext')); aiLoad(); updateModeBadge(); } catch (e) { /* */ }
   };
   $('#ai-ext').addEventListener('toggle', () => { if ($('#ai-ext').open) extLoad(); });
   aiLoad();
+  $('#tm-preview').onclick = async () => {
+    const out = $('#tm-out'); out.classList.toggle('hidden');
+    if (!out.classList.contains('hidden')) out.textContent = JSON.stringify(await api('/api/telemetry/preview'), null, 2);
+  };
+  $('#contact_email').addEventListener('change', e => { if (e.target.value.trim() && !$('#share_info').checked) { $('#share_info').checked = true; } });
   $('#copy-gs').onclick = async () => { const t = await (await fetch('/google_apps_script.gs')).text(); copyText(t); };
   $('#backup').onclick = async () => { await api('/api/backup', {}); toast('백업했습니다'); renderBackups(); };
   $('#xlsx-all').onclick = () => exportXlsx(null);
@@ -2009,6 +2046,10 @@ function showOnboarding(s) {
         ✓ <b>학생 나누기·세특 초안 AI</b> — <span id="ob-ai-pick">이 컴퓨터에 맞는 모델 고르는 중…</span><br>
         ✓ <b>자동 업데이트</b> — 새 버전이 나오면 쉬는 틈에 알아서
       </div>
+      <div class="row" style="margin-top:12px">
+        <label class="field"><span>이메일 (선택)</span><input id="ob-email" type="email" placeholder="업데이트·문제 해결 안내를 받을 주소"></label>
+        <label class="field"><span>학교 (선택)</span><input id="ob-school" placeholder="예: 쓰담고등학교"></label></div>
+      <p class="small muted" style="margin:4px 0 0">적어 주시면 문제가 생겼을 때 도와드릴 수 있어요. 학생 정보는 보내지 않아요.</p>
       <details style="margin-top:10px"><summary class="small">Gemini API 키가 이미 있어요</summary>
         <input id="ob-key" type="password" placeholder="AIza로 시작하는 키" style="margin-top:8px">
         <p class="small muted">넣으면 학생 나누기·초안을 Gemini로 해요. 비워 두면 이 컴퓨터 안의 AI를 써요.</p></details>`,
@@ -2045,7 +2086,9 @@ function showOnboarding(s) {
         if (st.step === 3) {
           const key = ($('#ob-key', box).value || '').trim();
           $('#ob-next', box).disabled = true; $('#ob-next', box).textContent = '준비하는 중…';
-          const vals = { onboarded: '1', school_level: st.level, teacher_name: st.name || '', teacher_subject: st.subject || '', auto_update: '1', auto_process: '1' };
+          const email = ($('#ob-email', box).value || '').trim(), school = ($('#ob-school', box).value || '').trim();
+          const vals = { onboarded: '1', school_level: st.level, teacher_name: st.name || '', teacher_subject: st.subject || '', auto_update: '1', auto_process: '1',
+            contact_email: email, school_name: school, share_info: email || school ? '1' : '0' };
           if (key) vals.gemini_api_key = key;
           await api('/api/settings', vals);
           for (const c of st.make) await api('/api/classes/save', Object.assign({ year: y, semester: sem }, c));

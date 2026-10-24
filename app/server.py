@@ -25,6 +25,7 @@ import platform_util  # noqa: E402
 import prompts  # noqa: E402
 import sheets  # noqa: E402
 import sync_text  # noqa: E402
+import telemetry  # noqa: E402
 import trash  # noqa: E402
 import update  # noqa: E402
 import version  # noqa: E402
@@ -970,7 +971,15 @@ def settings_save(h, q, b):
     if (vals.get("local_ai_url") or "").strip() and not localai.is_local_url(vals["local_ai_url"]):
         raise ApiError("내 맥 AI 주소는 이 맥(127.0.0.1 또는 localhost)만 넣을 수 있어요. 학생 기록이 밖으로 나가지 않게요.")
     db.set_settings(vals)
+    if any(k in vals for k in ("share_info", "contact_email", "school_name", "telemetry")):
+        telemetry.send_async(force=True)   # 선생님이 정보를 바꾸면 바로 반영
     return {"ok": True}
+
+
+@route("GET", "/api/telemetry/preview")
+def telemetry_preview(h, q, b):
+    """설정 화면: 실제로 무엇을 보내는지 그대로 보여 주기."""
+    return telemetry.payload()
 
 
 @route("GET", "/api/localai/status")
@@ -1627,6 +1636,7 @@ def main():
     watcher.start()
     sheets.start()
     sync_text.start()
+    telemetry.start()
     if update.start_auto():
         print("자동 업데이트 확인 켜짐")
     url = "http://%s:%d" % (HOST, PORT)

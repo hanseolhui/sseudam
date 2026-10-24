@@ -720,6 +720,8 @@ def seg_engine(settings):
 def draft_engine(settings):
     """세특 초안 엔진: Gemini 키가 있으면 Gemini, 없으면 내 맥 AI 앱(설정한 경우). 기기 안 AI는 초안엔 작아서 안 씀."""
     import localai
+    if settings.get("ai_choice") == "manual":
+        return None              # 'AI 없이'를 골랐으면 늘 프롬프트 복사
     local = settings.get("draft_local", "1") == "1" and localai.local_configured(settings)
     if local and settings.get("ai_choice") in ("builtin", "external"):
         return "local"           # 쓰담 AI 모델을 골랐으면 키가 있어도 맥 안에서

@@ -45,6 +45,13 @@ DEFAULT_SETTINGS = {
     "stt_engine": "whisper",
     # 학생별 분리 엔진: auto | gemini | local(Ollama·LM Studio) | apple(기기 안 AI) | rules(이름 기준)
     "seg_engine": "auto",
+    # 사용 정보 보내기 (문제 해결·업데이트 지원): 익명 사양은 기본 켬, 이름·학교·이메일은 선생님이 켤 때만
+    "telemetry": "1",
+    "install_id": "",
+    "last_ping": "",
+    "share_info": "0",
+    "contact_email": "",
+    "school_name": "",
     "ai_choice": "",                # 설정의 AI 고르기: builtin | apple | gemini | external | manual (비면 기존 설정으로 추정)
     "local_ai_url": "",             # 예: http://127.0.0.1:11434/v1 (Ollama), http://127.0.0.1:1234/v1 (LM Studio)
     "local_ai_model": "",

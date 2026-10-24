@@ -14,7 +14,7 @@
 <a class="skip-link" href="#view">본문으로 건너뛰기</a>
 <div class="layout">
   <aside class="sidebar" aria-label="메뉴">
-    <a class="brand" href="#/" aria-label="쓰담 대시보드로">
+    <a class="brand" href="#/" data-home="1" aria-label="쓰담 홈으로">
       <svg class="mascot" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
         <defs><linearGradient id="mg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5B7CFA"/><stop offset="1" stop-color="#9B8CF5"/></linearGradient></defs>
         <path d="M24 5c10.5 0 19 7.2 19 16.2S34.5 37.4 24 37.4c-1.6 0-3.1-.2-4.6-.5L11 42.6c-.9.6-2-.2-1.7-1.2l1.8-6.3C7.4 32.2 5 27 5 21.2 5 12.2 13.5 5 24 5z" fill="url(#mg)"/>
@@ -34,7 +34,7 @@
       <select id="term-select" aria-label="보고 있는 학기"></select>
     </label>
     <nav aria-label="주 메뉴">
-      <a href="#/" data-nav="dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H15v-5H9v5H5.5A1.5 1.5 0 0 1 4 19z"/></svg><span>대시보드</span></a>
+      <a href="#/" data-nav="dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H15v-5H9v5H5.5A1.5 1.5 0 0 1 4 19z"/></svg><span>홈</span></a>
       <a href="#/recordings" data-nav="recordings"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M6 11.5a6 6 0 0 0 12 0M12 17.5V20.5"/></svg><span>녹음함</span> <span id="nav-pending" class="pill hidden"></span></a>
       <a href="#/classes" data-nav="classes"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="9" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="8" r="2.4"/><path d="M15.8 13.3c2.4-.3 4.3 1.2 4.7 4.2"/></svg><span>학급·학생</span></a>
       <a href="#/drafts" data-nav="drafts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 4.5 19.5 9.5 9 20H4v-5z"/><path d="M12.5 6.5l5 5"/></svg><span>초안 작성</span></a>
