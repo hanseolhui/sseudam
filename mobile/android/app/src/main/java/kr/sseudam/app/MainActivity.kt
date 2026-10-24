@@ -52,13 +52,31 @@ class MainActivity : ComponentActivity() {
                 surface = T.card, surfaceContainerLow = T.card, surfaceContainer = T.card, onSurface = T.ink)) { App() }
         }
         UploadWorker.enqueue(this)
+        if (Relay.paired()) UploadWorker.schedulePeriodic(this)
     }
 
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); handleLink(intent) }
 
     private fun handleLink(i: Intent?) {
+        if (i?.action == Intent.ACTION_SEND || i?.action == Intent.ACTION_SEND_MULTIPLE) { handleShare(i); return }
         val data = i?.data?.toString() ?: return
+        Relay.parse(data)?.let { Store.pairRelay(it); return }
         Store.parsePairing(data)?.let { (u, t, n) -> Store.pair(u, t, n) }
+    }
+
+    /** 다른 녹음 앱에서 '공유 → 쓰담' */
+    @Suppress("DEPRECATION")
+    private fun handleShare(i: Intent) {
+        val uris = if (i.action == Intent.ACTION_SEND_MULTIPLE) i.getParcelableArrayListExtra<android.net.Uri>(Intent.EXTRA_STREAM) ?: arrayListOf()
+                   else listOfNotNull(i.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM))
+        var n = 0
+        for (u in uris) {
+            val name = contentResolver.query(u, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) c.getString(0) else null } ?: "공유받은 녹음.m4a"
+            runCatching { contentResolver.openInputStream(u)?.let { Store.addShared(it, name); n++ } }
+        }
+        android.widget.Toast.makeText(this, if (n > 0) "녹음 ${n}개를 쓰담에 담았어요" + (if (Store.paired.value) " · 컴퓨터로 보내는 중" else "") else "녹음을 가져오지 못했어요",
+            android.widget.Toast.LENGTH_LONG).show()
     }
 }
 
@@ -77,13 +95,14 @@ class Nav(val tab: MutableState<Int>, private val stacks: List<androidx.compose.
     fun switch(t: Int, r: Route? = null) { tab.value = t; if (r != null) { stacks[t].clear(); stacks[t].add(r) } }
 }
 
+/** startTab·startRoute 는 스토어 스크린샷(JVM 테스트)에서 특정 화면을 바로 열 때만 쓴다 */
 @Composable
-fun App() {
+fun App(startTab: Int = 0, startRoute: Route? = null) {
     val ctx = LocalContext.current
-    val tab = remember { mutableIntStateOf(0) }
-    val stacks = remember { List(4) { mutableStateListOf<Route>() } }
+    val tab = remember { mutableIntStateOf(startTab) }
+    val stacks = remember { List(4) { i -> mutableStateListOf<Route>().apply { if (i == startTab && startRoute != null) add(startRoute) } } }
     val nav = remember { Nav(tab, stacks) }
-    LaunchedEffect(Unit) { Updater.check(ctx) }
+    LaunchedEffect(Unit) { Distribution.onLaunch(ctx) }
     BackHandler(enabled = nav.stack.isNotEmpty()) { nav.back() }
 
     Scaffold(containerColor = T.bg, bottomBar = {
@@ -139,14 +158,14 @@ fun HomeScreen(nav: Nav) {
     val paired by Store.paired.collectAsStateWithLifecycle()
     val items by Store.items.collectAsStateWithLifecycle()
     val db by DataStore.db.collectAsStateWithLifecycle()
-    val update by Updater.available.collectAsStateWithLifecycle()
     var elapsed by remember { mutableLongStateOf(0L) }
     var pending by remember { mutableStateOf<Triple<File, Long, Long>?>(null) }
     var savedId by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(recording) { while (recording) { elapsed = RecordService.elapsedMs(); delay(100) } }
 
     val perm = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
-        if (res[Manifest.permission.RECORD_AUDIO] == true) RecordService.start(ctx)
+        // 알림을 거절해도 녹음은 된다 (알림 막대에 '녹음 중'이 안 보일 뿐)
+        if (res[Manifest.permission.RECORD_AUDIO] == true || granted(ctx, Manifest.permission.RECORD_AUDIO)) { savedId = null; RecordService.start(ctx) }
     }
     fun toggle() {
         if (recording) {
@@ -154,13 +173,9 @@ fun HomeScreen(nav: Nav) {
             RecordService.stop(ctx)
             RecordService.lastFile?.let { f -> if (dur >= 1000) pending = Triple(f, dur, at) else f.delete() }
             elapsed = 0
-        } else if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            savedId = null
-            RecordService.start(ctx)
         } else {
-            val ps = mutableListOf(Manifest.permission.RECORD_AUDIO)
-            if (Build.VERSION.SDK_INT >= 33) ps += Manifest.permission.POST_NOTIFICATIONS
-            perm.launch(ps.toTypedArray())
+            val ask = recordPermissionsToAsk(ctx)
+            if (ask.isEmpty()) { savedId = null; RecordService.start(ctx) } else perm.launch(ask)
         }
     }
 
@@ -180,7 +195,7 @@ fun HomeScreen(nav: Nav) {
             }
         }
 
-        update?.let { UpdateCard(it) }
+        UpdateBanner()
 
         // 녹음
         Column(Modifier.fillMaxWidth().card(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -242,27 +257,33 @@ fun HomeScreen(nav: Nav) {
     }
 }
 
+fun granted(ctx: android.content.Context, p: String) = ContextCompat.checkSelfPermission(ctx, p) == PackageManager.PERMISSION_GRANTED
+
+/**
+ * 녹음 전에 물어볼 권한: 마이크(필수) + 알림(안드로이드 13+, 녹음 중 표시용 · 한 번만 물음).
+ * 마이크 포그라운드 서비스는 RECORD_AUDIO 가 허용된 상태에서 앱이 화면에 있을 때만 시작한다 (안드로이드 14+ 규칙).
+ */
+fun recordPermissionsToAsk(ctx: android.content.Context): Array<String> {
+    val out = mutableListOf<String>()
+    if (!granted(ctx, Manifest.permission.RECORD_AUDIO)) out += Manifest.permission.RECORD_AUDIO
+    if (Build.VERSION.SDK_INT >= 33 && !granted(ctx, Manifest.permission.POST_NOTIFICATIONS)) {
+        val prefs = ctx.getSharedPreferences("sseudam", android.content.Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("askedNotif", false)) {
+            prefs.edit().putBoolean("askedNotif", true).apply()
+            out += Manifest.permission.POST_NOTIFICATIONS
+        }
+    }
+    return out.toTypedArray()
+}
+
+/** 앱 버전 (연결 탭 표시용) */
+fun appVersion(ctx: android.content.Context): String =
+    runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: ""
+
 private fun greeting(recording: Boolean): String {
     if (recording) return "잘 듣고 있어요"
     val h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
     return if (h < 12) "좋은 아침이에요!" else if (h < 17) "오늘 수업, 한마디 남겨요" else "오늘도 수고하셨어요"
-}
-
-@Composable
-fun UpdateCard(r: Updater.Release) {
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val status by Updater.status.collectAsStateWithLifecycle()
-    val busy by Updater.busy.collectAsStateWithLifecycle()
-    Column(Modifier.fillMaxWidth().card(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("새 버전 ${r.version}이 나왔어요 ✨", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = T.ink, modifier = Modifier.weight(1f))
-            if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-            else ChipButton("업데이트", T.blue, filled = true) { scope.launch { Updater.downloadAndInstall(ctx, r) } }
-        }
-        Text(status.ifEmpty { "누르면 새 버전을 받아 설치 화면을 열어요. 처음 한 번은 ‘이 출처의 앱 설치 허용’을 켜 주세요. 기록은 그대로 남아요." },
-            fontSize = 12.sp, color = T.soft)
-    }
 }
 
 /** 방금 담은 기록 카드 */

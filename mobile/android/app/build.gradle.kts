@@ -13,14 +13,32 @@ val keyProps = Properties().apply {
 
 android {
     namespace = "kr.sseudam.app"
-    compileSdk = 36
+    compileSdk {
+        version = release(36) { minorApiLevel = 1 }
+    }
 
     defaultConfig {
         applicationId = "kr.sseudam.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
+        versionCode = 2
         versionName = "1.0.0"
+    }
+
+    // play: 플레이 스토어용 (자체 업데이트·REQUEST_INSTALL_PACKAGES 없음) → bundlePlayRelease (.aab)
+    // github: 직접 설치(APK)용, GitHub 릴리스 자동 업데이트 포함 → assembleGithubRelease (.apk)
+    flavorDimensions += "dist"
+    productFlavors {
+        create("play") {
+            dimension = "dist"
+            isDefault = true
+        }
+        create("github") {
+            dimension = "dist"
+            // 직접 설치 APK는 기기별로 나눠지지 않아서, 글자 인식 네이티브 라이브러리를 휴대폰용(ARM)만 넣어 크기를 줄인다
+            // (플레이 .aab 는 스토어가 기기에 맞는 것만 내려보내므로 모두 넣음)
+            ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+        }
     }
 
     signingConfigs {
@@ -47,6 +65,27 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { compose = true }
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true   // Robolectric 스토어 스크린샷용
+            all { t ->
+                // ./gradlew recordStoreScreenshots 때만 스크린샷을 찍는다 (평소 단위 테스트에서는 건너뜀)
+                t.systemProperty("sseudam.screenshots", project.findProperty("sseudam.screenshots") ?: "false")
+                t.systemProperty("sseudam.screenshotDir", rootProject.file("store/screenshots").absolutePath)
+                t.systemProperty("roborazzi.test.record", "true")
+                t.maxHeapSize = "2g"
+                if (project.findProperty("sseudam.screenshots") != "true") t.exclude("**/StoreScreenshots*")
+            }
+        }
+    }
+}
+
+// 스토어 스크린샷 (JVM에서 Compose 화면 그리기 · 에뮬레이터 필요 없음) → mobile/android/store/screenshots/
+tasks.register<Exec>("recordStoreScreenshots") {
+    group = "sseudam"
+    description = "플레이 스토어 스크린샷을 store/screenshots 에 만든다"
+    workingDir = rootProject.projectDir
+    commandLine("./gradlew", ":app:testPlayDebugUnitTest", "--tests", "kr.sseudam.app.StoreScreenshots", "-Psseudam.screenshots=true", "--rerun")
 }
 
 dependencies {
@@ -60,5 +99,15 @@ dependencies {
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.work:work-runtime-ktx:2.10.5")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+    // 사진·활동지 글자 읽기: 기기 안 한국어 모델 (앱에 포함, 오프라인)
+    implementation("com.google.mlkit:text-recognition-korean:16.0.1")
     testImplementation("junit:junit:4.13.2")
+    // 스토어 스크린샷 (Robolectric + Roborazzi) — 앱에는 들어가지 않음
+    testImplementation(composeBom)
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("org.robolectric:robolectric:4.16")
+    testImplementation("androidx.work:work-testing:2.10.5")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.46.1")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.46.1")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 직접 설치(APK)판에만 들어가는 것: GitHub 릴리스에서 받은 새 버전 설치 (플레이판에는 없음 — 플레이 정책) -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+</manifest>

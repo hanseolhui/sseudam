@@ -134,7 +134,7 @@ fun ClassScreen(nav: Nav, uid: String) {
             Box {
                 IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, "메뉴", tint = T.blue) }
                 DropdownMenu(menu, { menu = false }, containerColor = T.card) {
-                    DropdownMenuItem({ Text("🪄 반 전체 초안 (ChatGPT·Gemini)") }, { menu = false; nav.go(Route.Draft(cls.uid)) })
+                    DropdownMenuItem({ Text("✨ 반 전체 초안 (ChatGPT·Gemini)") }, { menu = false; nav.go(Route.Draft(cls.uid)) })
                     DropdownMenuItem({ Text("학생 더하기 · 명단 붙여넣기") }, { menu = false; pasting = true })
                     DropdownMenuItem({ Text("이 반 지우기", color = T.coral) }, { menu = false; confirmDelete = true })
                 }
@@ -162,7 +162,7 @@ fun ClassScreen(nav: Nav, uid: String) {
             if (list.isNotEmpty()) item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     SoftLabel("학생 ${list.size}명", Modifier.weight(1f))
-                    ChipButton("🪄 반 전체 초안", T.lavender) { nav.go(Route.Draft(cls.uid)) }
+                    ChipButton("✨ 반 전체 초안", T.lavender) { nav.go(Route.Draft(cls.uid)) }
                 }
             }
             items(list, key = { it.uid }) { s ->
@@ -205,6 +205,7 @@ fun StudentScreen(nav: Nav, uid: String) {
     var moving by remember { mutableStateOf<SNote?>(null) }
     var editingStudent by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
+    var promptCopied by remember { mutableStateOf(false) }
     val defaultArea = Areas.forKind(cls?.kind).firstOrNull() ?: "subject"
 
     Column(Modifier.fillMaxSize()) {
@@ -215,6 +216,9 @@ fun StudentScreen(nav: Nav, uid: String) {
                     DropdownMenuItem({ Text("이름·별칭 고치기 · 합치기") }, { menu = false; editingStudent = true })
                     DropdownMenuItem({ Text("기록 모두 복사") }, { menu = false
                         copyText(ctx, notes.reversed().joinToString("\n") { "[${it.date ?: ""}] ${it.content ?: ""}" }) })
+                    DropdownMenuItem({ Text("PDF 한 장으로 내보내기") }, { menu = false
+                        runCatching { shareFile(ctx, StudentPdf.make(ctx, student, cls, notes, drafts), "application/pdf", "학생 기록 PDF 보내기") }
+                            .onFailure { android.widget.Toast.makeText(ctx, "PDF를 만들지 못했어요: ${it.message}", android.widget.Toast.LENGTH_SHORT).show() } })
                 }
             }
         }
@@ -247,8 +251,9 @@ fun StudentScreen(nav: Nav, uid: String) {
             }
             item {
                 Column(Modifier.fillMaxWidth().card(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(newNote, { newNote = it }, Modifier.fillMaxWidth(), maxLines = 5, shape = RoundedCornerShape(14.dp),
+                    OutlinedTextField(newNote, { newNote = it }, Modifier.fillMaxWidth(), maxLines = 8, shape = RoundedCornerShape(14.dp),
                         placeholder = { Text("${student.displayName} 학생에 대해 한 줄 남기기") }, colors = fieldColors)
+                    PhotoTextButtons { t -> newNote = listOf(newNote.trim(), t).filter { it.isNotEmpty() }.joinToString("\n") }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("키보드의 🎤로 말해도 돼요", fontSize = 12.sp, color = T.soft, modifier = Modifier.weight(1f))
                         ChipButton("담기", if (newNote.isBlank()) Color.Gray else T.blue, filled = true) {
@@ -270,9 +275,12 @@ fun StudentScreen(nav: Nav, uid: String) {
             if (notes.isNotEmpty()) item {
                 Column(Modifier.fillMaxWidth().card(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("🪄 초안 도움 받기", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = T.lavender, modifier = Modifier.weight(1f))
-                        ChipButton("요청문 복사", T.lavender) { copyText(ctx, ClassPrompt.forStudent(student, notes, defaultArea), "요청문을 복사했어요") }
+                        Text("✨ 초안 도움 받기", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = T.lavender, modifier = Modifier.weight(1f))
+                        ChipButton(if (promptCopied) "✓ 복사됐어요" else "요청문 복사", T.lavender) {
+                            copyText(ctx, ClassPrompt.forStudent(student, notes, defaultArea), "요청문을 복사했어요"); promptCopied = true
+                        }
                     }
+                    if (promptCopied) AiOpenRow()
                     Text("기록을 모은 ${Areas.name(defaultArea)} 초안 요청문을 복사해요. 이름은 ‘OO’으로 바꿔 넣으니 ChatGPT·Gemini에 붙여넣고, 나온 글은 꼭 다듬어 주세요. 생기부 내용의 책임은 선생님께 있어요.",
                         fontSize = 12.sp, color = T.soft)
                 }

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
-    <!-- 공유용 기록 파일·CSV -->
+    <!-- 공유용 기록 파일·CSV·PDF -->
     <cache-path name="share" path="share/" />
-    <!-- 새 버전 APK -->
-    <cache-path name="updates" path="updates/" />
+    <!-- 활동지 찍기: 카메라 앱이 사진을 잠깐 넣는 곳 (글자를 읽고 바로 지움) -->
+    <cache-path name="photos" path="photos/" />
 </paths>

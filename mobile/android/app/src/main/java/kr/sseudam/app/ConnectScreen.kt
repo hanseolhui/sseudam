@@ -30,19 +30,23 @@ fun ConnectScreen() {
     var manual by remember { mutableStateOf(false) }
     var code by remember { mutableStateOf("") }
     var syncMsg by remember { mutableStateOf("") }
-    var autoUpdate by remember { mutableStateOf(Updater.autoCheck(ctx)) }
-    var updateMsg by remember { mutableStateOf("") }
-    val update by Updater.available.collectAsStateWithLifecycle()
 
     fun test() = scope.launch {
         result = "확인 중…"
         result = try {
-            withContext(Dispatchers.IO) { UploadWorker.post(Store.googleUrl(), JSONObject().put("action", "ping_phone").put("token", Store.googleToken())) }
-            "✓ 연결되었어요"
+            if (Relay.paired()) {
+                val n = withContext(Dispatchers.IO) { Relay.syncDocs() }
+                UploadWorker.enqueue(ctx)
+                "✓ 연결되었어요" + if (n > 0) " · 컴퓨터 기록 ${n}개를 받았어요" else ""
+            } else {
+                withContext(Dispatchers.IO) { UploadWorker.post(Store.googleUrl(), JSONObject().put("action", "ping_phone").put("token", Store.googleToken())) }
+                "✓ 연결되었어요"
+            }
         } catch (e: Exception) { e.message ?: "연결 실패" }
     }
     fun handle(text: String) {
-        val p = Store.parsePairing(text)
+        Relay.parse(text)?.let { Store.pairRelay(it); UploadWorker.schedulePeriodic(ctx); test(); return }   // 새 QR 연동 (암호화)
+        val p = Store.parsePairing(text)                                                                     // 예전 구글 드라이브 연결
         if (p == null) result = "쓰담 연결 QR이 아니에요." else { Store.pair(p.first, p.second, p.third); test() }
     }
     val scan = rememberLauncherForActivityResult(ScanContract()) { r -> r.contents?.let(::handle) }
@@ -59,9 +63,10 @@ fun ConnectScreen() {
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
         ScreenTitle("연결")
         Column(Modifier.fillMaxWidth().card(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("🖥️ 컴퓨터와 연결 (구글 드라이브)", fontWeight = FontWeight.Bold, color = T.ink, fontSize = 16.sp)
+            Text("🖥️ 컴퓨터와 연결", fontWeight = FontWeight.Bold, color = T.ink, fontSize = 16.sp)
             if (paired) {
-                Text("연결됨 · ${Store.teacherName().ifEmpty { "내 구글 드라이브" }}", color = T.mint, fontWeight = FontWeight.SemiBold)
+                Text("연결됨 · ${Store.teacherName().ifEmpty { if (Relay.paired()) "내 컴퓨터" else "내 구글 드라이브" }}" + if (Relay.paired()) " 🔒" else "",
+                    color = T.mint, fontWeight = FontWeight.SemiBold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ChipButton("연결 확인") { test() }
                     ChipButton("연결 끊기", T.coral) { Store.unpair(); result = "" }
@@ -73,8 +78,10 @@ fun ConnectScreen() {
                 TextButton({ manual = true }) { Text("연결 코드 붙여넣기") }
             }
             if (result.isNotEmpty()) Text(result, fontSize = 13.sp, color = if (result.startsWith("✓")) T.mint else T.coral)
-            Text("컴퓨터의 쓰담 → 설정 → ‘휴대폰 쓰담 앱 연결’에 나오는 QR을 찍으세요. 녹음과 한 줄 메모는 선생님 본인의 구글 드라이브를 거쳐 컴퓨터로 가요. 이 연결로는 녹음·메모를 올리기만 할 수 있어요.",
+            Text("컴퓨터(맥·윈도우)의 쓰담 → 설정 → 📱 휴대폰 → QR을 찍으세요. 녹음·한 줄 메모·학생 기록이 저절로 오가요. 이 폰과 그 컴퓨터만 아는 열쇠로 암호화돼서, 중간 서버는 내용을 볼 수 없어요.",
                 fontSize = 12.sp, color = T.soft)
+            Text("🎙 다른 녹음 앱으로 녹음했다면: 그 앱에서 녹음 → 공유 → ‘쓰담’을 고르면 쓰담에 담기고 컴퓨터로 가요.",
+                fontSize = 12.sp, color = T.ink)
         }
 
         // 학생 기록(글) 주고받기 — 구글 연결은 '올리기 전용'이라 파일로 옮긴다
@@ -95,34 +102,21 @@ fun ConnectScreen() {
                 fontSize = 12.sp, color = T.soft)
         }
 
+        // 내 AI 연결 — API 키 없이: 쓰담은 요청문만 만들고(이름은 OO·학생N으로 가림), 선생님의 ChatGPT·Gemini 앱을 연다
         Column(Modifier.fillMaxWidth().card(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("✨ 자동으로 새 버전 확인", fontWeight = FontWeight.Bold, color = T.ink, fontSize = 16.sp)
-                    Text("지금 버전 ${Updater.currentVersion(ctx)} · 하루에 한 번 확인해요", fontSize = 12.sp, color = T.soft)
-                }
-                Switch(autoUpdate, { autoUpdate = it; Updater.setAutoCheck(ctx, it) },
-                    colors = SwitchDefaults.colors(checkedTrackColor = T.blue))
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ChipButton("지금 확인") {
-                    updateMsg = "확인 중…"
-                    scope.launch {
-                        val r = Updater.check(ctx, force = true)
-                        updateMsg = if (Updater.installedFromPlay(ctx)) "플레이 스토어에서 업데이트돼요"
-                        else if (r != null) "새 버전 ${r.version}이 있어요 · ‘담기’ 화면에서 업데이트를 눌러 주세요" else "✓ 최신 버전이에요"
-                    }
-                }
-                if (update != null) ChipButton("업데이트", T.blue, filled = true) { scope.launch { Updater.downloadAndInstall(ctx, update!!) } }
-            }
-            if (updateMsg.isNotEmpty()) Text(updateMsg, fontSize = 13.sp, color = T.soft)
+            Text("✨ 내 AI 연결 (ChatGPT · Gemini)", fontWeight = FontWeight.Bold, color = T.ink, fontSize = 16.sp)
+            Text("학생 화면의 ‘요청문 복사’나 반 화면의 ‘반 전체 초안’을 누르면 이름을 ‘OO·학생1’로 가린 요청문이 복사돼요. 아래 버튼으로 선생님이 쓰는 AI 앱을 열어 붙여넣으세요. 키 입력이 필요 없어요.",
+                fontSize = 12.sp, color = T.soft)
+            AiOpenRow()
         }
+
+        UpdateSettings()
 
         Column(Modifier.fillMaxWidth().card(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("🗂️ 녹음 보관", fontWeight = FontWeight.Bold, color = T.ink)
             Text("녹음은 선생님이 지우기 전까지 휴대폰에 그대로 보관돼요. 컴퓨터의 쓰담과 구글 드라이브에도 원본이 학기말 이후까지 보관돼요.", fontSize = 13.sp, color = T.soft)
         }
-        TextButton({ openUrl(ctx, "https://github.com/hanseolhui/sseudam") }) { Text("컴퓨터용 쓰담 설치·사용법") }
+        TextButton({ openUrl(ctx, "https://apps.seoriarts.com/sseudam") }) { Text("컴퓨터용 쓰담 설치·사용법") }
         TextButton({ openUrl(ctx, "https://hanseolhui.github.io/sseudam/privacy.html") }) { Text("개인정보 처리방침") }
         Spacer(Modifier.height(20.dp))
     }

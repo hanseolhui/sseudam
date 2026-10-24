@@ -61,8 +61,9 @@ object Store {
         if (::ctx.isInitialized) return
         ctx = c.applicationContext
         DataStore.init(ctx)
+        Relay.init(ctx)
         load()
-        _paired.value = googleUrl().isNotEmpty() && googleToken().isNotEmpty()
+        refreshPaired()
     }
 
     val folder: File get() = File(ctx.filesDir, "recordings").apply { mkdirs() }
@@ -70,6 +71,17 @@ object Store {
     private val prefs get() = ctx.getSharedPreferences("sseudam", Context.MODE_PRIVATE)
 
     fun file(r: Recording) = File(folder, r.fileName)
+    /** 컴퓨터와 이어졌는지: QR 연동(새 방식) 또는 구글 드라이브(예전 방식) */
+    fun refreshPaired() { _paired.value = Relay.paired() || (googleUrl().isNotEmpty() && googleToken().isNotEmpty()) }
+
+    fun pairRelay(p: Relay.Pair) {
+        Relay.pair(p)
+        prefs.edit().putString("teacherName", p.name).apply()
+        refreshPaired()
+        save(_items.value.map { if (it.google == Sync.OFF) it.copy(google = Sync.PENDING) else it })   // 이어지기 전 녹음도 보내기
+        UploadWorker.enqueue(ctx)
+    }
+
     fun googleUrl(): String = prefs.getString("googleUrl", "") ?: ""
     fun googleToken(): String = prefs.getString("googleToken", "") ?: ""
     fun teacherName(): String = prefs.getString("teacherName", "") ?: ""
@@ -111,6 +123,23 @@ object Store {
             google = if (_paired.value) Sync.PENDING else Sync.OFF)
         save(listOf(r) + _items.value)
         UploadWorker.enqueue(ctx)
+    }
+
+    /** 다른 녹음 앱(갤럭시 음성 녹음 등)에서 '공유 → 쓰담' 으로 받은 파일 */
+    fun addShared(input: java.io.InputStream, displayName: String, at: Long = System.currentTimeMillis()): Recording {
+        val ext = displayName.substringAfterLast('.', "m4a").lowercase().take(5).ifEmpty { "m4a" }
+        val base = displayName.substringBeforeLast('.').replace(Regex("[/\\\\:*?\"<>|\\n\\r\\t]"), " ").trim().take(40).ifEmpty { "공유받은 녹음" }
+        val fileName = uniqueFile(base, ext)
+        val f = File(folder, fileName)
+        input.use { inp -> f.outputStream().use { inp.copyTo(it) } }
+        val dur = runCatching {
+            android.media.MediaMetadataRetriever().use { mr -> mr.setDataSource(f.path); (mr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toDouble() ?: 0.0) / 1000 }
+        }.getOrDefault(0.0)
+        val r = Recording(fileName = fileName, createdAt = at, durationSec = dur, kind = "수업", memo = base,
+            google = if (_paired.value) Sync.PENDING else Sync.OFF)
+        save(listOf(r) + _items.value)
+        UploadWorker.enqueue(ctx)
+        return r
     }
 
     /** 한 줄 메모 저장 → 텍스트 파일로 컴퓨터에 전달 + 명단이 있으면 폰에서 바로 학생별로 나눔 */
@@ -173,6 +202,7 @@ object Store {
     }
 
     fun unpair() {
+        if (Relay.paired()) Thread { Relay.disconnectRemote(); Relay.unpair() }.start() else Relay.unpair()
         prefs.edit().remove("googleUrl").remove("googleToken").apply()
         _paired.value = false
         save(_items.value.map { if (it.google != Sync.DONE) it.copy(google = Sync.OFF) else it })

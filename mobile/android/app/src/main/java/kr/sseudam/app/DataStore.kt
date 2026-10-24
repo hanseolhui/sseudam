@@ -193,6 +193,8 @@ object DataStore {
         tmp.renameTo(file)
     }
 
+    fun makeDocJson(): JSONObject = makeDoc()
+
     fun makeDoc(): JSONObject {
         val db = _db.value
         return JSONObject()
@@ -257,7 +259,7 @@ object DataStore {
         }
         val dir = File(ctx.cacheDir, "share").apply { mkdirs() }
         val f = File(dir, "쓰담_학생기록_" + java.text.SimpleDateFormat("yyyyMMdd", Locale.US).format(java.util.Date()) + ".csv")
-        f.writeText("﻿" + rows.joinToString("\r\n"))
+        f.writeText("\uFEFF" + rows.joinToString("\r\n"))
         return f
     }
 }

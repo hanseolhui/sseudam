@@ -46,11 +46,12 @@ fun ClassDraftScreen(nav: Nav, classUid: String) {
                 BigButton(if (copied) "✓ 복사됐어요!" else "요청문 복사하기", Modifier.fillMaxWidth(), enabled = items.isNotEmpty()) {
                     copyText(ctx, ClassPrompt.build(items, area), null); copied = true
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    ChipButton("ChatGPT 열기") { openUrl(ctx, "https://chatgpt.com/") }
-                    ChipButton("Gemini 열기") { openUrl(ctx, "https://gemini.google.com/app") }
+                if (copied) {
+                    AiOpenRow()
+                    Text("새 대화에 붙여넣고 보내세요. 학생이 많으면 ‘계속’이라고 하면 이어서 써 줘요.", fontSize = 12.sp, color = T.soft)
+                } else {
+                    Text("복사하면 ChatGPT·Gemini 앱을 바로 여는 버튼이 나와요.", fontSize = 12.sp, color = T.soft)
                 }
-                Text("새 대화에 붙여넣고 보내세요. 학생이 많으면 ‘계속’이라고 하면 이어서 써 줘요.", fontSize = 12.sp, color = T.soft)
             }
             Column(Modifier.fillMaxWidth().card(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("② 답 붙여넣기", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = T.ink)

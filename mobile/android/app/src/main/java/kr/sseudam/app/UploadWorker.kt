@@ -3,6 +3,8 @@ package kr.sseudam.app
 import android.content.Context
 import android.os.Build
 import android.util.Base64
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
@@ -26,6 +28,13 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
             val req = OneTimeWorkRequestBuilder<UploadWorker>()
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build()
             WorkManager.getInstance(c).enqueueUniqueWork("upload", ExistingWorkPolicy.APPEND_OR_REPLACE, req)
+        }
+
+        /** 컴퓨터에서 바뀐 학생 기록을 받아 오도록 15분마다 (QR 연동일 때) */
+        fun schedulePeriodic(c: Context) {
+            val req = PeriodicWorkRequestBuilder<UploadWorker>(15, java.util.concurrent.TimeUnit.MINUTES)
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build()
+            WorkManager.getInstance(c).enqueueUniquePeriodicWork("relay-sync", ExistingPeriodicWorkPolicy.KEEP, req)
         }
 
         fun post(url: String, body: JSONObject): JSONObject {
@@ -53,6 +62,21 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         Store.init(applicationContext)
+        if (Relay.paired()) {
+            // QR 연동: 녹음·메모를 암호화해서 컴퓨터로, 학생 기록은 서로 맞추기
+            var failed = false
+            for (r in Store.items.value.filter { it.google == Sync.PENDING || it.google == Sync.FAILED }) {
+                try {
+                    Relay.uploadRecording(r, if (r.isAudio) Store.file(r).readBytes() else ByteArray(0))
+                    Store.update(r.copy(google = Sync.DONE, lastError = ""))
+                } catch (e: Exception) {
+                    failed = true
+                    Store.update(r.copy(google = Sync.FAILED, lastError = "연결: ${e.message}"))
+                }
+            }
+            runCatching { Relay.syncDocs() }.onFailure { failed = true }
+            return@withContext if (failed) Result.retry() else Result.success()
+        }
         val url = Store.googleUrl(); val token = Store.googleToken()
         if (url.isEmpty() || token.isEmpty()) return@withContext Result.success()
         var failed = false

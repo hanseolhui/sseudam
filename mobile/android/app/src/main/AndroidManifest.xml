@@ -6,19 +6,23 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- 직접 설치(APK)판 새 버전 설치용. TODO: 플레이 스토어 출시 때는 Play In-App Updates로 바꾸고 이 권한은 뺀다 (플레이 정책) -->
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- REQUEST_INSTALL_PACKAGES(자체 업데이트)는 직접 설치판에만: src/github/AndroidManifest.xml -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
-    <!-- 기기 받아쓰기(SpeechRecognizer) 서비스 찾기 (안드로이드 11+) -->
     <queries>
+        <!-- 기기 받아쓰기(SpeechRecognizer) 서비스 찾기 (안드로이드 11+) -->
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
+        <!-- 내 AI 연결: 선생님 폰에 ChatGPT·Gemini 앱이 있으면 바로 열기 -->
+        <package android:name="com.openai.chatgpt" />
+        <package android:name="com.google.android.apps.bard" />
     </queries>
 
     <application
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -39,6 +43,13 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="sseudam" android:host="pair" />
+            </intent-filter>
+            <!-- 다른 녹음 앱(갤럭시 음성 녹음 등)에서 '공유 → 쓰담' -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/*" />
             </intent-filter>
         </activity>
         <service
