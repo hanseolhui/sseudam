@@ -16,6 +16,9 @@ PROVIDERS = {
                "site": "https://platform.openai.com/api-keys"},
     "claude": {"label": "Claude", "key": "claude_api_key", "model": "claude_model", "default": "claude-opus-5-5",
                "site": "https://console.anthropic.com/settings/keys"},
+    # 쓰담 플러스(구독): 키 대신 로그인 토큰, 모델은 서버가 고름
+    "plus": {"label": "쓰담 플러스", "key": "plus_token", "model": "plus_model", "default": "Claude Sonnet",
+             "site": "https://apps.seoriarts.com/sseudam"},
 }
 CLAUDE_MODELS = [  # 목록을 못 받아 올 때 보여 줄 기본 목록
     {"name": "claude-opus-5-5", "display": "Claude Opus 5.5 (가장 똑똑함)"},
@@ -37,7 +40,10 @@ def provider(settings):
 
 
 def key_of(settings, prov=None):
-    return (settings.get(PROVIDERS[prov or provider(settings)]["key"]) or "").strip()
+    prov = prov or provider(settings)
+    if prov == "plus" and settings.get("plus_active") != "1":
+        return ""                 # 구독이 끝났으면 키가 없는 것처럼 → 다른 방법으로 넘어감
+    return (settings.get(PROVIDERS[prov]["key"]) or "").strip()
 
 
 def model_of(settings, prov=None):
@@ -127,9 +133,15 @@ def list_models(prov, key):
 
 # ───────────────────────── 글 만들기 ─────────────────────────
 
-def generate(settings, prompt, system=None, json_mode=False, temperature=0.4, on_model_change=None):
+def generate(settings, prompt, system=None, json_mode=False, temperature=0.4, on_model_change=None, light=False):
     """고른 외부 AI로 글 만들기. 받아쓰기(파일 첨부)는 여기 말고 gemini.generate 직접."""
     prov, key, model = provider(settings), key_of(settings), model_of(settings)
+    if prov == "plus":
+        import plus
+        try:
+            return plus.generate(prompt, system, light=light)
+        except plus.PlusError as e:
+            raise CloudError(str(e))
     if not key:
         raise CloudError("%s API 키가 없어요. 설정 → AI → 고급에서 넣어 주세요." % label(settings))
     if prov == "gemini":

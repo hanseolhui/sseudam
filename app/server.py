@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import db  # noqa: E402
 import cloudai  # noqa: E402
+import plus  # noqa: E402
 import gemini  # noqa: E402
 import localai  # noqa: E402
 import pipeline  # noqa: E402
@@ -1081,6 +1082,16 @@ def ai_choose(h, q, b):
                 raise ApiError("쓰담을 최신 버전으로 업데이트하면 쓸 수 있어요.")
             localai.llm_download(mid)   # 이 컴퓨터에 맞는 모델을 바로 받기 시작
             started = mid
+    elif c == "plus":            # 쓰담 플러스(구독): 키 없이 서버 AI로 분리·초안, 받아쓰기는 내 컴퓨터 Whisper
+        if not plus.active(s):
+            raise ApiError("먼저 쓰담 플러스에 로그인하고 구독(또는 체험)을 시작해 주세요.")
+        vals.update(seg_engine="gemini", api_provider="plus", stt_engine="whisper")
+        import whisper
+        if whisper.supported() and not whisper.available():
+            try:
+                whisper.download("turbo-q5")     # 녹음만 하면 다 되게: 받아쓰기 모델도 같이
+            except Exception:  # noqa
+                pass
     elif c == "apple":
         vals["seg_engine"] = "apple"
     elif c == "gemini":          # 외부 AI API (Gemini · ChatGPT · Claude)
@@ -1100,6 +1111,54 @@ def ai_choose(h, q, b):
     out = _ai_state()
     out["started"] = started
     return out
+
+
+def _plus_loop():
+    """구독 상태를 가끔 확인 (끝났으면 이름 기준 · 프롬프트 복사로 자연스럽게 넘어감)."""
+    while True:
+        try:
+            plus.refresh_if_stale()
+        except Exception:  # noqa
+            pass
+        time.sleep(3600)
+
+
+@route("GET", "/api/plus")
+def plus_status(h, q, b):
+    return plus.status(refresh=q.get("refresh", "1") == "1")
+
+
+@route("POST", "/api/plus/start")
+def plus_start(h, q, b):
+    try:
+        return plus.start((b.get("email") or "").strip())
+    except plus.PlusError as e:
+        raise ApiError(str(e))
+
+
+@route("POST", "/api/plus/verify")
+def plus_verify(h, q, b):
+    try:
+        d = plus.verify((b.get("email") or "").strip().lower(), b.get("code") or "")
+    except plus.PlusError as e:
+        raise ApiError(str(e))
+    if (d.get("sub") or {}).get("active"):      # 구독 중이면 바로 쓰담 플러스로
+        ai_choose(h, q, {"choice": "plus"})
+    return dict(d, token=None, loggedIn=True)
+
+
+@route("POST", "/api/plus/logout")
+def plus_logout(h, q, b):
+    plus.logout()
+    s = db.get_settings()
+    if s.get("ai_choice") == "plus":     # 받아 둔 쓰담 AI 모델이 있으면 그걸로, 없으면 AI 없이
+        db.set_settings({"api_provider": "gemini"})
+        has_model = any(m["installed"] for m in localai.llm_status()["models"])
+        try:
+            ai_choose(h, q, {"choice": "builtin" if has_model else "manual"})
+        except ApiError:
+            ai_choose(h, q, {"choice": "manual"})
+    return {"ok": True}
 
 
 @route("GET", "/api/localai/models")
@@ -1682,6 +1741,7 @@ def main():
     sync_text.start()
     telemetry.start()
     relay.start()
+    threading.Thread(target=_plus_loop, daemon=True, name="plus").start()
     if update.start_auto():
         print("자동 업데이트 확인 켜짐")
     url = "http://%s:%d" % (HOST, PORT)

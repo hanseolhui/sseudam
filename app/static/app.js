@@ -1474,7 +1474,7 @@ async function viewSettings(section) {
         <div id="ai-detail" class="ai-detail"></div>
         <details id="ai-ext" style="margin-top:12px"><summary class="small">고급 — 외부 AI 연결 (Gemini · ChatGPT · Claude API 키 · Ollama · LM Studio)</summary>
           <div id="ai-gemini" class="info-box" style="margin-top:8px"><b>외부 AI API 키</b> <span class="small muted">— 이 컴퓨터 AI 대신 Gemini · ChatGPT · Claude로 나누고 초안 쓰기</span>
-          <div class="seg-pick" role="radiogroup" aria-label="외부 AI 고르기" style="margin-top:8px">${Object.entries(s.api_keys).map(([p, k]) =>
+          <div class="seg-pick" role="radiogroup" aria-label="외부 AI 고르기" style="margin-top:8px">${Object.entries(s.api_keys).filter(([p]) => p !== 'plus').map(([p, k]) =>
             `<label class="check shrink"><input type="radio" name="api_prov" value="${p}" ${(s.api_provider || 'gemini') === p ? 'checked' : ''}> ${esc(k.label)}${k.has ? ' <span class="ok-text small">✓ 키 있음</span>' : ''}</label>`).join('')}</div>
           <div id="api-fields"></div>
         </div>
@@ -1625,7 +1625,7 @@ async function viewSettings(section) {
   $$('input[name=api_prov]').forEach(r => r.addEventListener('change', e => { e.stopPropagation(); renderApiFields(); }));
   // ── 🧠 AI 카드: 하나 고르면 바로 바뀜 ──
   const gb = n => (n / 1e9).toFixed(1) + 'GB';
-  const ENG_NAME = { builtin: '쓰담 AI 모델로', apple: '기기 안 AI로', gemini: '외부 AI API로', external: '내 맥 AI 앱으로', manual: 'AI 없이 쓰기로' };
+  const ENG_NAME = { plus: '쓰담 플러스로', builtin: '쓰담 AI 모델로', apple: '기기 안 AI로', gemini: '외부 AI API로', external: '내 맥 AI 앱으로', manual: 'AI 없이 쓰기로' };
   let aiTimer = null, aiSt = null;
   const tileHtml = (id, icon, title, sub, status, on, disabled) => `
     <button class="ai-tile${on ? ' on' : ''}${disabled ? ' off' : ''}" data-choice="${id}" ${disabled ? 'aria-disabled="true"' : ''}>
@@ -1633,9 +1633,14 @@ async function viewSettings(section) {
       <span class="ai-tile-icon">${icon}</span><b>${title}</b><span class="small muted">${sub}</span>
       <span class="ai-tile-status small">${status}</span></button>`;
   const modelName = id => ((aiSt.builtin.models.find(m => m.id === id) || {}).model || id);
+  let plusSt = { loggedIn: false }, plusFresh = false, showPlus = false, plusEmail = '';
   const aiLoad = async () => {
     try { aiSt = await api('/api/ai/state', undefined, { silent: true }); } catch (e) { $('#ai-detail').textContent = e.message; return; }
+    plusSt = await api('/api/plus?refresh=' + (plusFresh ? '0' : '1'), undefined, { silent: true }).catch(() => ({ loggedIn: false }));
+    plusFresh = true;
     const st = aiSt, b = st.builtin, mc = b.machine || {}, choice = st.choice;
+    const plusOn = !!(plusSt.loggedIn && plusSt.sub && plusSt.sub.active);
+    const ymd = d => d ? new Date(d).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' }) : '';
     const dl = b.models.find(m => (m.download || {}).status === 'downloading');
     const inst = b.models.filter(m => m.installed);
     const usingId = st.local_ai_url === 'builtin' ? st.local_ai_model : '';
@@ -1647,18 +1652,36 @@ async function viewSettings(section) {
     else bStatus = mc.model ? `누르면 추천 모델 받기 (${gb((b.models.find(m => m.id === mc.model) || {}).size || 0)})` : '';
     const isMac = mc.os === 'mac';
     $('#ai-tiles').innerHTML =
+      tileHtml('plus', '💜', '쓰담 플러스', '키·설치 없이 · 녹음만 하면 끝까지', plusOn ? `✓ ${esc(plusSt.sub.planName)} · ${ymd(plusSt.sub.endsAt)}까지` : (plusSt.loggedIn ? '구독 기간이 아니에요' : '로그인하면 시작'), choice === 'plus', false) +
       tileHtml('builtin', '✨', '쓰담 AI 모델', '이 컴퓨터 안에서 · 무료 · 추천', bStatus, choice === 'builtin', !b.supported) +
       (isMac ? tileHtml('apple', '🍎', '기기 안 AI', '설치 없음 · 학생 나누기만', st.apple.state === 'ready' ? '✓ 바로 쓸 수 있어요' : '<span class="muted">이 맥에선 안 돼요</span>', choice === 'apple', st.apple.state !== 'ready') : '') +
       tileHtml('manual', '✋', 'AI 없이', '이름 기준 나누기 · 초안은 프롬프트 복사', '', choice === 'manual', false) +
       (choice === 'gemini' ? tileHtml('gemini', '🔑', esc(st.provider_label) + ' (외부 API)', '고급에서 연결함', st.has_key ? '✓ 키 연결됨' + (st.api_model ? ' · ' + esc(st.api_model) : '') : '키를 넣어야 해요', true, false) : '') +
       (choice === 'external' ? tileHtml('external', '🖥️', '내 맥 AI 앱', 'Ollama · LM Studio', '✓ ' + esc(st.local_ai_model), true, false) : '');
-    const draftTxt = { gemini: st.provider_label, local: choice === 'external' ? '내 맥 AI 앱' : '쓰담 AI 모델', manual: '프롬프트 복사(ChatGPT·Gemini 앱)' }[st.draft] || st.draft;
-    const segTxt = { gemini: st.provider_label, local: choice === 'external' ? '내 맥 AI 앱' : '쓰담 AI 모델', apple: '기기 안 AI', rules: '이름 기준' }[st.active_seg] || st.active_seg;
+    const draftTxt = { gemini: choice === 'plus' ? '쓰담 플러스' : st.provider_label, local: choice === 'external' ? '내 맥 AI 앱' : '쓰담 AI 모델', manual: '프롬프트 복사(ChatGPT·Gemini 앱)' }[st.draft] || st.draft;
+    const segTxt = { gemini: choice === 'plus' ? '쓰담 플러스' : st.provider_label, local: choice === 'external' ? '내 맥 AI 앱' : '쓰담 AI 모델', apple: '기기 안 AI', rules: '이름 기준' }[st.active_seg] || st.active_seg;
     $('#ai-now').innerHTML = `학생 나누기: <b>${segTxt}</b> · 세특 초안: <b>${draftTxt}</b>`;
     // 고른 것에 맞는 설명·설정
     if (choice === 'gemini' || choice === 'external') $('#ai-ext').open = true;
     let d = '';
-    if (choice === 'builtin') {
+    if (choice === 'plus' || showPlus) {
+      if (!plusSt.loggedIn) {
+        d = `<div class="spec">💜 <b>쓰담 플러스</b> — 녹음만 하면 받아쓰기 → 학생별 분리 → 세특 초안까지 앱이 한 번에 해요. API 키도 모델 설치도 필요 없어요.
+          <div class="small muted" style="margin-top:4px">학생 이름은 이 컴퓨터에서 '학생1'처럼 가린 뒤 보내요. 서리아트 서버는 내용을 저장하지 않아요.</div>
+          <div class="row" style="margin-top:10px"><input id="plus-email" type="email" placeholder="이메일 주소" value="${esc(plusEmail)}" style="max-width:260px"><button class="sm primary shrink" id="plus-send">인증번호 받기</button></div>
+          <div class="row hidden" id="plus-code-row" style="margin-top:8px"><input id="plus-code" inputmode="numeric" placeholder="메일로 온 인증번호" style="max-width:180px"><button class="sm primary shrink" id="plus-login">로그인</button></div>
+          <div id="plus-r" class="small" style="margin-top:6px">${plusSt.error ? esc(plusSt.error) : ''}</div></div>`;
+      } else if (plusOn) {
+        const u = plusSt.sub;
+        d = `<div class="spec">💜 <b>${esc(plusSt.email)}</b> · ${esc(u.planName)} · <b>${ymd(u.endsAt)}</b>까지 (${u.daysLeft}일 남음)
+          <div class="small muted" style="margin-top:4px">이번 기간 AI 사용 ${u.used}회 · 등록된 컴퓨터 ${plusSt.devices.length}/${plusSt.deviceLimit}대 (${plusSt.devices.map(x => esc(x.device_name)).join(', ')})${plusSt.offline ? ' · 지금은 서버 확인이 안 돼서 마지막 상태를 보여요' : ''}</div>
+          <div class="row" style="margin-top:8px">${choice !== 'plus' ? '<button class="sm primary shrink" id="plus-use">쓰담 플러스로 쓰기</button>' : ''}<button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`;
+      } else {
+        d = `<div class="spec">💜 <b>${esc(plusSt.email)}</b>로 로그인했어요. 지금은 구독 기간이 아니에요.
+          <div class="small muted" style="margin-top:4px">정식 결제(월 · 반년 · 1년, 카드 등록 시 2주 체험)는 곧 열려요. 그동안은 쓰담 AI 모델이나 프롬프트 복사로 쓰실 수 있어요.</div>
+          <div class="row" style="margin-top:8px"><button class="sm shrink" id="plus-refresh">구독 다시 확인</button><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`;
+      }
+    } else if (choice === 'builtin') {
       const spec = `<div class="spec">💻 <b>${isMac ? '이 맥' : '이 컴퓨터'}</b>: ${esc(mc.chip || '')}${mc.ram ? ' · 메모리 ' + mc.ram + 'GB' : ''}<div class="small">${mc.model ? '→ <b>' + esc((b.models.find(m => m.id === mc.model) || {}).name) + '</b> 모델 추천 · ' : ''}${esc(mc.why || '')}</div></div>`;
       d = spec + b.models.map(m => {
         const dd = m.download || {}, busy = dd.status === 'downloading', pct = busy ? Math.floor(100 * dd.done / Math.max(1, dd.total)) : 0;
@@ -1685,6 +1708,26 @@ async function viewSettings(section) {
       d = `<div class="spec">🔑 아래에 키를 넣고 <b>연결 확인</b>을 누르면 바로 써요. 키가 없는 동안엔 이름 기준으로 나눠요.</div>`;
     }
     $('#ai-detail').innerHTML = d;
+    if ($('#plus-send')) $('#plus-send').onclick = async () => {
+      plusEmail = $('#plus-email').value.trim();
+      $('#plus-r').textContent = '보내는 중…';
+      try { await api('/api/plus/start', { email: plusEmail }, { silent: true }); $('#plus-r').textContent = '메일을 보냈어요. 15분 안에 인증번호를 넣어 주세요.'; $('#plus-code-row').classList.remove('hidden'); $('#plus-code').focus(); }
+      catch (e) { $('#plus-r').innerHTML = `<span class="bad-text">${esc(e.message)}</span>`; }
+    };
+    if ($('#plus-login')) $('#plus-login').onclick = async () => {
+      $('#plus-r').textContent = '확인 중…';
+      try {
+        const r = await api('/api/plus/verify', { email: plusEmail, code: $('#plus-code').value }, { silent: true });
+        toast(r.sub && r.sub.active ? '쓰담 플러스로 바꿨어요 ✓ 이제 녹음만 하면 돼요' : '로그인했어요 ✓');
+        flashSaved($('#ai-tiles')); aiLoad(); updateModeBadge();
+      } catch (e) { $('#plus-r').innerHTML = `<span class="bad-text">${esc(e.message)}</span>`; }
+    };
+    if ($('#plus-use')) $('#plus-use').onclick = () => aiChoose('plus', $('.ai-tile[data-choice=plus]'));
+    if ($('#plus-refresh')) $('#plus-refresh').onclick = () => { plusFresh = false; aiLoad(); };
+    if ($('#plus-out')) $('#plus-out').onclick = async () => {
+      if (!confirmBox('이 컴퓨터에서 쓰담 플러스 로그아웃할까요?')) return;
+      await api('/api/plus/logout', {}); showPlus = false; toast('로그아웃했어요'); aiLoad(); updateModeBadge();
+    };
     if ($('#la-test-apple')) $('#la-test-apple').onclick = () => laTest('apple', $('#la-apple-r'));
     $$('.ai-tile').forEach(t => t.onclick = () => aiChoose(t.dataset.choice, t));
     $$('.llm-get').forEach(x => x.onclick = async () => { await api('/api/localai/models/download', { id: x.dataset.id }); toast('받기 시작했어요. 다 받으면 자동으로 써요 ✨'); aiLoad(); });
@@ -1698,6 +1741,8 @@ async function viewSettings(section) {
     else if (b.models.some(m => (m.download || {}).status === 'done')) updateModeBadge();
   };
   const aiChoose = async (choice, tile, provider) => {
+    if (choice === 'plus' && !(plusSt.loggedIn && plusSt.sub && plusSt.sub.active)) { showPlus = true; aiLoad(); setTimeout(() => $('#plus-email') && $('#plus-email').focus(), 200); return; }
+    showPlus = false;
     if (tile && tile.classList.contains('off')) { toast(tile.querySelector('.ai-tile-status').textContent || '이 컴퓨터에선 쓸 수 없어요', true); return; }
     $$('.ai-tile').forEach(t => t.classList.toggle('on', t === tile));
     if (tile) { tile.classList.remove('pop'); void tile.offsetWidth; tile.classList.add('pop'); }
@@ -2183,6 +2228,7 @@ async function updateModeBadge() {
     : s.active_seg === 'apple' ? dot('green') + '기기 안 AI'
     : s.active_seg === 'local' ? dot('green') + (s.local_ai_url === 'builtin' ? '쓰담 AI 모델' : '내 맥 AI · ' + esc(s.local_ai_model || ''))
     : s.ai_choice === 'builtin' ? dot('amber') + '쓰담 AI 모델 준비 중'
+    : s.ai_choice === 'plus' ? dot('amber') + '쓰담 플러스 구독 확인 필요 — <a href="#/settings/ai">설정</a>'
     : s.ai_choice === 'gemini' ? dot('amber') + esc((s.api_keys[s.api_provider || 'gemini'] || {}).label || 'API') + ' 키 필요 — <a href="#/settings/ai">설정</a>'
     : s.ai_choice === 'manual' || s.mode === 'manual' ? dot('muted') + 'AI 없이 (프롬프트 복사)' : dot('amber') + 'AI 없음 — <a href="#/settings">설정</a>';
 }

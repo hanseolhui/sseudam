@@ -26,6 +26,11 @@ DEFAULT_SETTINGS = {
     "openai_model": "",                 # 비우면 키로 받은 목록에서 가장 좋은 모델
     "claude_api_key": "",
     "claude_model": "claude-opus-5-5",
+    "plus_token": "",                   # 쓰담 플러스(구독) 로그인 — 이 컴퓨터 토큰
+    "plus_email": "",
+    "plus_active": "0",
+    "plus_status": "",
+    "plus_checked": "0",
     "byte_limit": "1500",
     "school_level": "고등학교",
     "teacher_subject": "",

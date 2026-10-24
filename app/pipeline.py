@@ -847,7 +847,8 @@ def _run_api(op, params, job_id=None):
 
     try:
         text = cloudai.generate(settings, p["prompt"], system=p.get("system"), json_mode=p.get("json", False),
-                                temperature=0.2 if op == "segment" else 0.6, on_model_change=on_model)
+                                temperature=0.2 if op == "segment" else 0.6, on_model_change=on_model,
+                                light=op == "shorten")
         if op == "draft":
             text = _expand_if_short(text, params, settings, lambda pr: cloudai.generate(
                 settings, pr, system=prompts.DRAFT_SYSTEM, temperature=0.6, on_model_change=on_model))
