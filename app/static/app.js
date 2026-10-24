@@ -261,6 +261,7 @@ function showManual(op, params, res, onDone) {
 // ───────────────────────── 작업 진행 표시 ─────────────────────────
 
 let AI_GEN = 0, AI_TIMER = null;   // 설정 → AI 화면 갱신 (화면을 다시 열 때마다 새 번호)
+let showPlus = false, plusEmail = '';   // 화면을 다시 그려도(알림·작업 끝남) 쓰담 플러스 칸과 입력한 메일이 남게
 let pollTimer;
 async function pollJobs(force) {
   clearTimeout(pollTimer);
@@ -313,10 +314,12 @@ document.addEventListener('click', e => {
 document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#jobs-panel').classList.add('hidden'); });
 
 let refreshPending = false;
+// 나중에 그려진 칸(설정의 메일 칸 등)도 입력하면 '고치는 중'으로 표시
+document.addEventListener('input', e => { if (e.target.matches && e.target.matches('input, textarea') && view.contains(e.target)) e.target.dataset.dirty = '1'; });
 function refreshCurrent() {
   // 사용자가 입력 중이면 화면을 새로 그리지 않음
   const ae = document.activeElement;
-  if (ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT') && view.contains(ae) && ae.dataset.dirty) { refreshPending = true; return; }
+  if (ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT') && view.contains(ae) && (ae.dataset.dirty || ae.type === 'email')) { refreshPending = true; return; }
   if (!$('#modal').classList.contains('hidden')) { refreshPending = true; return; }
   router(true);
 }
@@ -695,7 +698,15 @@ async function viewRecording(id) {
   const r = d.recording;
   const byStudent = {};
   d.notes.forEach(n => { (byStudent[n.student_id] = byStudent[n.student_id] || { name: n.name, number: n.number, items: [] }).items.push(n); });
-  const studentOpts = sel => '<option value="">학생 선택…</option>' + d.students.map(s => `<option value="${s.id}" ${s.id === sel ? 'selected' : ''}>${s.number}번 ${esc(s.name)}</option>`).join('');
+  // 학급을 안 정한 녹음은 이번 학기 모든 반 학생이 반별로 묶여 옴
+  const studentOpts = sel => {
+    const opt = s => `<option value="${s.id}" ${s.id === sel ? 'selected' : ''}>${s.number != null ? s.number + '번 ' : ''}${esc(s.name)}</option>`;
+    if (!d.students.length) return '<option value="">학급·명단이 아직 없어요</option>';
+    if (!d.students[0].class_label) return '<option value="">학생 선택…</option>' + d.students.map(opt).join('');
+    const groups = {};
+    d.students.forEach(s => (groups[s.class_label] = groups[s.class_label] || []).push(s));
+    return '<option value="">학생 선택…</option>' + Object.entries(groups).map(([g, ss]) => `<optgroup label="${esc(g)}">${ss.map(opt).join('')}</optgroup>`).join('');
+  };
   const busy = ['대기중', '전사중', '분리중'].includes(r.status);
   view.innerHTML = `
     <div class="page-head"><div><a href="#/recordings" class="back-btn" aria-label="녹음함으로 돌아가기"><span aria-hidden="true">←</span> 녹음함</a><h1>${esc(r.title || '녹음')}</h1>
@@ -1296,7 +1307,7 @@ async function viewStudent(id, areaParam) {
     if (!p || !$('#d-deep')) return;
     const left = Math.max(0, p.deepCap - p.deepUsed);
     $('#d-deep').classList.remove('hidden');
-    $('#d-deep-left').textContent = `정성 초안 ${left}회 남음`;
+    $('#d-deep-left').textContent = p.deepCap >= 1e8 ? '정성 초안 무제한' : `정성 초안 ${left}회 남음`;
     if (!left) $('#d-deep').disabled = true;
     $('#d-deep').onclick = () => runAI('draft', { student_id: s.id, extra: $('#d-extra').value, area: area.id, deep: true }, `정성 초안 ${area.name} ${s.name}`, reload);
   });
@@ -1642,7 +1653,7 @@ async function viewSettings(section) {
   let saveT = null;
   $('#settings-grid').addEventListener('change', e => {
     const el = e.target;
-    if (!el.matches('input, select, textarea') || el.closest('#ai-ext') || el.closest('#fb-card') || el.name === 'stt_engine' || el.id === 'restore-file' || el.id === 'key') return;
+    if (!el.matches('input, select, textarea') || el.closest('#ai-ext') || el.closest('#ai-detail') || el.closest('#fb-card') || el.name === 'stt_engine' || el.id === 'restore-file' || el.id === 'key') return;
     clearTimeout(saveT);
     saveT = setTimeout(async () => { try { await save(); flashSaved(el); updateModeBadge(); } catch (err) { /* toast 표시됨 */ } }, 250);
   });
@@ -1692,7 +1703,7 @@ async function viewSettings(section) {
       <span class="ai-tile-icon">${icon}</span><b>${title}</b><span class="small muted">${sub}</span>
       <span class="ai-tile-status small">${status}</span></button>`;
   const modelName = id => ((aiSt.builtin.models.find(m => m.id === id) || {}).model || id);
-  let plusSt = { loggedIn: false }, plusFresh = false, showPlus = false, plusEmail = '';
+  let plusSt = { loggedIn: false }, plusFresh = false;
   const dlPct = dd => Math.floor(100 * dd.done / Math.max(1, dd.total));
   const dlAct = (m) => {
     const dd = m.download || {}, pct = dlPct(dd);
@@ -1754,7 +1765,7 @@ async function viewSettings(section) {
       } else if (plusOn) {
         const u = plusSt.sub;
         d = `<div class="spec">💜 <b>${esc(plusSt.email)}</b> · ${esc(u.planName)} · <b>${ymd(u.endsAt)}</b>까지 (${u.daysLeft}일 남음)
-          <div class="small muted" style="margin-top:4px">초안 · 분리 무제한 · 정성 초안 ${Math.max(0, (u.deepCap || 0) - (u.deepUsed || 0))}회 남음 · 등록된 컴퓨터 ${plusSt.devices.length}/${plusSt.deviceLimit}대 (${plusSt.devices.map(x => esc(x.device_name)).join(', ')})${plusSt.offline ? ' · 지금은 서버 확인이 안 돼서 마지막 상태를 보여요' : ''}</div>
+          <div class="small muted" style="margin-top:4px">초안 · 분리 무제한 · 정성 초안 ${(u.deepCap || 0) >= 1e8 ? '무제한' : Math.max(0, (u.deepCap || 0) - (u.deepUsed || 0)) + '회 남음'} · 등록된 컴퓨터 ${plusSt.devices.length}/${plusSt.deviceLimit}대 (${plusSt.devices.map(x => esc(x.device_name)).join(', ')})${plusSt.offline ? ' · 지금은 서버 확인이 안 돼서 마지막 상태를 보여요' : ''}</div>
           <div class="row" style="margin-top:8px">${choice !== 'plus' ? '<button class="sm primary shrink" id="plus-use">쓰담 플러스로 쓰기</button>' : ''}<a class="btn sm shrink" href="https://apps.seoriarts.com/sseudam/plus" target="_blank">구독·결제 관리 ↗</a><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`;
       } else {
         d = plusSt.pay
@@ -1797,6 +1808,11 @@ async function viewSettings(section) {
       d = `<div class="spec">🔑 아래에 키를 넣고 <b>연결 확인</b>을 누르면 바로 써요. 키가 없는 동안엔 이름 기준으로 나눠요.</div>`;
     }
     $('#ai-detail').innerHTML = d;
+    // 엔터 = 옆 버튼 누르기 (설정 저장이 아니라 인증번호 받기 · 로그인 · 베타 신청)
+    [['#plus-email', '#plus-send'], ['#plus-code', '#plus-login'], ['#plus-beta-msg', '#plus-beta']].forEach(([i, btn]) => {
+      if ($(i)) $(i).onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); $(btn) && $(btn).click(); } };
+    });
+    if ($('#plus-email')) $('#plus-email').oninput = e => { plusEmail = e.target.value.trim(); };
     if ($('#plus-send')) $('#plus-send').onclick = async () => {
       plusEmail = $('#plus-email').value.trim();
       $('#plus-r').textContent = '보내는 중…';

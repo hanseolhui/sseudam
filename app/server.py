@@ -625,8 +625,13 @@ def recording_detail(h, q, b, rid):
         notes = db.rows(conn, """SELECT n.*, s.name, s.number FROM notes n JOIN students s ON s.id=n.student_id
                                  WHERE n.recording_id=? ORDER BY s.number, n.id""", (int(rid),))
         unmatched = db.rows(conn, "SELECT * FROM unmatched WHERE recording_id=? ORDER BY id", (int(rid),))
-        students = db.rows(conn, "SELECT id, number, name FROM students WHERE class_id=? ORDER BY number, name",
-                           (r["class_id"],)) if r["class_id"] else []
+        if r["class_id"]:
+            students = db.rows(conn, "SELECT id, number, name FROM students WHERE class_id=? ORDER BY number, name",
+                               (r["class_id"],))
+        else:   # 학급을 아직 안 정한 녹음: 이번 학기 모든 반 학생 중에서 고를 수 있게 (반 이름과 함께)
+            import pipeline
+            students = [{"id": x["id"], "number": x["number"], "name": x["name"], "class_label": x["class_label"]}
+                        for x in pipeline._term_students(conn)]
         c = db.row(conn, "SELECT kind FROM classes WHERE id=?", (r["class_id"],)) if r["class_id"] else None
         kind = (c or {}).get("kind") or "교과"
         for n in notes:
@@ -773,6 +778,9 @@ def unmatched_assign(h, q, b):
                  (int(b["student_id"]), u["recording_id"], (u["recorded_at"] or "")[:10], u["kind"],
                   u["category"], u["content"], u["evidence"]))
     conn.execute("DELETE FROM unmatched WHERE id=?", (u["id"],))
+    # 학급을 안 정한 녹음이면 고른 학생의 반으로 정함 (남은 미배정 목록도 그 반 명단으로 좁혀짐)
+    conn.execute("UPDATE recordings SET class_id=(SELECT class_id FROM students WHERE id=?) WHERE id=? AND class_id IS NULL",
+                 (int(b["student_id"]), u["recording_id"]))
     left = conn.execute("SELECT COUNT(*) FROM unmatched WHERE recording_id=?", (u["recording_id"],)).fetchone()[0]
     if not left:
         conn.execute("UPDATE recordings SET status='완료' WHERE id=? AND status='확인필요'", (u["recording_id"],))
