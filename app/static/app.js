@@ -1537,6 +1537,7 @@ async function viewSettings(section) {
     try { st = await api('/api/localai/status', undefined, { silent: true }); } catch (e) { $('#la-apple').textContent = e.message; return; }
     $('#la-apple').innerHTML = (st.apple.state === 'ready' ? '<span style="color:var(--green)">✓ </span>' : '') + esc(st.apple.text);
     $('#la-test-apple').disabled = st.apple.state !== 'ready';
+    if (st.apple.state === 'notMac') { const box = $('#la-apple').closest('.info-box'); if (box) box.style.display = 'none'; const r = document.querySelector('input[name=seg_engine][value=apple]'); if (r) r.closest('label').style.display = 'none'; }
     $('#la-active').innerHTML = `지금 쓰는 것: <b>${engName[st.seg_engine] || st.seg_engine}</b>`;
     const run = st.detected.filter(d => d.running);
     $('#la-detect').innerHTML = run.length
@@ -1567,15 +1568,19 @@ async function viewSettings(section) {
     let st;
     try { st = await api('/api/localai/models', undefined, { silent: true }); } catch (e) { $('#llm-box').textContent = e.message; return; }
     const cur = state.settings.local_ai_url === 'builtin' ? state.settings.local_ai_model : '';
-    if (!st.engine) { $('#llm-box').innerHTML = '<span class="muted">쓰담을 최신 버전으로 업데이트하면 여기서 바로 받을 수 있어요.</span>'; return; }
-    $('#llm-box').innerHTML = `<div class="muted" style="margin-bottom:6px">이 맥 메모리 ${st.ram}GB</div>` + st.models.map(m => {
+    const mc = st.machine || {};
+    const spec = `<div class="info-box" style="margin:0 0 8px;padding:8px 10px"><b>${mc.os === 'win' ? '💻 이 컴퓨터' : '💻 이 맥'}</b>: ${esc(mc.chip || '')}${mc.ram ? ' · 메모리 ' + mc.ram + 'GB' : ''}
+      <div class="small" style="margin-top:4px">${mc.model ? '→ <b>' + esc((st.models.find(m => m.id === mc.model) || {}).name || '') + '</b> 모델을 추천해요. ' : ''}${esc(mc.why || '')}</div></div>`;
+    if (st.supported === false) { $('#llm-box').innerHTML = spec; return; }
+    if (!st.engine) { $('#llm-box').innerHTML = spec + '<span class="muted">쓰담을 최신 버전으로 업데이트하면 여기서 바로 받을 수 있어요.</span>'; return; }
+    $('#llm-box').innerHTML = spec + st.models.map(m => {
       const d = m.download || {}, busy = d.status === 'downloading';
       const pct = busy ? Math.floor(100 * d.done / Math.max(1, d.total)) : 0;
-      const tag = m.id === st.recommended ? '<span class="pill" style="background:var(--green);color:#fff;margin-left:4px">이 맥에 추천</span>' : '';
+      const tag = m.id === st.recommended ? `<span class="pill" style="background:var(--green);color:#fff;margin-left:4px">${mc.os === 'win' ? '이 컴퓨터' : '이 맥'}에 추천</span>` : '';
       let act;
       if (m.installed) act = m.id === cur ? '<span style="color:var(--green)">✓ 쓰는 중</span> <button class="sm ghost llm-del" data-id="' + m.id + '">지우기</button>'
         : '<button class="sm primary llm-use" data-id="' + m.id + '">이걸로 쓰기</button> <button class="sm ghost llm-del" data-id="' + m.id + '">지우기</button>';
-      else if (busy) act = `<progress value="${pct}" max="100" style="width:110px;vertical-align:middle"></progress> ${pct}% <button class="sm ghost llm-stop" data-id="${m.id}">멈춤</button>`;
+      else if (busy) act = d.stage ? `<span class="muted">${esc(d.stage)}…</span>` : `<progress value="${pct}" max="100" style="width:110px;vertical-align:middle"></progress> ${pct}% <button class="sm ghost llm-stop" data-id="${m.id}">멈춤</button>`;
       else act = `<button class="sm ${m.id === st.recommended ? 'primary' : ''} llm-get" data-id="${m.id}">${m.partial ? '이어 받기' : '받기'} (${gb(m.size)})</button>`;
       const err = d.status === 'error' && d.error ? `<div class="small" style="color:var(--red)">${esc(d.error)}</div>` : '';
       const warn = !m.fits ? '<div class="small" style="color:var(--amber)">이 맥 메모리로는 느리거나 안 될 수 있어요</div>' : '';

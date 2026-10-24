@@ -171,3 +171,5 @@ Apps Script 요청은 앱이 자동 생성한 토큰으로 보호(스크립트 �
 - **쓰담 AI 모델 (내장)**: 앱 안 `Resources/bin/llama-server`(llama.cpp 정적 빌드, Metal 내장, OpenSSL 없음 — `macos/bin/LLAMA_CPP_VERSION`). 설정에서 모델 받기(이어받기 지원) → `~/Library/Application Support/쓰담/models/llm/`. `local_ai_url = "builtin"`이면 쓸 때만 127.0.0.1:8781에 켜고 10분 쉬면 끔(앱 종료·SIGTERM 때도 끔, 다음 시작 때 남은 프로세스 정리).
   - 가볍게: Qwen3.5 4B Q4_K_M 2.7GB (8GB 맥) · 추천: Gemma 4 E4B Q4_K_M 5.0GB (16GB+). 2026-10-24 비교(이름 없는 문장 18개): Gemma 4 E4B 18 · Gemma 4 12B 17 · Qwen3.5 4B 16 · Qwen3.5 9B 16 · Apple 기기 안 AI 14 · Gemma 4 E2B 13 · Kanana 2 3B 11 · Qwen3.5 2B 7. Qwen3.5는 chat_template_kwargs enable_thinking=false 로 부름.
 - 앱 셸 버전 5(`SHELL_REQUIRED`): 새 도우미·엔진은 코드 zip이 아니라 앱 전체 교체로만 들어가므로, 자동 업데이트가 코드 → 새 앱 순서로 설치.
+- 사양별 추천(`localai.recommend`): Apple Silicon·윈도우 64비트만 내장 엔진. 메모리 16GB+ → Gemma 4 E4B, 8~15GB → Qwen3.5 4B, 8GB 미만·인텔 맥 → 모델 없음(기기 안 AI·이름 기준).
+- 윈도우: 설치 파일엔 엔진이 없고, 모델 받을 때 llama.cpp 공식 Vulkan 빌드(b11851, sha256 고정)를 `%APPDATA%\쓰담\bin\llama\`에 함께 받음. 그래픽 가속 실패 시 `-ngl 0`(CPU)으로 다시 켬. 실제 윈도우 PC 검증은 아직.

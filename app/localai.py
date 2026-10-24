@@ -26,6 +26,7 @@ APPLE_TEXT = {
     "notReady": "기기 안 AI 모델을 내려받는 중이에요. 잠시 뒤 다시 확인해 주세요.",
     "notEligible": "이 맥은 기기 안 AI를 지원하지 않아요 (Apple Silicon 맥 + 지원 지역·언어 필요).",
     "unsupportedOS": "macOS 26 이상에서 쓸 수 있어요.",
+    "notMac": "맥에서만 있는 기능이에요. 윈도우는 아래 '쓰담 AI 모델'을 써 주세요.",
     "missing": "기기 안 AI 도우미가 없어요 (개발 실행이면 macos/bin/sseudam-ai 를 빌드하세요).",
 }
 
@@ -62,6 +63,9 @@ def helper():
 def apple_state(fresh=False):
     if not fresh and _apple_cache["state"] and time.time() - _apple_cache["t"] < 60:
         return _apple_cache["state"]
+    if not _is_mac():
+        _apple_cache.update(t=time.time(), state="notMac")
+        return "notMac"
     st = "missing"
     h = helper()
     if h:
@@ -241,6 +245,74 @@ LLM_MODELS = [
      "desc": "새 '가볍게' 모델이 더 정확해요. 바꾸려면 위에서 받고 이건 지워 주세요."},
 ]
 
+# 윈도우: 쓰담 설치 파일엔 엔진이 없어서, 모델 받을 때 llama.cpp 공식 윈도우 빌드(Vulkan — 인텔·AMD·엔비디아 그래픽 모두)를 함께 받는다
+WIN_ENGINE = {
+    "x64": ("https://github.com/ggml-org/llama.cpp/releases/download/b11851/llama-b11851-bin-win-vulkan-x64.zip",
+            "36dcb7b6d2f3236c6f49762659a6eaf1c4832be947a42c9480123a0ff99a7468"),
+    "arm64": ("https://github.com/ggml-org/llama.cpp/releases/download/b11851/llama-b11851-bin-win-vulkan-arm64.zip",
+              "3def9d8d151695014e864a7a2b2bd4a4a19e6c021bd57b0cc6802d2529a2edd1"),
+}
+WIN_ENGINE_DIR = os.path.join(db.SUPPORT_DIR, "bin", "llama")
+
+
+def _is_win():
+    import platform_util
+    return platform_util.IS_WIN
+
+
+def _is_mac():
+    import platform_util
+    return platform_util.IS_MAC
+
+
+def _arch():
+    import platform
+    m = platform.machine().lower()
+    return "arm64" if m in ("arm64", "aarch64") else ("x64" if m in ("amd64", "x86_64") else m)
+
+
+def engine_supported():
+    """이 컴퓨터에서 쓰담 AI 모델(내장 엔진)을 쓸 수 있는지: Apple Silicon 맥, 윈도우(64비트)."""
+    if _is_mac():
+        return _arch() == "arm64"
+    if _is_win():
+        return _arch() in WIN_ENGINE
+    return False
+
+
+def machine_info():
+    import platform
+    ram = mac_ram_gb()
+    if _is_mac():
+        try:
+            chip = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"], capture_output=True, text=True).stdout.strip()
+        except Exception:  # noqa
+            chip = ""
+        chip = chip or ("Apple Silicon" if _arch() == "arm64" else "인텔")
+        return {"os": "mac", "chip": chip, "ram": ram}
+    return {"os": "win" if _is_win() else "other", "chip": (platform.processor() or platform.machine())[:60], "ram": ram}
+
+
+def recommend():
+    """컴퓨터 사양에 맞는 모델과 이유."""
+    info = machine_info()
+    ram, name = info["ram"], ("이 맥" if info["os"] == "mac" else "이 컴퓨터")
+    if not engine_supported():
+        why = ("인텔 맥은 쓰담 AI 모델을 쓸 수 없어요. Gemini 키나 이름 기준 나누기를 써 주세요."
+               if info["os"] == "mac" else "이 컴퓨터에서는 쓰담 AI 모델을 쓸 수 없어요.")
+        return dict(info, model=None, why=why)
+    if ram and ram < 8:
+        return dict(info, model=None, why="%s 메모리(%dGB)로는 AI 모델이 너무 느려요. %s" % (
+            name, ram, "기기 안 AI(Apple)나 이름 기준 나누기를 추천해요." if info["os"] == "mac" else "이름 기준 나누기를 추천해요."))
+    if ram >= 16:
+        why = "메모리 %dGB — 가장 정확한 '추천' 모델이 넉넉히 돌아가요." % ram
+        if info["os"] == "win":
+            why += " 그래픽 카드가 없는 노트북이면 조금 느릴 수 있어요(학생 나누기 수십 초)."
+        return dict(info, model="gemma4-e4b", why=why)
+    why = "메모리 %dGB — 가벼운 모델이 다른 프로그램과 같이 써도 무리 없어요." % ram if ram else "가벼운 모델부터 써 보세요."
+    return dict(info, model="qwen35-4b", why=why)
+
+
 _llm_dl = {}
 _llm_lock = threading.Lock()
 _srv = {"proc": None, "model": None, "last": 0}
@@ -248,16 +320,30 @@ _srv_lock = threading.Lock()
 
 
 def mac_ram_gb():
+    """컴퓨터 메모리(GB). 맥은 sysctl, 윈도우는 GlobalMemoryStatusEx."""
     try:
+        if _is_win():
+            import ctypes
+
+            class MS(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                            ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+            m = MS()
+            m.dwLength = ctypes.sizeof(MS)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
+            return round(m.ullTotalPhys / 2**30)
         return round(int(subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True).stdout) / 2**30)
     except Exception:  # noqa
         return 0
 
 
 def llama_bin():
-    name = "llama-server"
+    name = "llama-server.exe" if _is_win() else "llama-server"
     for c in (os.path.join(os.environ.get("SETEUK_BIN", ""), name), os.path.join(db.SUPPORT_DIR, "bin", name),
-              os.path.join(db.BASE_DIR, "macos", "bin", name)):
+              os.path.join(WIN_ENGINE_DIR, name), os.path.join(db.BASE_DIR, "macos", "bin", name)):
         if c and os.path.isfile(c) and os.access(c, os.X_OK):
             return c
     return None
@@ -293,8 +379,11 @@ def llm_status():
         d["partial"] = os.path.getsize(part) if os.path.exists(part) else 0
         out.append(d)
     out = [d for d in out if not d.get("legacy") or d["installed"] or d["partial"]]
-    rec = "gemma4-e4b" if ram >= 16 else "qwen35-4b"
-    return {"models": out, "ram": ram, "recommended": rec, "engine": bool(llama_bin()),
+    r = recommend()
+    rec = r["model"]
+    return {"models": out, "ram": ram, "recommended": rec, "machine": r,
+            "engine": bool(llama_bin()) or (_is_win() and engine_supported()),
+            "supported": engine_supported(),
             "running": bool(_srv["proc"] and _srv["proc"].poll() is None), "running_model": _srv["model"]}
 
 
@@ -315,6 +404,10 @@ def llm_download(mid):
         part = dest + ".part"
         try:
             os.makedirs(LLM_DIR, exist_ok=True)
+            if not llama_bin() and _is_win():
+                _llm_dl[mid]["stage"] = "AI 엔진 받는 중"
+                fetch_win_engine()
+                _llm_dl[mid]["stage"] = ""
             have = os.path.getsize(part) if os.path.exists(part) else 0
             headers = {"User-Agent": "sseudam"}
             if have:
@@ -345,6 +438,39 @@ def llm_download(mid):
         except Exception as e:  # noqa
             _llm_dl[mid].update(status="error", error=str(e))
     threading.Thread(target=run, daemon=True, name="llm-dl").start()
+
+
+def fetch_win_engine():
+    """윈도우: llama.cpp 공식 빌드를 받아 쓰담 폴더에 풀기 (sha256 확인)."""
+    import gemini
+    import hashlib
+    import shutil
+    import tempfile
+    import zipfile
+    url, digest = WIN_ENGINE[_arch()]
+    tmp = tempfile.mkdtemp(prefix="sseudam-llama-")
+    try:
+        z = os.path.join(tmp, "llama.zip")
+        req = urllib.request.Request(url, headers={"User-Agent": "sseudam"})
+        with urllib.request.urlopen(req, timeout=120, context=gemini._CTX) as resp, open(z, "wb") as f:
+            shutil.copyfileobj(resp, f)
+        h = hashlib.sha256()
+        with open(z, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        if h.hexdigest() != digest:
+            raise IOError("AI 엔진 파일이 손상됐어요. 다시 시도해 주세요.")
+        os.makedirs(WIN_ENGINE_DIR, exist_ok=True)
+        with zipfile.ZipFile(z) as zf:
+            for m in zf.namelist():
+                base = os.path.basename(m)
+                if base and (base.endswith(".exe") or base.endswith(".dll")):   # 폴더 구조 없이 실행 파일·DLL만
+                    with zf.open(m) as src, open(os.path.join(WIN_ENGINE_DIR, base), "wb") as out:
+                        shutil.copyfileobj(src, out)
+        if not llama_bin():
+            raise IOError("AI 엔진을 풀지 못했어요.")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def llm_cancel(mid):
@@ -391,25 +517,41 @@ def ensure_builtin(mid):
     if not llm_installed(mid):
         raise RuntimeError("AI 모델을 먼저 받아 주세요 (설정 → 학생별로 나누는 AI).")
     log = open(os.path.join(db.DATA_DIR, "llm.log"), "ab")
-    proc = subprocess.Popen([exe, "-m", llm_path(mid), "--host", "127.0.0.1", "--port", str(BUILTIN_PORT),
-                             "-c", "8192", "-ngl", "99", "--jinja", "--no-webui"],
-                            stdout=log, stderr=log, stdin=subprocess.DEVNULL)
-    with _srv_lock:
-        _srv.update(proc=proc, model=mid, last=time.time())
-    for _ in range(240):   # 모델 올리는 데 최대 2분
-        if proc.poll() is not None:
-            raise RuntimeError("내장 AI가 켜지지 않았어요 (data/llm.log 참고). 메모리가 부족하면 '가볍게' 모델을 써 보세요.")
-        try:
-            _http("http://127.0.0.1:%d/health" % BUILTIN_PORT, timeout=2)
-            return url
-        except Exception:  # noqa
-            time.sleep(0.5)
-    stop_builtin()
-    raise RuntimeError("내장 AI가 너무 오래 걸려요. 다시 시도해 주세요.")
+    extra = {"creationflags": 0x08000000} if _is_win() else {}   # 윈도우: 검은 창 안 띄우기
+    for gpu_layers in ("99", "0"):   # 그래픽 가속이 안 되면(드라이버 등) CPU로 한 번 더
+        proc = subprocess.Popen([exe, "-m", llm_path(mid), "--host", "127.0.0.1", "--port", str(BUILTIN_PORT),
+                                 "-c", "8192", "-ngl", gpu_layers, "--jinja", "--no-webui"],
+                                stdout=log, stderr=log, stdin=subprocess.DEVNULL, **extra)
+        with _srv_lock:
+            _srv.update(proc=proc, model=mid, last=time.time())
+        for _ in range(360):   # 모델 올리는 데 최대 3분 (느린 노트북)
+            if proc.poll() is not None:
+                break
+            try:
+                _http("http://127.0.0.1:%d/health" % BUILTIN_PORT, timeout=2)
+                return url
+            except Exception:  # noqa
+                time.sleep(0.5)
+        stop_builtin()
+    raise RuntimeError("내장 AI가 켜지지 않았어요 (data/llm.log 참고). 메모리가 부족하면 '가볍게' 모델을 써 보세요.")
 
 
 def _kill_stale():
     """쓰담이 갑자기 꺼져서 남은 예전 내장 AI(같은 포트의 llama-server)를 정리."""
+    if _is_win():
+        try:
+            out = subprocess.run(["netstat", "-ano", "-p", "TCP"], capture_output=True, text=True,
+                                 creationflags=0x08000000).stdout
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts) >= 5 and parts[1].endswith(":%d" % BUILTIN_PORT) and parts[3].upper() == "LISTENING":
+                    task = subprocess.run(["tasklist", "/FI", "PID eq %s" % parts[4], "/NH"], capture_output=True,
+                                          text=True, creationflags=0x08000000).stdout
+                    if "llama-server" in task:
+                        subprocess.run(["taskkill", "/F", "/PID", parts[4]], capture_output=True, creationflags=0x08000000)
+        except Exception:  # noqa
+            pass
+        return
     try:
         pids = subprocess.run(["lsof", "-tiTCP:%d" % BUILTIN_PORT, "-sTCP:LISTEN"], capture_output=True, text=True).stdout.split()
         for pid in pids:
