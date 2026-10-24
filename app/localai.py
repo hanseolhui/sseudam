@@ -525,9 +525,11 @@ def ensure_builtin(mid):
     log = open(os.path.join(db.DATA_DIR, "llm.log"), "ab")
     extra = {"creationflags": 0x08000000} if _is_win() else {}   # 윈도우: 검은 창 안 띄우기
     for gpu_layers in ("99", "0"):   # 그래픽 가속이 안 되면(드라이버 등) CPU로 한 번 더
-        proc = subprocess.Popen([exe, "-m", llm_path(mid), "--host", "127.0.0.1", "--port", str(BUILTIN_PORT),
+        # 윈도우: 한글 경로("쓰담" 폴더 · 한글 사용자 이름)가 깨지지 않게 모델 폴더에서 파일 이름만 넘김
+        model_arg, cwd = (os.path.basename(llm_path(mid)), os.path.dirname(llm_path(mid))) if _is_win() else (llm_path(mid), None)
+        proc = subprocess.Popen([exe, "-m", model_arg, "--host", "127.0.0.1", "--port", str(BUILTIN_PORT),
                                  "-c", "8192", "-ngl", gpu_layers, "--jinja", "--no-webui"],
-                                stdout=log, stderr=log, stdin=subprocess.DEVNULL, **extra)
+                                stdout=log, stderr=log, stdin=subprocess.DEVNULL, cwd=cwd, **extra)
         with _srv_lock:
             _srv.update(proc=proc, model=mid, last=time.time())
         for _ in range(360):   # 모델 올리는 데 최대 3분 (느린 노트북)

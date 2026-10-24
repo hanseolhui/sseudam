@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 import urllib.request
 
 import db
@@ -245,17 +246,28 @@ def transcribe(audio_path, students=None, kind="수업", on_progress=None, model
     mid = best_installed(model_id or db.get_settings().get("whisper_model"))
     if not mid:
         raise RuntimeError("Whisper 모델이 없습니다. 설정 → 받아쓰기 엔진에서 모델을 내려받으세요.")
-    tmp = tempfile.mkdtemp(prefix="seteuk-wh-")
+    import platform_util
+    # 윈도우판 whisper-cli 는 한글 경로를 '??'로 읽음 ("쓰담" 폴더, 한글 사용자 이름) →
+    # 작업 폴더를 모델 폴더로 두고 파일 이름만 넘김. 한글 시작 문구도 깨지므로 윈도우에서는 넣지 않음
+    win = platform_util.IS_WIN
+    tmp = os.path.join(MODEL_DIR, "_work", "%d-%d" % (os.getpid(), int(time.time() * 1000))) if win else tempfile.mkdtemp(prefix="seteuk-wh-")
+    os.makedirs(tmp, exist_ok=True)
     try:
         wav = os.path.join(tmp, "a.wav")
         to_wav16k(audio_path, wav)
         threads = max(2, min(8, (os.cpu_count() or 4) - 2))
-        cmd = [exe, "-m", model_path(mid), "-f", wav, "-l", "ko", "-t", str(threads), "-pp",
-               "--prompt", _initial_prompt(students or [], kind)]
         vad = os.path.join(MODEL_DIR, VAD["file"])
-        if os.path.exists(vad):
-            cmd += ["--vad", "-vm", vad]
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **_no_window())
+        if win:
+            cmd = [exe, "-m", os.path.basename(model_path(mid)), "-f", os.path.relpath(wav, MODEL_DIR),
+                   "-l", "ko", "-t", str(threads), "-pp"]
+            if os.path.exists(vad):
+                cmd += ["--vad", "-vm", VAD["file"]]
+        else:
+            cmd = [exe, "-m", model_path(mid), "-f", wav, "-l", "ko", "-t", str(threads), "-pp",
+                   "--prompt", _initial_prompt(students or [], kind)]
+            if os.path.exists(vad):
+                cmd += ["--vad", "-vm", vad]
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=MODEL_DIR if win else None, **_no_window())
         err_tail = []
 
         def read_err():

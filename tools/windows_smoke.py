@@ -111,7 +111,8 @@ def t_whisper_direct():
     import subprocess
     bin_dir = os.environ.get("SETEUK_BIN") or ""
     exe = (glob.glob(os.path.join(bin_dir, "whisper", "whisper-cli.exe")) + glob.glob(os.path.join(bin_dir, "whisper-cli.exe")))[:1]
-    assert exe, "whisper-cli.exe 없음: %s" % bin_dir
+    if not exe:
+        return {"skipped": "SETEUK_BIN 없음 (스토어판은 앱이 직접 찾음)"}
     out = subprocess.run([exe[0], "--help"], capture_output=True, text=True, encoding="utf-8", errors="replace")
     helptext = out.stdout + out.stderr
     need = ["-pp", "--prompt", "--vad", "-vm"]
