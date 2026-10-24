@@ -554,7 +554,7 @@ async function viewRecordings(classFilter) {
   const [recs, settings] = await Promise.all([
     api('/api/recordings' + (classFilter ? '?class_id=' + classFilter : '')), api('/api/settings')]);
   state.settings = settings;
-  const isApi = settings.mode === 'api' && settings.has_key;
+  const isApi = true;   // 받아쓰기(내 컴퓨터)·학생 나누기는 키 없이도 됨
   view.innerHTML = `
     <div class="page-head"><div><h1>녹음함</h1><div class="muted">수업 평가·상담 녹음을 보관하고, 전사·학생별 분리를 진행합니다.</div></div>
       <div class="actions"><a class="btn" href="#/settings/import">가져오기 설정</a><button class="primary" id="btn-scan">아이폰 기록 지금 가져오기</button></div></div>
@@ -571,7 +571,7 @@ async function viewRecordings(classFilter) {
       <div data-pane="audio">
         <div class="dropzone" id="drop" role="button" tabindex="0" aria-label="녹음 파일 고르기"><strong>여기에 녹음 파일을 끌어다 놓거나 클릭해서 선택</strong>m4a, mp3, wav 등 · 여러 개 가능 · 텍스트(.txt) 전사본도 가능</div>
         <input type="file" id="file" multiple accept="audio/*,.m4a,.txt" class="hidden">
-        <label class="check" style="margin-top:10px"><input type="checkbox" id="up-auto" ${isApi ? 'checked' : 'disabled'}> 올린 뒤 자동으로 전사 → 학생별 분리 ${isApi ? '' : '<span class="muted small">(API 모드에서만 가능)</span>'}</label>
+        <label class="check" style="margin-top:10px"><input type="checkbox" id="up-auto" ${isApi ? 'checked' : 'disabled'}> 올린 뒤 자동으로 전사 → 학생별 분리 </label>
       </div>
       <div data-pane="paste" class="hidden">
         <textarea id="paste-text" rows="8" placeholder="클로바노트 등 다른 앱에서 받은 전사문, 또는 직접 정리한 메모를 붙여넣으세요.&#10;예) 3번 김민수 오늘 발표에서 근거 자료를 3가지 제시하며 논리적으로 설명함. 5번 이서연은 모둠 토론에서..."></textarea>
@@ -1279,7 +1279,8 @@ async function viewDrafts(classId, areaParam) {
   const withNotes = d.students.filter(s => s.area_notes).length;
   const missing = d.students.filter(s => s.area_notes && !s.draft_status).length;
   const done = d.students.filter(s => s.draft_status === '확정').length;
-  const isApi = settings.mode === 'api' && settings.has_key;
+  const isApi = settings.active_draft === 'gemini' || settings.active_draft === 'local';   // 반 전체를 AI로 바로 만들 수 있음
+  const ctxPreview = [d.context.topic, d.context.competencies, d.context.philosophy].filter(x => (x || '').trim()).join(' · ');
   view.innerHTML = `
     <div class="page-head"><div><h1>초안</h1><div class="muted">학급 전체의 초안을 만들고 구글시트·엑셀로 내보냅니다.</div></div>
       <div class="actions"><select id="dc" style="width:auto">${classOptions(classId)}</select></div></div>
@@ -1287,15 +1288,19 @@ async function viewDrafts(classId, areaParam) {
     <div class="card">
       <div class="section-title"><h2>${esc(c.label)} · ${esc(area.full)} <span class="muted small">확정 ${done}/${d.students.length}</span></h2>
         <span class="actions" style="display:flex;gap:6px;flex-wrap:wrap">
-          <button id="g-missing" ${isApi && missing ? '' : 'disabled'} title="${isApi ? '' : 'API 모드에서만 일괄 생성할 수 있습니다'}">초안 없는 학생 생성 (${missing})</button>
-          <button id="g-all" ${isApi && withNotes ? '' : 'disabled'}>기록 있는 학생 전체 생성 (${withNotes})</button>
+          ${isApi ? `<button id="g-missing" ${missing ? '' : 'disabled'}>✨ 초안 없는 학생 생성 (${missing})</button>
+          <button id="g-all" ${withNotes ? '' : 'disabled'}>기록 있는 학생 전체 생성 (${withNotes})</button>`
+          : `<button class="primary" id="g-prompt" ${withNotes ? '' : 'disabled'}>📋 반 전체 프롬프트 복사 (${missing || withNotes}명)</button>
+          <button id="g-paste" ${withNotes ? '' : 'disabled'}>📥 AI 답 붙여넣기</button>`}
           <button id="x-copy">표 복사</button>
           <button id="x-csv">CSV</button>
           <button id="x-xlsx">엑셀로 저장</button>
           <button class="primary" id="x-sheet">구글시트 지금 반영</button></span></div>
-      ${isApi ? '' : '<p class="help">API 키 없이 쓸 때는 학생 이름을 눌러 한 명씩 만들거나, 왼쪽 <a href="#/prompts">프롬프트 안내</a>대로 Gemini·ChatGPT 웹에서 만드세요.</p>'}
-      <details class="lesson-ctx" ${d.context.topic || d.context.competencies || d.context.philosophy ? '' : 'open'}>
-        <summary><b>📚 수업 정보</b> <span class="muted small">초안을 만들 때 AI에게 함께 알려 줘요 (${esc(c.label)} · ${esc(area.name)})</span></summary>
+      ${isApi ? '' : '<p class="help"><b>📋 반 전체 프롬프트 복사</b> → ChatGPT·Gemini 앱에 붙여넣기 → 나온 답을 통째로 복사해서 <b>📥 AI 답 붙여넣기</b>에 넣으면 학생마다 초안이 한꺼번에 들어가요.</p>'}
+      <details class="lesson-ctx" id="lesson-ctx" ${ctxPreview ? '' : 'open'}>
+        <summary class="ctx-toggle"><span class="ctx-title">📚 수업 정보</span>
+          <span class="ctx-preview">${ctxPreview ? esc(ctxPreview.length > 70 ? ctxPreview.slice(0, 70) + '…' : ctxPreview) : '종목·역량·교사 철학을 적어 두면 초안이 수업에 맞게 나와요'}</span>
+          <span class="ctx-chev"><span class="when-closed">펼치기 ▾</span><span class="when-open">접기 ▴</span></span></summary>
         <div class="ctx-grid">
           <label class="field"><span>수업 내용 (종목·단원)</span><textarea id="ctx-topic" rows="2" placeholder="예: 농구 — 드리블·패스·레이업, 3대3 리그전">${esc(d.context.topic)}</textarea></label>
           <label class="field"><span>이 수업에서 기르는 역량</span><textarea id="ctx-comp" rows="2" placeholder="예: 협력적 의사소통, 경기 전략 수립, 자기 주도적 연습">${esc(d.context.competencies)}</textarea></label>
@@ -1318,7 +1323,11 @@ async function viewDrafts(classId, areaParam) {
   bindRowLinks();
   $('#ctx-save').onclick = async () => {
     await api('/api/classes/context', { class_id: c.id, area: area.id, topic: $('#ctx-topic').value, competencies: $('#ctx-comp').value, philosophy: $('#ctx-phil').value });
+    const pv = [$('#ctx-topic').value, $('#ctx-comp').value, $('#ctx-phil').value].filter(x => x.trim()).join(' · ');
+    $('.ctx-preview').textContent = pv ? (pv.length > 70 ? pv.slice(0, 70) + '…' : pv) : '종목·역량·교사 철학을 적어 두면 초안이 수업에 맞게 나와요';
     $('#ctx-saved').textContent = '저장했어요 ✓ 다음 초안부터 반영돼요';
+    toast('수업 정보를 저장했어요 ✓ 위 "📚 수업 정보"를 누르면 언제든 다시 열어요');
+    setTimeout(() => { $('#lesson-ctx').open = false; }, 900);
   };
   $$('.target-in').forEach(inp => {
     inp.onclick = e => e.stopPropagation();
@@ -1335,8 +1344,25 @@ async function viewDrafts(classId, areaParam) {
     const r = await api('/api/drafts/batch', { class_id: c.id, only_missing: onlyMissing, area: area.id });
     toast(`${r.count}명 초안 생성을 대기열에 넣었습니다`); pollJobs(true);
   };
-  $('#g-missing').onclick = () => batch(true);
-  $('#g-all').onclick = () => batch(false);
+  if ($('#g-missing')) $('#g-missing').onclick = () => batch(true);
+  if ($('#g-all')) $('#g-all').onclick = () => batch(false);
+  if ($('#g-prompt')) $('#g-prompt').onclick = async () => {
+    const r = await api('/api/drafts/batch_prompt', { class_id: c.id, area: area.id, only_missing: missing > 0 });
+    copyText(r.prompt);
+    toast(`${r.count}명 프롬프트를 복사했어요 ✓ ChatGPT·Gemini 앱에 붙여넣으세요`);
+  };
+  if ($('#g-paste')) $('#g-paste').onclick = () => modal(`<h2>📥 AI 답 붙여넣기</h2>
+      <p class="muted">ChatGPT·Gemini가 쓴 답을 <b>통째로</b> 붙여넣으세요. "[3번] …" 줄마다 그 학생 초안으로 저장해요.</p>
+      <textarea id="bp-text" rows="14" placeholder="[1번] 토론 수업에서 …&#10;[2번] 실험 활동에서 …"></textarea>
+      <div class="modal-actions"><button id="bp-x">닫기</button><button class="primary" id="bp-go">학생별로 저장</button></div>`, box => {
+    $('#bp-x', box).onclick = closeModal;
+    $('#bp-go', box).onclick = async () => {
+      const r = await api('/api/drafts/batch_apply', { class_id: c.id, area: area.id, text: $('#bp-text', box).value });
+      closeModal();
+      toast(`${r.saved}명 초안을 저장했어요 ✓` + (r.missing.length ? ` (명단에 없는 번호: ${r.missing.join(', ')})` : ''));
+      router(true);
+    };
+  });
   $('#x-copy').onclick = async () => { const t = await api('/api/export/table?class_id=' + c.id); copyText(t.tsv); };
   $('#x-xlsx').onclick = () => exportXlsx(c.id);
   $('#x-csv').onclick = async () => { const r = await api('/api/export/csv', { class_id: c.id }); toast(`다운로드 폴더에 저장했습니다: ${r.name}`); };

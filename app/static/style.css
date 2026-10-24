@@ -521,3 +521,13 @@ audio { width: 100%; margin: 8px 0; }
 @media (max-width: 640px) { .llm-row { flex-direction: column; align-items: flex-start; } .llm-act { text-align: left; } }
 .badge.gray { background: var(--panel-2, #eee); color: var(--muted, #777); }
 .general-memo { padding: 12px 14px; border-radius: 12px; background: var(--panel-2, var(--bg-2)); border: 1px dashed var(--line-strong, var(--line)); margin-bottom: 10px; }
+/* 초안: 수업 정보 열고 닫기 버튼 */
+.lesson-ctx > summary.ctx-toggle { list-style: none; display: flex; align-items: center; gap: 10px; cursor: pointer;
+  padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2, var(--panel)); }
+.lesson-ctx > summary.ctx-toggle::-webkit-details-marker { display: none; }
+.lesson-ctx > summary.ctx-toggle:hover { border-color: var(--accent-fill); }
+.ctx-title { font-weight: 700; flex-shrink: 0; }
+.ctx-preview { flex: 1; min-width: 0; color: var(--muted, #888); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ctx-chev { flex-shrink: 0; font-size: 13px; font-weight: 700; color: var(--accent); padding: 4px 10px; border-radius: 999px; background: var(--accent-soft); }
+.lesson-ctx .when-open { display: none; } .lesson-ctx[open] .when-open { display: inline; } .lesson-ctx[open] .when-closed { display: none; }
+.lesson-ctx[open] > summary.ctx-toggle { border-color: var(--accent); margin-bottom: 10px; }

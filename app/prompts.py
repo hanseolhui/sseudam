@@ -122,6 +122,8 @@ def clean_draft(text, student=None):
     t = re.sub(r"(\d{4}\s*년\s*)?\d{1,2}\s*월\s*\d{1,2}\s*일(\s*\([월화수목금토일]\))?\s*(에|의|에는)?\s*", "", t)
     t = re.sub(r"\d{4}[-./]\d{1,2}[-./]\d{1,2}\s*(에|의)?\s*", "", t)
     t = re.sub(r"(오늘|어제|금일|이번\s*시간)(의|에|은|는)?\s+", "", t)
+    # 반·번호 말 ('육반', '2학년 6반', '3번')
+    t = re.sub(r"((?<![가-힣])([일이삼사오육]|\d)\s*학년\s*)?(?<![가-힣\d])(십?[일이삼사오육칠팔구]|\d{1,2})\s*반(?![가-힣])\s*", "", t)
     if student:
         t = strip_names(t, student)
     t = re.sub(r"^(이\s*)?학생은\s*", "", t)
@@ -142,7 +144,8 @@ def draft(student, class_info, notes, settings, extra="", area="subject", contex
     for n in notes:
         # 날짜는 넘기지 않음 — 작은 AI가 '2026년 10월 24일'처럼 본문에 옮겨 적는 걸 막기 위해 (세특엔 날짜를 쓰지 않음)
         tag = "[%s%s]" % (n.get("kind") or "", ("/" + n["category"]) if n.get("category") else "")
-        line = "%s %s" % (tag, strip_names(n["content"], student))
+        import pipeline
+        line = "%s %s" % (tag, strip_names(pipeline.strip_class_words(n["content"]), student))
         if n.get("evidence"):
             line += "  (원문: %s)" % strip_names(n["evidence"][:160], student)
         note_lines.append("- " + line)
@@ -159,22 +162,31 @@ def draft(student, class_info, notes, settings, extra="", area="subject", contex
 - 문장은 '~함', '~임', '~보임', '~돋보임' 등 명사형 종결. 학생 이름이나 '학생은'이라는 주어를 쓰지 말 것.
 - 날짜·요일·시각·'오늘'·'이번 시간' 같은 기록 시점, 다른 교사의 이름이나 '○○ 교사의 요청에 따라' 같은 말, 녹음·메모라는 말은 쓰지 말 것.
 - 막연한 칭찬어(성실함, 우수함)만 나열하지 말고 관찰된 근거와 함께 서술.
+- **요약하지 말고 세특 문장으로 새로 쓰기.** 관찰기록을 그대로 줄이거나 옮기지 말고, 다음 흐름으로 풍부하게 서술:
+  ① 어떤 수업·활동 상황이었는지(수업 정보가 있으면 그 맥락) → ② 학생이 구체적으로 한 행동·발언·선택
+  → ③ 그 행동에서 드러나는 역량·태도(이 수업에서 기르는 역량과 연결) → ④ 성장·의미·앞으로의 가능성.
+  관찰 사실은 바꾸거나 부풀리지 말되, 그 사실이 보여 주는 교육적 의미는 교사의 시선으로 해석해서 덧붙임.
+- 기록이 여러 건이면 하나씩 나열하지 말고 공통된 강점으로 묶어 한 흐름의 글로 엮기.
 - 상담 기록은 학업·진로·성장과 관련된 내용만 활용하고, 가정사·건강·교우 갈등 등 민감한 개인사는 쓰지 말 것.
 - 기재 금지: 교외 대회·수상, 공인어학시험 점수, 논문·학회, 특허, 도서 출간, 해외 활동, 부모의 직업·사회경제적 지위, 사교육, 특정 대학·기관·상호명.
-- 분량: NEIS 기준 %d바이트 이내(한글 약 %d자 이내), 한 문단. 줄바꿈 없이.
+- 분량: NEIS 기준 %d바이트 이내(한글 약 %d자 이내)에서 **80~95%%를 채우기**. 한 문단, 줄바꿈 없이.
+- 예시(형식만 참고, 내용은 쓰지 말 것) — 관찰: "모둠 실험에서 측정값이 이상하자 다시 재 보자고 함"
+  → 세특: "산과 염기 중화 실험에서 모둠의 측정값이 예상과 다르게 나오자 오차의 원인을 짚어 보고 측정을 다시 하자고 제안함. 결과를 그대로 받아들이기보다 근거를 확인하려는 태도에서 과학적 탐구 역량이 돋보이며, 모둠원과 측정 절차를 함께 점검하며 협력적으로 문제를 해결하는 모습을 보임."
 - 머리말·설명·따옴표 없이 본문만 출력.
 """ % (grade, title, guide_t, limit, approx_chars)
     ctx = context or {}
     lesson = []
     if (ctx.get("topic") or "").strip():
-        lesson.append("- 수업 내용(종목·단원): %s" % ctx["topic"].strip())
+        lesson.append("- 수업 내용(종목·단원): %s → 글의 활동 맥락으로 꼭 넣기 (예: '농구 3대3 리그전에서 …')" % ctx["topic"].strip())
     if (ctx.get("competencies") or "").strip():
-        lesson.append("- 이 수업에서 기르는 역량: %s" % ctx["competencies"].strip())
+        lesson.append("- 이 수업에서 기르는 역량: %s → 관찰된 행동이 이 역량 중 무엇을 보여 주는지 연결해서 쓰기" % ctx["competencies"].strip())
     if (ctx.get("philosophy") or "").strip():
-        lesson.append("- 교사의 수업 철학: %s" % ctx["philosophy"].strip())
+        lesson.append("- 교사의 수업 철학: %s → 이 관점에서 학생의 어떤 모습을 의미 있게 보는지 반영하기" % ctx["philosophy"].strip())
     if lesson:
-        out += ("\n[수업 정보 — 관찰기록을 이 수업 맥락과 역량에 맞춰 해석하는 데만 쓰고, "
-                "기록에 없는 활동을 만들어 내지 말 것]\n%s\n" % "\n".join(lesson))
+        # 작은 AI도 놓치지 않게 지시문 맨 앞쪽(제목 바로 아래)에 넣는다
+        block = ("\n[수업 정보 — 반드시 초안에 반영할 것. 단, 관찰기록에 없는 활동·성과를 지어내지는 말 것]\n%s\n"
+                 % "\n".join(lesson))
+        out = out.replace("\n[이 영역의 초점]", block + "\n[이 영역의 초점]", 1)
     if guidance:
         out += "\n[교사의 추가 지침]\n%s\n" % guidance
     if style:
@@ -269,3 +281,41 @@ def guide(settings):
          "steps": ["아래 프롬프트의 [세특 문장]에 초안을 붙여넣고 보내기", "결과를 편집창에 붙여넣고 바이트 확인"],
          "prompt": shorten("[여기에 세특 문장을 붙여넣으세요]", int(settings.get("byte_limit") or 1500), 0).replace("현재 0바이트입니다. ", "")},
     ]
+
+def draft_batch(class_info, items, settings, area="subject", context=None):
+    """반 전체를 한 번에: 학생마다 [번호] 머리표를 붙인 기록 → AI가 학생마다 '[3번] 초안' 한 줄씩.
+    items = [(학생, 관찰기록 목록, 목표 바이트)]"""
+    import pipeline
+    head = draft({"name": "", "number": None}, class_info, [], settings, "", area, context=context)
+    head = head.split("\n[학교급]")[0]
+    head = head.replace("초안을 작성해 주세요.", "초안을 아래 학생 %d명 각각 따로 작성해 주세요." % len(items), 1)
+    out = head + "\n[학교급] %s\n" % (settings.get("school_level") or "고등학교")
+    out += """
+[출력 형식 — 꼭 지키기]
+학생마다 한 줄씩, 맨 앞에 [번호]를 붙이고 바로 초안 본문만 쓰기. 학생 사이에 다른 말 쓰지 않기.
+[1번] 초안 본문…
+[2번] 초안 본문…
+"""
+    for st, notes, target in items:
+        tag = "%s번" % (st.get("number") if st.get("number") is not None else st["id"])
+        lines = []
+        for n in notes:
+            t = strip_names(pipeline.strip_class_words(n["content"]), st)
+            lines.append("- [%s%s] %s" % (n.get("kind") or "", ("/" + n["category"]) if n.get("category") else "", t))
+        out += "\n### [%s]%s\n%s\n" % (tag, (" (분량 %d바이트 이내)" % int(target)) if target else "", "\n".join(lines))
+    return out
+
+
+def expand(text, target_bytes, current_bytes, notes_text=""):
+    """초안이 너무 짧을 때: 사실은 그대로, 세특답게 더 자세히."""
+    return """아래 학교생활기록부 세특 초안이 너무 짧습니다(현재 %d바이트). %d바이트 안팎(한글 약 %d자)으로 다시 써 주세요.
+- 관찰 사실은 바꾸거나 새로 지어내지 말 것. 대신 그 행동이 보여 주는 역량·태도·성장의 의미를 구체적으로 풀어 쓸 것.
+- '~함', '~임', '~보임' 명사형 종결, 한 문단, 학생 이름·날짜·'학생은' 쓰지 말 것. 본문만 출력.
+
+[관찰기록]
+%s
+
+[지금 초안]
+%s
+""" % (current_bytes, int(target_bytes * 0.9), int(target_bytes * 0.9 / 3), notes_text or "(위 초안 참고)", text)
+

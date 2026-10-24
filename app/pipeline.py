@@ -54,6 +54,13 @@ def _term_students(conn):
     return rows
 
 
+def _term_classes(conn):
+    today = datetime.date.today()
+    y, m = today.year, today.month
+    year, sem = (y - 1, 2) if m <= 2 else (y, 1 if m <= 8 else 2)
+    return db.rows(conn, "SELECT * FROM classes WHERE year=? AND semester=?", (year, sem))
+
+
 def _roster_for(conn, r):
     """AI 분리에 쓸 명단: 학급이 정해졌으면 그 반, 아니면 이번 학기 전체(학급 표시)."""
     if r.get("class_id"):
@@ -176,7 +183,7 @@ def apply_segment(rid, text):
         matched, unmatched = 0, 0
         found_classes = set()
         for it in data.get("items", []) or []:
-            content = (it.get("observation") or it.get("content") or "").strip()
+            content = strip_class_words((it.get("observation") or it.get("content") or "").strip())
             if not content:
                 continue
             st = match_student(students, it.get("number"), it.get("name"), prefer) if students else None
@@ -323,9 +330,55 @@ def match_student(students, number, name, prefer=None):
     return None
 
 
+# ───────────────────────── 반·번호 말 정리 ─────────────────────────
+_KNUM = {"일": 1, "이": 2, "삼": 3, "사": 4, "오": 5, "육": 6, "칠": 7, "팔": 8, "구": 9}
+
+
+def _knum(w):
+    """'육' → 6, '십이' → 12, '12' → 12."""
+    if w.isdigit():
+        return int(w)
+    val, cur = 0, 0
+    for ch in w:
+        if ch == "십":
+            val += (cur or 1) * 10
+            cur = 0
+        elif ch in _KNUM:
+            cur = _KNUM[ch]
+    return val + cur
+
+
+_KN = r"(?:십?[일이삼사오육칠팔구]|십|\d{1,2})"
+
+
+def normalize_class_words(text):
+    """받아쓰기가 글자로 적은 반·번호를 숫자로: '이학년 육반' → '2학년 6반', '육반' → '6반', '삼번' → '3번'."""
+    t = text or ""
+    t = re.sub(r"(?<![가-힣])([일이삼사오육]|\d)\s*학년\s*(%s)\s*반" % _KN,
+               lambda m: "%d학년 %d반" % (_knum(m.group(1)), _knum(m.group(2))), t)
+    t = re.sub(r"(?<![가-힣\d])(%s)\s*반(?![가-힣])" % _KN, lambda m: "%d반" % _knum(m.group(1)), t)
+    t = re.sub(r"(?<![가-힣\d])(%s)\s*번(?=[\s,.]|$)" % _KN, lambda m: "%d번" % _knum(m.group(1)), t)
+    return t
+
+
+def strip_class_words(text):
+    """관찰기록·초안에 들어간 '2학년 6반', '6반', '3번' 같은 말을 뺀다 (기록 내용만 남기기)."""
+    t = normalize_class_words(text)
+    t = re.sub(r"(\d\s*학년\s*)?\d{1,2}\s*반\s*(\d{1,2}\s*번\s*)?", "", t)
+    t = re.sub(r"(^|(?<=[\s.,]))\d{1,2}\s*번\s+", "", t)
+    return re.sub(r"\s{2,}", " ", t).strip()
+
+
 def guess_class(conn, hint):
+    hint = normalize_class_words(hint)
     m = re.search(r"(\d)\s*학년\s*(\d{1,2})\s*반", hint or "") or re.search(r"(?<!\d)(\d)\s*-\s*(\d{1,2})(?!\d)", hint or "")
     if not m:
+        # '6반'만 말했을 때: 이번 학기에 6반이 하나뿐이면 그 반
+        only = re.search(r"(?<![\d학년\s])\s?(\d{1,2})반", hint or "") or re.search(r"(?:^|\s)(\d{1,2})반", hint or "")
+        if only:
+            rows = [c for c in _term_classes(conn) if c.get("class_no") == int(only.group(1))]
+            if len({c["grade"] for c in rows}) == 1:
+                return sorted(rows, key=lambda c: c.get("kind") != "교과")[0]["id"]
         return None
     g, c = int(m.group(1)), int(m.group(2))
     r = db.row(conn, "SELECT id FROM classes WHERE grade=? AND class_no=? ORDER BY year DESC, semester DESC, id DESC",
@@ -458,7 +511,7 @@ def _name_hits(conn, rid):
     students = _students(conn, r["class_id"]) or _term_students(conn)
     if not students:
         raise ValueError("학생 명단이 있어야 분리할 수 있습니다. 학급을 만들고 명단을 넣어 주세요.")
-    text = re.sub(r"\[\d{1,2}:\d{2}(?::\d{2})?\]", " ", r["transcript"] or "")
+    text = re.sub(r"\[\d{1,2}:\d{2}(?::\d{2})?\]", " ", normalize_class_words(r["transcript"] or ""))
     text = re.sub(r"(교사|선생님|학생)\s*:", " ", text)
     # 학생별 검색어 (긴 것 우선)
     keys = []
@@ -542,7 +595,7 @@ def rule_segment(rid):
         conn.execute("DELETE FROM unmatched WHERE recording_id=?", (rid,))
         count = 0
         for s, a, b in blocks:
-            chunk = re.sub(r"\s+", " ", text[a:b]).strip()
+            chunk = strip_class_words(re.sub(r"\s+", " ", text[a:b]).strip())
             if len(chunk) < 6:
                 continue
             conn.execute("INSERT INTO notes(student_id, recording_id, date, kind, category, content, evidence) "
@@ -619,7 +672,7 @@ def local_segment(rid, engine, settings=None):
                 groups.append([who, [sentences[i]]])
         count = 0
         for who, sents in groups:
-            chunk = " ".join(sents).strip()
+            chunk = strip_class_words(" ".join(sents).strip())
             if len(chunk) < 6:
                 continue
             conn.execute("INSERT INTO notes(student_id, recording_id, date, kind, category, content, evidence) "
@@ -739,7 +792,10 @@ def _run_api(op, params, job_id=None):
     if op in ("draft", "shorten") and draft_engine(settings) == "local":
         import localai
         p = build_prompt(op, params)
-        return apply(op, params, localai.generate("local", settings, p.get("system"), p["prompt"]))
+        text = localai.generate("local", settings, p.get("system"), p["prompt"])
+        if op == "draft":
+            text = _expand_if_short(text, params, settings, lambda pr: localai.generate("local", settings, prompts.DRAFT_SYSTEM, pr))
+        return apply(op, params, text)
     key = (settings.get("gemini_api_key") or "").strip()
     if not key:
         raise ValueError("Gemini API 키가 없습니다. 설정에서 입력하거나 '수동 모드'를 사용하세요.")
@@ -779,7 +835,34 @@ def _run_api(op, params, job_id=None):
         conn.close()
     text = gemini.generate(key, model, p["prompt"], system=p.get("system"), json_mode=p.get("json", False),
                            temperature=0.2 if op == "segment" else 0.6, on_model_change=on_change)
+    if op == "draft":
+        text = _expand_if_short(text, params, settings, lambda pr: gemini.generate(
+            key, model, pr, system=prompts.DRAFT_SYSTEM, temperature=0.6, on_model_change=on_change))
     return apply(op, params, text)
+
+
+def _expand_if_short(text, params, settings, gen):
+    """초안이 목표 분량의 절반도 안 되면 한 번 더 — 사실은 그대로, 의미를 풀어 자세히."""
+    conn = db.connect()
+    try:
+        area = params.get("area") or "subject"
+        limit = db.area_limit(area, settings)
+        t = db.row(conn, "SELECT bytes FROM student_targets WHERE student_id=? AND area=?", (params["student_id"], area))
+        if t and t["bytes"]:
+            limit = int(t["bytes"])
+        st = db.row(conn, "SELECT * FROM students WHERE id=?", (params["student_id"],))
+        notes = db.rows(conn, "SELECT content FROM notes WHERE student_id=? AND use_in_draft=1", (params["student_id"],))
+    finally:
+        conn.close()
+    cur = db.neis_bytes(prompts.clean_draft(text, st))
+    if cur >= limit * 0.55:
+        return text
+    notes_text = "\n".join("- " + prompts.strip_names(strip_class_words(n["content"]), st) for n in notes[:20])
+    try:
+        longer = gen(prompts.expand(prompts.clean_draft(text, st), limit, cur, notes_text))
+        return longer if db.neis_bytes(prompts.clean_draft(longer, st)) > cur else text
+    except Exception:  # noqa
+        return text
 
 
 def _worker():

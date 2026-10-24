@@ -790,13 +790,70 @@ def ai_apply(h, q, b):
     return pipeline.apply(b["op"], b.get("params", {}), b.get("text", ""))
 
 
+def _batch_targets(conn, class_id, area_in, only_missing):
+    c = db.row(conn, "SELECT * FROM classes WHERE id=?", (int(class_id),))
+    kind = c.get("kind") or "교과"
+    area = area_in or db.areas_for_kind(kind)[0]["id"]
+    out = []
+    for st in db.rows(conn, "SELECT * FROM students WHERE class_id=? ORDER BY number", (c["id"],)):
+        notes = [n for n in db.rows(conn, "SELECT * FROM notes WHERE student_id=? AND use_in_draft=1 ORDER BY date, id", (st["id"],))
+                 if db.note_area(n, kind) == area]
+        if not notes:
+            continue
+        if only_missing and db.row(conn, "SELECT id FROM drafts WHERE student_id=? AND area=?", (st["id"], area)):
+            continue
+        t = db.row(conn, "SELECT bytes FROM student_targets WHERE student_id=? AND area=?", (st["id"], area))
+        out.append((st, notes, (t or {}).get("bytes")))
+    return c, area, out
+
+
+@route("POST", "/api/drafts/batch_prompt")
+def drafts_batch_prompt(h, q, b):
+    """AI 없이: 반 전체 초안 요청문 하나 (ChatGPT·Gemini 앱에 붙여넣기)."""
+    conn = db.connect()
+    try:
+        c, area, items = _batch_targets(conn, b["class_id"], b.get("area"), b.get("only_missing"))
+        if not items:
+            raise ApiError("초안을 만들 학생이 없어요 (관찰기록이 있는 학생이 없거나 모두 초안이 있어요).")
+        ci = dict(c)
+        ci["label"] = db.class_label(c)
+        ctx = db.row(conn, "SELECT topic, competencies, philosophy FROM class_context WHERE class_id=? AND area=?", (c["id"], area)) or {}
+        return {"prompt": prompts.draft_batch(ci, items, db.get_settings(), area, context=ctx), "count": len(items)}
+    finally:
+        conn.close()
+
+
+@route("POST", "/api/drafts/batch_apply")
+def drafts_batch_apply(h, q, b):
+    """AI 답을 붙여넣으면 '[3번] …' 줄마다 그 학생 초안으로 저장."""
+    conn = db.connect()
+    try:
+        c = db.row(conn, "SELECT * FROM classes WHERE id=?", (int(b["class_id"]),))
+        students = db.rows(conn, "SELECT * FROM students WHERE class_id=?", (c["id"],))
+    finally:
+        conn.close()
+    area = b.get("area") or "subject"
+    text = (b.get("text") or "").replace("**", "")
+    parts = re.split(r"(?m)^\s*(?:#+\s*)?\[?\s*(\d{1,5})\s*번\s*\]?\s*[:：.)-]?\s*", text)
+    saved, missing = 0, []
+    for i in range(1, len(parts) - 1, 2):
+        num, body = int(parts[i]), parts[i + 1].strip()
+        st = next((s for s in students if s["number"] == num), None)
+        if not st or not body:
+            missing.append(num)
+            continue
+        pipeline.apply_draft(st["id"], body.split("\n\n")[0], area)
+        saved += 1
+    if not saved:
+        raise ApiError("답에서 '[1번] …' 같은 줄을 찾지 못했어요. AI 답을 그대로 전부 붙여넣어 주세요.")
+    return {"ok": True, "saved": saved, "missing": missing}
+
+
 @route("POST", "/api/drafts/batch")
 def drafts_batch(h, q, b):
     settings = db.get_settings()
-    if settings.get("mode") == "manual":
-        raise ApiError("일괄 생성은 API 모드에서만 가능합니다. 수동 모드에서는 학생별로 진행하세요.")
-    if not settings.get("gemini_api_key"):
-        raise ApiError("Gemini API 키가 없습니다.")
+    if pipeline.draft_engine(settings) not in ("gemini", "local"):
+        raise ApiError("AI가 연결돼 있지 않아요. '반 전체 프롬프트 복사'로 ChatGPT·Gemini 앱에서 만들 수 있어요.")
     conn = db.connect()
     c = db.row(conn, "SELECT * FROM classes WHERE id=?", (int(b["class_id"]),))
     kind = c.get("kind") or "교과"
@@ -888,6 +945,7 @@ def _mask(k):
 def settings_get(h, q, b):
     s = db.get_settings()
     s["active_seg"] = pipeline.seg_engine(s)
+    s["active_draft"] = pipeline.draft_engine(s) or "manual"
     s["gemini_api_key_masked"] = _mask(s.get("gemini_api_key", ""))
     s["has_key"] = bool(s.get("gemini_api_key"))
     s.pop("gemini_api_key", None)
