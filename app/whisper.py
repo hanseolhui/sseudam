@@ -91,6 +91,9 @@ def _no_window():
 
 
 def fetch_ffmpeg():
+    import platform_util
+    if platform_util.IS_STORE:   # 스토어판은 묶음 안에 들어 있음 (실행 파일을 나중에 받지 않음)
+        return ffmpeg()
     import zipfile
     dest_dir = os.path.join(db.SUPPORT_DIR, "bin")
     os.makedirs(dest_dir, exist_ok=True)

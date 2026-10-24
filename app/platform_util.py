@@ -6,6 +6,8 @@ import sys
 
 IS_MAC = sys.platform == "darwin"
 IS_WIN = os.name == "nt"
+# 마이크로소프트 스토어(MSIX) 버전: 스토어 실행기(sseudam_launch)가 표시해 줌
+IS_STORE = IS_WIN and os.environ.get("SSEUDAM_MSIX") == "1"
 
 
 APP_NAME = "쓰담"
@@ -13,6 +15,9 @@ OLD_APP_NAME = "세특도우미"  # 1.3 이전 이름
 
 
 def _support_root():
+    if IS_STORE:
+        # 스토어 앱은 AppData 쓰기가 앱 전용 폴더로 격리돼서 앱을 지우면 기록도 사라짐 → 사용자 폴더 아래에 둠
+        return os.environ.get("USERPROFILE") or os.path.expanduser("~")
     if IS_WIN:
         return os.environ.get("APPDATA") or os.path.expanduser("~\\AppData\\Roaming")
     return os.path.expanduser("~/Library/Application Support")
@@ -29,6 +34,19 @@ def migrate_support():
     if os.environ.get("SETEUK_DATA"):
         return
     _migrate_old_support(os.path.join(_support_root(), OLD_APP_NAME), support_dir())
+    if IS_STORE:   # 설치 파일판으로 쓰던 기록(AppData\Roaming\쓰담) → 스토어판 위치로 한 번 복사
+        _copy_from_installer_version()
+
+
+def _copy_from_installer_version():
+    import shutil
+    src = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~\\AppData\\Roaming"), APP_NAME, "data")
+    dst = os.path.join(support_dir(), "data")
+    try:
+        if os.path.isdir(src) and not os.path.exists(os.path.join(dst, "seteuk.db")):
+            shutil.copytree(src, dst, dirs_exist_ok=True)
+    except OSError as e:
+        print("[스토어판] 예전 기록 복사 실패:", e)
 
 
 def _migrate_old_support(old, new):

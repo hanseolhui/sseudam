@@ -346,7 +346,9 @@ def mac_ram_gb():
 
 def llama_bin():
     name = "llama-server.exe" if _is_win() else "llama-server"
-    for c in (os.path.join(os.environ.get("SETEUK_BIN", ""), name), os.path.join(db.SUPPORT_DIR, "bin", name),
+    for c in (os.path.join(os.environ.get("SETEUK_BIN", ""), name),
+              os.path.join(os.environ.get("SETEUK_BIN", ""), "llama", name),   # 스토어판: 묶음 안에 들어 있음
+              os.path.join(db.SUPPORT_DIR, "bin", name),
               os.path.join(WIN_ENGINE_DIR, name), os.path.join(db.BASE_DIR, "macos", "bin", name)):
         if c and os.path.isfile(c) and os.access(c, os.X_OK):
             return c

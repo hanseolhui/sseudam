@@ -39,6 +39,9 @@ def _get(url, timeout=20):
 
 
 def check(force=False):
+    import platform_util
+    if platform_util.IS_STORE:   # 스토어판은 마이크로소프트 스토어가 업데이트 (앱이 스스로 코드를 받지 않음)
+        return {"enabled": False, "store": True, "current": version.VERSION, "message": "마이크로소프트 스토어에서 자동으로 업데이트돼요."}
     if not version.UPDATE_REPO:
         return {"enabled": False, "current": version.VERSION}
     if not force and _cache["data"] and time.time() - _cache["at"] < 3600:

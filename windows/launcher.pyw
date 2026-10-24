@@ -13,7 +13,10 @@ import webbrowser
 HERE = os.path.dirname(os.path.abspath(__file__))
 PORT = int(os.environ.get("SETEUK_PORT", "8765"))
 URL = "http://127.0.0.1:%d/" % PORT
-SUPPORT = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "쓰담")
+# 마이크로소프트 스토어판(sseudam_launch 가 SSEUDAM_MSIX=1 로 실행): AppData 가 앱 전용으로 격리되므로 사용자 폴더 아래에
+STORE = os.environ.get("SSEUDAM_MSIX") == "1"
+SUPPORT = (os.path.join(os.environ.get("USERPROFILE") or os.path.expanduser("~"), "쓰담") if STORE
+           else os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "쓰담"))
 PYTHONW = os.path.join(HERE, "python", "pythonw.exe")
 NO_WINDOW = 0x08000000
 DETACHED = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
@@ -37,8 +40,10 @@ def ver(app_dir):
 
 
 def pick_code():
-    """설치된 코드와 앱 안 업데이트로 받은 코드 중 높은 버전"""
+    """설치된 코드와 앱 안 업데이트로 받은 코드 중 높은 버전 (스토어판은 스토어가 업데이트하므로 설치된 코드만)"""
     best, best_v = os.path.join(HERE, "app"), ver(os.path.join(HERE, "app")) or (0,)
+    if STORE:
+        return best
     root = os.path.join(SUPPORT, "code")
     if os.path.isdir(root):
         for d in os.listdir(root):
