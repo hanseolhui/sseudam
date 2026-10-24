@@ -105,6 +105,20 @@ def t_whisper():
     raise TimeoutError("받아쓰기 결과가 나오지 않음")
 
 
+def t_whisper_direct():
+    """설치된 whisper-cli 를 직접 돌려 옵션 호환 확인 (실패하면 원인 줄을 그대로 보여 줌)."""
+    import glob
+    import subprocess
+    bin_dir = os.environ.get("SETEUK_BIN") or ""
+    exe = (glob.glob(os.path.join(bin_dir, "whisper", "whisper-cli.exe")) + glob.glob(os.path.join(bin_dir, "whisper-cli.exe")))[:1]
+    assert exe, "whisper-cli.exe 없음: %s" % bin_dir
+    out = subprocess.run([exe[0], "--help"], capture_output=True, text=True, encoding="utf-8", errors="replace")
+    helptext = out.stdout + out.stderr
+    need = ["-pp", "--prompt", "--vad", "-vm"]
+    missing = [o for o in need if (" " + o + " ").replace("  ", " ") not in helptext and (o + ",") not in helptext]
+    return {"exe": exe[0], "missing_options": missing, "help_head": helptext.strip().splitlines()[:3]}
+
+
 def t_llm_engine():
     st = call("/api/localai/models")
     return {"supported": st.get("supported"), "engine": st.get("engine"), "machine": st.get("machine")}
@@ -123,7 +137,7 @@ def t_plus():
 
 for name, fn in [("서버 켜짐 · 버전", t_version), ("윈도우 경로 · 한글 폴더", t_korean_paths),
                  ("학생 명단 · 이름 기준 분리", t_segment), ("QR 연동(실제 중계 서버)", t_relay),
-                 ("Whisper 받기 · 녹음 받아쓰기", t_whisper), ("내장 AI 엔진 상태", t_llm_engine),
+                 ("Whisper 실행 파일 옵션", t_whisper_direct), ("Whisper 받기 · 녹음 받아쓰기", t_whisper), ("내장 AI 엔진 상태", t_llm_engine),
                  ("아이디어·오류 진단 정보", t_feedback_preview), ("쓰담 플러스 상태", t_plus)]:
     check(name, fn)
 

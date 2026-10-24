@@ -266,14 +266,16 @@ def transcribe(audio_path, students=None, kind="수업", on_progress=None, model
                     on_progress(int(m.group(1)))
                 else:
                     err_tail.append(line)
-                    del err_tail[:-15]
+                    del err_tail[:-200]
         t = threading.Thread(target=read_err, daemon=True)
         t.start()
         out = proc.stdout.read().decode("utf-8", "replace")
         proc.wait()
         t.join(2)
         if proc.returncode != 0:
-            raise RuntimeError("Whisper 실행 오류: %s" % " / ".join(err_tail[-3:]))
+            # 사용법이 길게 찍히면 원인 줄(error: …)이 묻히므로 그 줄을 먼저
+            cause = [l for l in err_tail if "error" in l.lower() or "unknown" in l.lower() or "failed" in l.lower()]
+            raise RuntimeError("Whisper 실행 오류: %s" % " / ".join((cause or err_tail)[-3:]))
         text = format_segments(out)
         if not text.strip():
             raise RuntimeError("녹음에서 말소리를 찾지 못했습니다.")

@@ -539,7 +539,9 @@ def _name_hits(conn, rid):
     keys.sort(key=lambda x: -len(x[0]))
     hits = []
     for n, s in keys:
-        for m in re.finditer(re.escape(n), text):
+        # 세 글자 이상 이름은 받아쓰기가 글자 사이에 넣은 띄어쓰기도 허용 ("샘플 준이" → 샘플준)
+        pat = r"\s?".join(re.escape(ch) for ch in n) if len(n) >= 3 else re.escape(n)
+        for m in re.finditer(pat, text):
             if any(h[0] <= m.start() < h[1] for h in hits):
                 continue
             hits.append((m.start(), m.end(), s))
