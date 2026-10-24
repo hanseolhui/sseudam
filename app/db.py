@@ -21,6 +21,11 @@ DEFAULT_SETTINGS = {
     "mode": "api",                      # api | manual
     "gemini_api_key": "",
     "gemini_model": "gemini-2.5-flash",
+    "api_provider": "gemini",           # 외부 AI API: gemini | openai | claude
+    "openai_api_key": "",
+    "openai_model": "",                 # 비우면 키로 받은 목록에서 가장 좋은 모델
+    "claude_api_key": "",
+    "claude_model": "claude-opus-5-5",
     "byte_limit": "1500",
     "school_level": "고등학교",
     "teacher_subject": "",

@@ -428,7 +428,7 @@ def auto_process(rid, force=False):
                 conn = db.connect()
                 _set_rec(conn, rid, status="보관됨", error="받아쓰기 모델을 내려받으면 자동으로 글자로 바뀝니다 (설정 → 받아쓰기 엔진)")
                 conn.close()
-        elif ai_ready(settings):
+        elif settings.get("mode") == "api" and settings.get("gemini_api_key"):   # 녹음 받아쓰기는 Gemini만
             enqueue("transcribe", {"recording_id": rid, "chain": True}, "전사 #%d" % rid)
     elif has_text:
         # 휴대폰 쓰담이 받아쓴 글이 실려 온 녹음: 내 맥 Whisper가 있으면 더 정확하게 다시 받아쓴다
@@ -457,7 +457,9 @@ def process_pending():
 
 
 def ai_ready(settings):
-    return settings.get("mode") == "api" and bool(settings.get("gemini_api_key"))
+    """외부 AI API(Gemini · ChatGPT · Claude 중 고른 것)의 키가 있는지."""
+    import cloudai
+    return settings.get("mode") == "api" and bool(cloudai.key_of(settings))
 
 
 def use_whisper(settings):
@@ -801,16 +803,16 @@ def _run_api(op, params, job_id=None):
         if op == "draft":
             text = _expand_if_short(text, params, settings, lambda pr: localai.generate("local", settings, prompts.DRAFT_SYSTEM, pr))
         return apply(op, params, text)
-    key = (settings.get("gemini_api_key") or "").strip()
-    if not key:
-        raise ValueError("Gemini API 키가 없습니다. 설정에서 입력하거나 '수동 모드'를 사용하세요.")
-    model = settings.get("gemini_model") or "gemini-2.5-flash"
-
-    def on_change(new_model):
-        db.set_settings({"gemini_model": new_model})
-
+    import cloudai
     p = build_prompt(op, params)
-    if op == "transcribe":
+    if op == "transcribe":   # 녹음 파일 받아쓰기는 Gemini만 (고른 외부 AI와 상관없이 Gemini 키 필요)
+        key = (settings.get("gemini_api_key") or "").strip()
+        if not key:
+            raise ValueError("Gemini API 키가 없습니다. 받아쓰기는 내 맥(Whisper)을 쓰거나 Gemini 키를 넣어 주세요.")
+        model = settings.get("gemini_model") or "gemini-2.5-flash"
+
+        def on_change(new_model):
+            db.set_settings({"gemini_model": new_model})
         rid = params["recording_id"]
         conn = db.connect()
         _set_rec(conn, rid, status="전사중", error="")
@@ -838,11 +840,19 @@ def _run_api(op, params, job_id=None):
         conn = db.connect()
         _set_rec(conn, params["recording_id"], status="분리중", error="")
         conn.close()
-    text = gemini.generate(key, model, p["prompt"], system=p.get("system"), json_mode=p.get("json", False),
-                           temperature=0.2 if op == "segment" else 0.6, on_model_change=on_change)
-    if op == "draft":
-        text = _expand_if_short(text, params, settings, lambda pr: gemini.generate(
-            key, model, pr, system=prompts.DRAFT_SYSTEM, temperature=0.6, on_model_change=on_change))
+    prov = cloudai.provider(settings)
+
+    def on_model(new_model):
+        db.set_settings({cloudai.PROVIDERS[prov]["model"]: new_model})
+
+    try:
+        text = cloudai.generate(settings, p["prompt"], system=p.get("system"), json_mode=p.get("json", False),
+                                temperature=0.2 if op == "segment" else 0.6, on_model_change=on_model)
+        if op == "draft":
+            text = _expand_if_short(text, params, settings, lambda pr: cloudai.generate(
+                settings, pr, system=prompts.DRAFT_SYSTEM, temperature=0.6, on_model_change=on_model))
+    except cloudai.CloudError as e:
+        raise ValueError(str(e))
     return apply(op, params, text)
 
 

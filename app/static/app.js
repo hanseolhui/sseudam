@@ -316,6 +316,14 @@ async function router(soft) {
   // 메뉴마다 마지막으로 보던 화면 기억 (학생 화면을 보다가 다른 메뉴에 다녀와도 그대로)
   if (nav) { navMemory[nav] = '#' + hash; store('session', 'sseudam.navMemory', JSON.stringify(navMemory)); }
   state.nav = nav;
+  // 메뉴 첫 화면 버튼: 그 메뉴의 안쪽 화면(학생·녹음 상세, 설정 탭 등)에 있을 때만 보임
+  const navA = nav && $(`.sidebar nav a[data-nav="${nav}"]`), mh = $('#menu-home');
+  if (navA && navA.getAttribute('href') !== '#' + hash && '#' + hash !== '#/') {
+    mh.href = navA.getAttribute('href');
+    $('span', mh).textContent = navA.querySelector('span').textContent + ' 처음으로';
+    mh.setAttribute('aria-label', navA.querySelector('span').textContent + ' 첫 화면으로');
+    mh.classList.remove('hidden');
+  } else mh.classList.add('hidden');
   const scroll = soft ? window.scrollY : 0;
   if (!soft) { view.classList.remove('enter'); void view.offsetWidth; view.classList.add('enter'); }
   try {
@@ -1464,13 +1472,11 @@ async function viewSettings(section) {
         <p class="help" style="margin-top:-4px">학생별로 나누고 세특 초안을 쓰는 AI를 골라요. <b>누르면 바로 바뀌어요.</b> 어떤 걸 골라도 초안 화면의 <b>📋 ChatGPT·Gemini로 쓰기</b>로 외부 AI에서 쓸 수 있어요.</p>
         <div class="ai-tiles" id="ai-tiles"></div>
         <div id="ai-detail" class="ai-detail"></div>
-        <details id="ai-ext" style="margin-top:12px"><summary class="small">고급 — 외부 AI 연결 (Gemini API 키 · Ollama · LM Studio)</summary>
-          <div id="ai-gemini" class="info-box" style="margin-top:8px"><b>Gemini API 키 (외부 AI)</b> <span class="small muted">— 이 컴퓨터 AI 대신 구글 Gemini로 나누고 초안 쓰기</span>
-          <label class="field"><span>Gemini API 키 <a href="https://aistudio.google.com/apikey" target="_blank" class="small">무료로 받기 ↗</a></span>
-            <input id="key" type="password" placeholder="${s.has_key ? esc(s.gemini_api_key_masked) + ' (저장됨 — 바꿀 때만 입력)' : 'AIza로 시작하는 키'}" autocomplete="off"></label>
-          <div class="row" style="margin-top:8px"><button class="shrink" id="test">연결 확인</button><button class="shrink primary" id="use-gemini">Gemini로 쓰기</button>${s.has_key ? '<button class="shrink danger" id="clear-key">키 삭제</button>' : ''}<span id="test-result" class="small"></span></div>
-          <label class="field" style="margin-top:10px"><span>모델</span><input id="model" value="${esc(s.gemini_model)}" list="model-list"><datalist id="model-list"></datalist></label>
-          <p class="help">녹음 글이 구글 서버로 가요. 무료 등급은 구글이 서비스 개선에 쓸 수 있어서, AI Studio에서 결제 수단을 등록(유료 등급)하는 걸 권해요.</p>
+        <details id="ai-ext" style="margin-top:12px"><summary class="small">고급 — 외부 AI 연결 (Gemini · ChatGPT · Claude API 키 · Ollama · LM Studio)</summary>
+          <div id="ai-gemini" class="info-box" style="margin-top:8px"><b>외부 AI API 키</b> <span class="small muted">— 이 컴퓨터 AI 대신 Gemini · ChatGPT · Claude로 나누고 초안 쓰기</span>
+          <div class="seg-pick" role="radiogroup" aria-label="외부 AI 고르기" style="margin-top:8px">${Object.entries(s.api_keys).map(([p, k]) =>
+            `<label class="check shrink"><input type="radio" name="api_prov" value="${p}" ${(s.api_provider || 'gemini') === p ? 'checked' : ''}> ${esc(k.label)}${k.has ? ' <span class="ok-text small">✓ 키 있음</span>' : ''}</label>`).join('')}</div>
+          <div id="api-fields"></div>
         </div>
 
           <div class="info-box" style="margin-top:8px">
@@ -1551,7 +1557,7 @@ async function viewSettings(section) {
       <span class="save-chip" id="save-chip">바꾸면 바로 저장돼요</span></div>`;
   $('#open-data').onclick = e => { e.preventDefault(); api('/api/open_data', {}); };
   const collect = () => ({
-    gemini_api_key: $('#key').value, gemini_model: $('#model').value.trim(),
+    [apiProv() + '_api_key']: $('#key').value, [apiProv() + '_model']: $('#model').value.trim(),
     area_limits: JSON.stringify(Object.fromEntries($$('.area-limit').map(i => [i.dataset.area, +i.value || 0]))),
     byte_limit: ($('.area-limit[data-area=subject]') || {}).value || s.byte_limit, school_level: $('#school_level').value, teacher_subject: $('#teacher_subject').value,
     draft_guidance: $('#draft_guidance').value, style_examples: $('#style_examples').value,
@@ -1582,22 +1588,44 @@ async function viewSettings(section) {
     clearTimeout(saveT);
     saveT = setTimeout(async () => { try { await save(); flashSaved(el); updateModeBadge(); } catch (err) { /* toast 표시됨 */ } }, 250);
   });
-  $('#test').onclick = async () => {
-    $('#test-result').textContent = '확인 중…';
-    try {
-      const r = await api('/api/settings/test', { key: $('#key').value }, { silent: true });
-      $('#test-result').innerHTML = `<span style="color:var(--green)">✓ 연결 성공 (모델 ${r.models.length}개)</span>`;
-      $('#model-list').innerHTML = r.models.map(m => `<option value="${esc(m.name)}">${esc(m.display)}</option>`).join('');
-      if ($('#key').value) { await save(); flashSaved($('#key')); toast('키를 저장했어요 ✓'); updateModeBadge(); aiLoad(); }
-    } catch (e) { $('#test-result').innerHTML = `<span style="color:var(--red)">${esc(e.message)}</span>`; }
+  // 외부 AI API: Gemini · ChatGPT · Claude 중 하나 골라 키·모델 넣기
+  const apiProv = () => ($('input[name=api_prov]:checked') || {}).value || 'gemini';
+  const API_HELP = {
+    gemini: { ph: 'AIza로 시작하는 키', get: '키 받기', note: '녹음 글이 구글 서버로 가요. 무료 등급은 구글이 서비스 개선에 쓸 수 있어서, AI Studio에서 결제 수단을 등록(유료 등급)하는 걸 권해요.' },
+    openai: { ph: 'sk-로 시작하는 키', get: '키 받기', note: '녹음 글이 OpenAI 서버로 가요. ChatGPT 구독(Plus)과 API는 따로라서, platform.openai.com 에서 결제(크레딧)를 넣어야 써요. API로 보낸 내용은 기본적으로 학습에 쓰이지 않아요.' },
+    claude: { ph: 'sk-ant-로 시작하는 키', get: '키 받기', note: '녹음 글이 Anthropic 서버로 가요. Claude 구독(Pro)과 API는 따로라서, console.anthropic.com 에서 결제(크레딧)를 넣어야 써요. API로 보낸 내용은 기본적으로 학습에 쓰이지 않아요.' },
   };
-  if ($('#clear-key')) $('#clear-key').onclick = async () => {
-    if (!confirmBox('저장된 API 키를 삭제할까요?')) return;
-    await api('/api/settings', { clear_key: true }); router(true); updateModeBadge();
+  const renderApiFields = () => {
+    const p = apiProv(), k = s.api_keys[p], h = API_HELP[p];
+    $('#api-fields').innerHTML = `
+      <label class="field" style="margin-top:8px"><span>${esc(k.label)} API 키 <a href="${esc(k.site)}" target="_blank" class="small">${h.get} ↗</a></span>
+        <input id="key" type="password" placeholder="${k.has ? esc(k.masked) + ' (저장됨 — 바꿀 때만 입력)' : h.ph}" autocomplete="off"></label>
+      <div class="row" style="margin-top:8px"><button class="shrink" id="test">연결 확인</button><button class="shrink primary" id="use-gemini">${esc(k.label)}로 쓰기</button>${k.has ? '<button class="shrink danger" id="clear-key">키 삭제</button>' : ''}<span id="test-result" class="small"></span></div>
+      <label class="field" style="margin-top:10px"><span>모델 <span class="small muted">— 연결 확인을 누르면 고를 수 있는 목록이 나와요${p === 'openai' ? ' (비워 두면 가장 좋은 모델)' : ''}</span></span><input id="model" value="${esc(k.model)}" list="model-list"><datalist id="model-list"></datalist></label>
+      <p class="help">${h.note}</p>`;
+    $('#test').onclick = async () => {
+      $('#test-result').textContent = '확인 중…';
+      try {
+        const r = await api('/api/settings/test', { provider: p, key: $('#key').value }, { silent: true });
+        $('#test-result').innerHTML = `<span style="color:var(--green)">✓ 연결 성공 (모델 ${r.models.length}개)</span>`;
+        $('#model-list').innerHTML = r.models.map(m => `<option value="${esc(m.name)}">${esc(m.display)}</option>`).join('');
+        if ($('#key').value) { await save(); k.has = true; flashSaved($('#key')); toast('키를 저장했어요 ✓'); updateModeBadge(); aiLoad(); }
+      } catch (e) { $('#test-result').innerHTML = `<span style="color:var(--red)">${esc(e.message)}</span>`; }
+    };
+    if ($('#clear-key')) $('#clear-key').onclick = async () => {
+      if (!confirmBox(`저장된 ${k.label} API 키를 삭제할까요?`)) return;
+      await api('/api/settings', { clear_key: p }); router(true); updateModeBadge();
+    };
+    $('#use-gemini').onclick = async () => {
+      if ($('#key').value.trim() || $('#model').value.trim() !== k.model) { await save(); }
+      await aiChoose('gemini', null, p);
+    };
   };
+  renderApiFields();
+  $$('input[name=api_prov]').forEach(r => r.addEventListener('change', e => { e.stopPropagation(); renderApiFields(); }));
   // ── 🧠 AI 카드: 하나 고르면 바로 바뀜 ──
   const gb = n => (n / 1e9).toFixed(1) + 'GB';
-  const ENG_NAME = { builtin: '쓰담 AI 모델로', apple: '기기 안 AI로', gemini: 'Gemini로', external: '내 맥 AI 앱으로', manual: 'AI 없이 쓰기로' };
+  const ENG_NAME = { builtin: '쓰담 AI 모델로', apple: '기기 안 AI로', gemini: '외부 AI API로', external: '내 맥 AI 앱으로', manual: 'AI 없이 쓰기로' };
   let aiTimer = null, aiSt = null;
   const tileHtml = (id, icon, title, sub, status, on, disabled) => `
     <button class="ai-tile${on ? ' on' : ''}${disabled ? ' off' : ''}" data-choice="${id}" ${disabled ? 'aria-disabled="true"' : ''}>
@@ -1622,10 +1650,10 @@ async function viewSettings(section) {
       tileHtml('builtin', '✨', '쓰담 AI 모델', '이 컴퓨터 안에서 · 무료 · 추천', bStatus, choice === 'builtin', !b.supported) +
       (isMac ? tileHtml('apple', '🍎', '기기 안 AI', '설치 없음 · 학생 나누기만', st.apple.state === 'ready' ? '✓ 바로 쓸 수 있어요' : '<span class="muted">이 맥에선 안 돼요</span>', choice === 'apple', st.apple.state !== 'ready') : '') +
       tileHtml('manual', '✋', 'AI 없이', '이름 기준 나누기 · 초안은 프롬프트 복사', '', choice === 'manual', false) +
-      (choice === 'gemini' ? tileHtml('gemini', '🔑', 'Gemini (외부 API)', '고급에서 연결함', st.has_key ? '✓ 키 연결됨' : '키를 넣어야 해요', true, false) : '') +
+      (choice === 'gemini' ? tileHtml('gemini', '🔑', esc(st.provider_label) + ' (외부 API)', '고급에서 연결함', st.has_key ? '✓ 키 연결됨' + (st.api_model ? ' · ' + esc(st.api_model) : '') : '키를 넣어야 해요', true, false) : '') +
       (choice === 'external' ? tileHtml('external', '🖥️', '내 맥 AI 앱', 'Ollama · LM Studio', '✓ ' + esc(st.local_ai_model), true, false) : '');
-    const draftTxt = { gemini: 'Gemini', local: choice === 'external' ? '내 맥 AI 앱' : '쓰담 AI 모델', manual: '프롬프트 복사(ChatGPT·Gemini 앱)' }[st.draft] || st.draft;
-    const segTxt = { gemini: 'Gemini', local: choice === 'external' ? '내 맥 AI 앱' : '쓰담 AI 모델', apple: '기기 안 AI', rules: '이름 기준' }[st.active_seg] || st.active_seg;
+    const draftTxt = { gemini: st.provider_label, local: choice === 'external' ? '내 맥 AI 앱' : '쓰담 AI 모델', manual: '프롬프트 복사(ChatGPT·Gemini 앱)' }[st.draft] || st.draft;
+    const segTxt = { gemini: st.provider_label, local: choice === 'external' ? '내 맥 AI 앱' : '쓰담 AI 모델', apple: '기기 안 AI', rules: '이름 기준' }[st.active_seg] || st.active_seg;
     $('#ai-now').innerHTML = `학생 나누기: <b>${segTxt}</b> · 세특 초안: <b>${draftTxt}</b>`;
     // 고른 것에 맞는 설명·설정
     if (choice === 'gemini' || choice === 'external') $('#ai-ext').open = true;
@@ -1669,13 +1697,14 @@ async function viewSettings(section) {
     if (dl && document.body.contains($('#ai-tiles'))) aiTimer = setTimeout(aiLoad, 1500);
     else if (b.models.some(m => (m.download || {}).status === 'done')) updateModeBadge();
   };
-  const aiChoose = async (choice, tile) => {
+  const aiChoose = async (choice, tile, provider) => {
     if (tile && tile.classList.contains('off')) { toast(tile.querySelector('.ai-tile-status').textContent || '이 컴퓨터에선 쓸 수 없어요', true); return; }
     $$('.ai-tile').forEach(t => t.classList.toggle('on', t === tile));
     if (tile) { tile.classList.remove('pop'); void tile.offsetWidth; tile.classList.add('pop'); }
     try {
-      const r = await api('/api/ai/choose', { choice });
-      toast(r.started ? `${ENG_NAME[choice]} 바꿨어요 ✓ 이 컴퓨터에 맞는 모델(${modelName(r.started)})을 받기 시작했어요` : `${ENG_NAME[choice]} 바꿨어요 ✓`);
+      const r = await api('/api/ai/choose', { choice, provider });
+      const nm = choice === 'gemini' ? r.provider_label + '(으)로' : ENG_NAME[choice];
+      toast(r.started ? `${nm} 바꿨어요 ✓ 이 컴퓨터에 맞는 모델(${modelName(r.started)})을 받기 시작했어요` : `${nm} 바꿨어요 ✓`);
       flashSaved(tile);
       if (choice === 'gemini' && !r.has_key) setTimeout(() => $('#key') && $('#key').focus(), 300);
     } catch (e) { /* 오류 토스트 */ }
@@ -1700,10 +1729,6 @@ async function viewSettings(section) {
     $$('.la-fill').forEach(x => x.onclick = () => { $('#local_ai_url').value = x.dataset.url; if (!$('#local_ai_model').value) $('#local_ai_model').value = x.dataset.model; });
   };
   $('#la-test-local').onclick = () => laTest('local', $('#la-local-r'));
-  $('#use-gemini').onclick = async () => {
-    if ($('#key').value.trim()) { await save(); }
-    await aiChoose('gemini', null);
-  };
   $('#la-use-ext').onclick = async () => {
     try { await api('/api/ai/choose', { choice: 'external', url: $('#local_ai_url').value.trim(), model: $('#local_ai_model').value.trim() }); toast('내 맥 AI 앱으로 바꿨어요 ✓'); flashSaved($('#la-use-ext')); aiLoad(); updateModeBadge(); } catch (e) { /* */ }
   };
@@ -2154,11 +2179,11 @@ async function updateModeBadge() {
   if (!s) return;
   state.settings = s;
   const dot = c => `<span style="color:var(--${c})">●</span> `;
-  $('#mode-badge').innerHTML = s.active_seg === 'gemini' ? dot('green') + 'API 모드 · ' + esc(s.gemini_model)
+  $('#mode-badge').innerHTML = s.active_seg === 'gemini' ? dot('green') + esc((s.api_keys[s.api_provider || 'gemini'] || {}).label || 'API') + ' · ' + esc((s.api_keys[s.api_provider || 'gemini'] || {}).model || '자동')
     : s.active_seg === 'apple' ? dot('green') + '기기 안 AI'
     : s.active_seg === 'local' ? dot('green') + (s.local_ai_url === 'builtin' ? '쓰담 AI 모델' : '내 맥 AI · ' + esc(s.local_ai_model || ''))
     : s.ai_choice === 'builtin' ? dot('amber') + '쓰담 AI 모델 준비 중'
-    : s.ai_choice === 'gemini' ? dot('amber') + 'Gemini 키 필요 — <a href="#/settings">설정</a>'
+    : s.ai_choice === 'gemini' ? dot('amber') + esc((s.api_keys[s.api_provider || 'gemini'] || {}).label || 'API') + ' 키 필요 — <a href="#/settings/ai">설정</a>'
     : s.ai_choice === 'manual' || s.mode === 'manual' ? dot('muted') + 'AI 없이 (프롬프트 복사)' : dot('amber') + 'AI 없음 — <a href="#/settings">설정</a>';
 }
 

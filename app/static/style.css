@@ -531,3 +531,13 @@ audio { width: 100%; margin: 8px 0; }
 .ctx-chev { flex-shrink: 0; font-size: 13px; font-weight: 700; color: var(--accent); padding: 4px 10px; border-radius: 999px; background: var(--accent-soft); }
 .lesson-ctx .when-open { display: none; } .lesson-ctx[open] .when-open { display: inline; } .lesson-ctx[open] .when-closed { display: none; }
 .lesson-ctx[open] > summary.ctx-toggle { border-color: var(--accent); margin-bottom: 10px; }
+
+/* 메뉴 첫 화면 버튼 (오른쪽 위 고정) */
+.menu-home { position: fixed; top: 16px; right: 24px; z-index: 40; display: inline-flex; align-items: center; gap: 8px;
+  min-height: 44px; padding: 8px 18px 8px 14px; border-radius: 999px; background: var(--panel); color: var(--accent);
+  border: 1px solid var(--line-strong); box-shadow: var(--shadow); font-weight: 600; text-decoration: none; }
+.menu-home svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.menu-home:hover { transform: translateY(-1px); }
+.menu-home.hidden { display: none; }
+@media (max-width: 760px) { .menu-home { top: auto; bottom: 16px; right: 16px; } }
+.seg-pick { display: flex; flex-wrap: wrap; gap: 6px 18px; }

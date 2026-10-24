@@ -18,6 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import db  # noqa: E402
+import cloudai  # noqa: E402
 import gemini  # noqa: E402
 import localai  # noqa: E402
 import pipeline  # noqa: E402
@@ -777,7 +778,7 @@ def ai_run(h, q, b):
         labels = {"draft": "세특 초안", "shorten": "초안 줄이기"}
         jid = pipeline.enqueue(op, params, "내 맥 AI %s %s" % (labels[op], b.get("label", "")))
         return {"ok": True, "job_id": jid}
-    if settings.get("mode") == "manual" or not settings.get("gemini_api_key"):
+    if settings.get("mode") == "manual" or not cloudai.key_of(settings):
         # 쓸 AI가 없으면 오류 대신: 프롬프트를 복사해서 ChatGPT·Gemini 앱에 붙여넣기
         p = pipeline.build_prompt(op, params)
         return {"manual": True, "prompt": p["prompt"], "has_audio": bool(p.get("audio_path"))}
@@ -950,7 +951,10 @@ def settings_get(h, q, b):
     s["active_draft"] = pipeline.draft_engine(s) or "manual"
     s["gemini_api_key_masked"] = _mask(s.get("gemini_api_key", ""))
     s["has_key"] = bool(s.get("gemini_api_key"))
-    s.pop("gemini_api_key", None)
+    s["api_keys"] = {p: {"has": bool(s.get(i["key"])), "masked": _mask(s.get(i["key"], "")), "model": s.get(i["model"]) or i["default"],
+                         "label": i["label"], "site": i["site"]} for p, i in cloudai.PROVIDERS.items()}
+    for i in cloudai.PROVIDERS.values():
+        s.pop(i["key"], None)
     s["inbox_exists"] = os.path.isdir(os.path.expanduser(s.get("inbox_dir") or ""))
     s["areas"] = [dict(a, limit=db.area_limit(a["id"], s)) for a in db.AREAS]
     s["class_kinds"] = db.CLASS_KINDS
@@ -962,13 +966,17 @@ def settings_get(h, q, b):
 @route("POST", "/api/settings")
 def settings_save(h, q, b):
     vals = dict(b)
-    if "gemini_api_key" in vals and ("•" in vals["gemini_api_key"] or not vals["gemini_api_key"].strip()):
-        if not vals.get("clear_key"):
-            vals.pop("gemini_api_key")
-    if vals.get("clear_key"):
-        vals["gemini_api_key"] = ""
-    if "gemini_api_key" in vals:
-        vals["gemini_api_key"] = vals["gemini_api_key"].strip()
+    clear = vals.pop("clear_key", None)
+    for i in cloudai.PROVIDERS.values():
+        k = i["key"]
+        if k in vals and ("•" in vals[k] or not vals[k].strip()):
+            vals.pop(k)
+        if k in vals:
+            vals[k] = vals[k].strip()
+    if clear:   # true(옛 버전) = Gemini, 아니면 'openai' · 'claude'
+        vals[cloudai.PROVIDERS.get(clear if isinstance(clear, str) else "gemini", cloudai.PROVIDERS["gemini"])["key"]] = ""
+    if vals.get("api_provider") and vals["api_provider"] not in cloudai.PROVIDERS:
+        vals.pop("api_provider")
     if (vals.get("local_ai_url") or "").strip() and not localai.is_local_url(vals["local_ai_url"]):
         raise ApiError("내 맥 AI 주소는 이 맥(127.0.0.1 또는 localhost)만 넣을 수 있어요. 학생 기록이 밖으로 나가지 않게요.")
     db.set_settings(vals)
@@ -1041,7 +1049,8 @@ def _ai_state():
     s = db.get_settings()
     choice = _ai_choice(s)
     return {"choice": choice, "active_seg": pipeline.seg_engine(s), "draft": pipeline.draft_engine(s) or "manual",
-            "has_key": bool(s.get("gemini_api_key")), "gemini_model": s.get("gemini_model") or "",
+            "has_key": bool(cloudai.key_of(s)), "gemini_model": s.get("gemini_model") or "",
+            "provider": cloudai.provider(s), "provider_label": cloudai.label(s), "api_model": cloudai.model_of(s),
             "apple": {"state": localai.apple_state(), "text": localai.APPLE_TEXT.get(localai.apple_state(), "")},
             "builtin": localai.llm_status(), "local_ai_url": s.get("local_ai_url") or "",
             "local_ai_model": s.get("local_ai_model") or "", "draft_local": s.get("draft_local", "1"),
@@ -1074,8 +1083,10 @@ def ai_choose(h, q, b):
             started = mid
     elif c == "apple":
         vals["seg_engine"] = "apple"
-    elif c == "gemini":
+    elif c == "gemini":          # 외부 AI API (Gemini · ChatGPT · Claude)
         vals["seg_engine"] = "gemini"
+        if b.get("provider") in cloudai.PROVIDERS:
+            vals["api_provider"] = b["provider"]
     elif c == "external":
         url = (b.get("url") or "").strip()
         if not localai.is_local_url(url) or url == localai.BUILTIN:
@@ -1152,14 +1163,15 @@ def localai_test(h, q, b):
 
 @route("POST", "/api/settings/test")
 def settings_test(h, q, b):
+    prov = b.get("provider") if b.get("provider") in cloudai.PROVIDERS else "gemini"
     key = (b.get("key") or "").strip()
     if not key or "•" in key:
-        key = db.get_settings().get("gemini_api_key", "")
+        key = cloudai.key_of(db.get_settings(), prov)
     if not key:
         raise ApiError("API 키를 입력하세요.")
     try:
-        models = gemini.list_models(key)
-    except gemini.GeminiError as e:
+        models = cloudai.list_models(prov, key)
+    except (gemini.GeminiError, cloudai.CloudError) as e:
         raise ApiError(str(e))
     return {"ok": True, "models": models}
 
