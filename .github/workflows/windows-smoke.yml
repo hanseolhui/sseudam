@@ -40,19 +40,6 @@ jobs:
           "INST=$inst" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Get-ChildItem $inst | Format-Table Name
 
-      - name: 쓰담 서버 켜기 (설치된 파이썬으로)
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force $env:SETEUK_DATA | Out-Null
-          # 실행기(launcher.pyw)가 넣는 것과 같은 환경
-          $env:SETEUK_APP = "1"; $env:SETEUK_BIN = "$env:INST\bin"; $env:PYTHONUTF8 = "1"
-          "SETEUK_BIN=$env:INST\bin" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          Start-Process -FilePath "$env:INST\python\python.exe" -ArgumentList "`"$env:INST\app\server.py`"" -RedirectStandardOutput server.log -RedirectStandardError server.err
-          for ($i = 0; $i -lt 60; $i++) {
-            try { $v = Invoke-RestMethod "http://127.0.0.1:8790/api/version"; Write-Host "켜짐: $($v.version)"; break } catch { Start-Sleep 1 }
-          }
-          if (-not $v) { Get-Content server.log, server.err; throw "서버가 켜지지 않음" }
-
       - name: 시험용 음성 파일 만들기
         shell: pwsh
         run: |
@@ -67,9 +54,19 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: 핵심 기능 시험
+      - name: 쓰담 서버 켜고 핵심 기능 시험 (한 단계 안에서)
         shell: pwsh
-        run: python tools/windows_smoke.py
+        run: |
+          New-Item -ItemType Directory -Force $env:SETEUK_DATA | Out-Null
+          # 실행기(launcher.pyw)가 넣는 것과 같은 환경
+          $env:SETEUK_APP = "1"; $env:SETEUK_BIN = "$env:INST\bin"; $env:PYTHONUTF8 = "1"
+          "SETEUK_BIN=$env:INST\bin" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Start-Process -FilePath "$env:INST\python\python.exe" -ArgumentList "`"$env:INST\app\server.py`"" -RedirectStandardOutput server.log -RedirectStandardError server.err
+          for ($i = 0; $i -lt 60; $i++) {
+            try { $v = Invoke-RestMethod "http://127.0.0.1:8790/api/version"; Write-Host "켜짐: $($v.version)"; break } catch { Start-Sleep 1 }
+          }
+          if (-not $v) { Get-Content server.log, server.err; throw "서버가 켜지지 않음" }
+          python tools/windows_smoke.py
 
       - name: 로그
         if: always()

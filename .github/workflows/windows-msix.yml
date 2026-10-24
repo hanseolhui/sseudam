@@ -48,6 +48,8 @@ jobs:
         shell: pwsh
         run: |
           robocopy app layout\app /E /XD __pycache__ /XF *.pyc | Out-Null
+          if ($LASTEXITCODE -gt 7) { throw "코드 복사 실패 ($LASTEXITCODE)" }
+          $global:LASTEXITCODE = 0   # robocopy 는 성공해도 1 을 돌려줌
           Copy-Item windows\launcher.pyw, windows\stop.py, windows\sseudam_launch.py layout\
           Copy-Item 사용설명서.md layout\ -ErrorAction SilentlyContinue
           # 임베디드 파이썬이 묶음 맨 위 폴더의 sseudam_launch 모듈을 찾게
@@ -119,8 +121,17 @@ jobs:
           $pkg | Format-List Name, Version, InstallLocation, PackageFamilyName
           "PFN=$($pkg.PackageFamilyName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: 스토어판 실행 (시작 메뉴와 같은 방식)
+      - name: 시험용 음성 파일
         shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Speech
+          $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
+          $s.SetOutputToWaveFile("$pwd\sample.wav"); $s.Speak("Today Minsu explained the photosynthesis graph very clearly."); $s.Dispose()
+
+      - name: 스토어판 실행하고 핵심 기능 시험 (한 단계 안에서)
+        shell: pwsh
+        env:
+          SETEUK_PORT: "8765"
         run: |
           Start-Process "shell:AppsFolder\$env:PFN!Sseudam"
           for ($i = 0; $i -lt 90; $i++) {
@@ -133,19 +144,7 @@ jobs:
           }
           if (-not (Test-Path "$env:USERPROFILE\쓰담\data\seteuk.db")) { throw "데이터가 사용자 폴더(쓰담)에 생기지 않음" }
           Write-Host "데이터 폴더 OK: $env:USERPROFILE\쓰담\data"
-
-      - name: 시험용 음성 파일
-        shell: pwsh
-        run: |
-          Add-Type -AssemblyName System.Speech
-          $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
-          $s.SetOutputToWaveFile("$pwd\sample.wav"); $s.Speak("Today Minsu explained the photosynthesis graph very clearly."); $s.Dispose()
-
-      - name: 핵심 기능 시험 (스토어판)
-        shell: pwsh
-        env:
-          SETEUK_PORT: "8765"
-        run: python tools/windows_smoke.py
+          python tools/windows_smoke.py
 
       - name: 로그
         if: always()
