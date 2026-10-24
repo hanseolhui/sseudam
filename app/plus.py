@@ -13,6 +13,8 @@ import gemini
 import version
 
 URL = os.environ.get("SSEUDAM_PLUS_URL", "https://apps.seoriarts.com/api/sseudam-plus")
+# 아직 열지 않음: 결제(정기결제 심사)·서버 준비가 끝나면 True 로 바꿔 배포. 시험은 SSEUDAM_PLUS=1 로.
+ENABLED = os.environ.get("SSEUDAM_PLUS") == "1"
 
 
 class PlusError(Exception):

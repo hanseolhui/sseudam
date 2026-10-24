@@ -1034,6 +1034,8 @@ def localai_status(h, q, b):
 def _ai_choice(s):
     """지금 고른 AI: builtin(쓰담 AI 모델) | apple | gemini | external(Ollama·LM Studio) | manual(AI 없이)."""
     c = s.get("ai_choice") or ""
+    if c == "plus" and not plus.ENABLED:
+        c = ""                   # 쓰담 플러스를 닫아 둔 동안은 다른 선택으로 보이게
     if c:
         return c
     eng = s.get("seg_engine") or "auto"
@@ -1052,6 +1054,7 @@ def _ai_state():
     return {"choice": choice, "active_seg": pipeline.seg_engine(s), "draft": pipeline.draft_engine(s) or "manual",
             "has_key": bool(cloudai.key_of(s)), "gemini_model": s.get("gemini_model") or "",
             "provider": cloudai.provider(s), "provider_label": cloudai.label(s), "api_model": cloudai.model_of(s),
+            "plus_enabled": plus.ENABLED,
             "apple": {"state": localai.apple_state(), "text": localai.APPLE_TEXT.get(localai.apple_state(), "")},
             "builtin": localai.llm_status(), "local_ai_url": s.get("local_ai_url") or "",
             "local_ai_model": s.get("local_ai_model") or "", "draft_local": s.get("draft_local", "1"),
@@ -1083,7 +1086,7 @@ def ai_choose(h, q, b):
             localai.llm_download(mid)   # 이 컴퓨터에 맞는 모델을 바로 받기 시작
             started = mid
     elif c == "plus":            # 쓰담 플러스(구독): 키 없이 서버 AI로 분리·초안, 받아쓰기는 내 컴퓨터 Whisper
-        if not plus.active(s):
+        if not plus.ENABLED or not plus.active(s):
             raise ApiError("먼저 쓰담 플러스에 로그인하고 구독(또는 체험)을 시작해 주세요.")
         vals.update(seg_engine="gemini", api_provider="plus", stt_engine="whisper")
         import whisper
@@ -1125,11 +1128,15 @@ def _plus_loop():
 
 @route("GET", "/api/plus")
 def plus_status(h, q, b):
+    if not plus.ENABLED:
+        return {"loggedIn": False, "enabled": False}
     return plus.status(refresh=q.get("refresh", "1") == "1")
 
 
 @route("POST", "/api/plus/start")
 def plus_start(h, q, b):
+    if not plus.ENABLED:
+        raise ApiError("쓰담 플러스는 아직 열리지 않았어요.")
     try:
         return plus.start((b.get("email") or "").strip())
     except plus.PlusError as e:
@@ -1138,6 +1145,8 @@ def plus_start(h, q, b):
 
 @route("POST", "/api/plus/verify")
 def plus_verify(h, q, b):
+    if not plus.ENABLED:
+        raise ApiError("쓰담 플러스는 아직 열리지 않았어요.")
     try:
         d = plus.verify((b.get("email") or "").strip().lower(), b.get("code") or "")
     except plus.PlusError as e:
@@ -1741,7 +1750,8 @@ def main():
     sync_text.start()
     telemetry.start()
     relay.start()
-    threading.Thread(target=_plus_loop, daemon=True, name="plus").start()
+    if plus.ENABLED:
+        threading.Thread(target=_plus_loop, daemon=True, name="plus").start()
     if update.start_auto():
         print("자동 업데이트 확인 켜짐")
     url = "http://%s:%d" % (HOST, PORT)

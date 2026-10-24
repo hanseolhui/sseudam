@@ -39,9 +39,14 @@ def provider(settings):
     return p if p in PROVIDERS else "gemini"
 
 
+def _plus_enabled():
+    import plus
+    return plus.ENABLED
+
+
 def key_of(settings, prov=None):
     prov = prov or provider(settings)
-    if prov == "plus" and settings.get("plus_active") != "1":
+    if prov == "plus" and (settings.get("plus_active") != "1" or not _plus_enabled()):
         return ""                 # 구독이 끝났으면 키가 없는 것처럼 → 다른 방법으로 넘어감
     return (settings.get(PROVIDERS[prov]["key"]) or "").strip()
 

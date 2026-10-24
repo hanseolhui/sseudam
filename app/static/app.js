@@ -1636,7 +1636,7 @@ async function viewSettings(section) {
   let plusSt = { loggedIn: false }, plusFresh = false, showPlus = false, plusEmail = '';
   const aiLoad = async () => {
     try { aiSt = await api('/api/ai/state', undefined, { silent: true }); } catch (e) { $('#ai-detail').textContent = e.message; return; }
-    plusSt = await api('/api/plus?refresh=' + (plusFresh ? '0' : '1'), undefined, { silent: true }).catch(() => ({ loggedIn: false }));
+    plusSt = aiSt.plus_enabled ? await api('/api/plus?refresh=' + (plusFresh ? '0' : '1'), undefined, { silent: true }).catch(() => ({ loggedIn: false })) : { loggedIn: false };
     plusFresh = true;
     const st = aiSt, b = st.builtin, mc = b.machine || {}, choice = st.choice;
     const plusOn = !!(plusSt.loggedIn && plusSt.sub && plusSt.sub.active);
@@ -1652,7 +1652,7 @@ async function viewSettings(section) {
     else bStatus = mc.model ? `누르면 추천 모델 받기 (${gb((b.models.find(m => m.id === mc.model) || {}).size || 0)})` : '';
     const isMac = mc.os === 'mac';
     $('#ai-tiles').innerHTML =
-      tileHtml('plus', '💜', '쓰담 플러스', '키·설치 없이 · 녹음만 하면 끝까지', plusOn ? `✓ ${esc(plusSt.sub.planName)} · ${ymd(plusSt.sub.endsAt)}까지` : (plusSt.loggedIn ? '구독 기간이 아니에요' : '로그인하면 시작'), choice === 'plus', false) +
+      (st.plus_enabled ? tileHtml('plus', '💜', '쓰담 플러스', '키·설치 없이 · 녹음만 하면 끝까지', plusOn ? `✓ ${esc(plusSt.sub.planName)} · ${ymd(plusSt.sub.endsAt)}까지` : (plusSt.loggedIn ? '구독 기간이 아니에요' : '로그인하면 시작'), choice === 'plus', false) : '') +
       tileHtml('builtin', '✨', '쓰담 AI 모델', '이 컴퓨터 안에서 · 무료 · 추천', bStatus, choice === 'builtin', !b.supported) +
       (isMac ? tileHtml('apple', '🍎', '기기 안 AI', '설치 없음 · 학생 나누기만', st.apple.state === 'ready' ? '✓ 바로 쓸 수 있어요' : '<span class="muted">이 맥에선 안 돼요</span>', choice === 'apple', st.apple.state !== 'ready') : '') +
       tileHtml('manual', '✋', 'AI 없이', '이름 기준 나누기 · 초안은 프롬프트 복사', '', choice === 'manual', false) +
@@ -1664,7 +1664,7 @@ async function viewSettings(section) {
     // 고른 것에 맞는 설명·설정
     if (choice === 'gemini' || choice === 'external') $('#ai-ext').open = true;
     let d = '';
-    if (choice === 'plus' || showPlus) {
+    if (st.plus_enabled && (choice === 'plus' || showPlus)) {
       if (!plusSt.loggedIn) {
         d = `<div class="spec">💜 <b>쓰담 플러스</b> — 녹음만 하면 받아쓰기 → 학생별 분리 → 세특 초안까지 앱이 한 번에 해요. API 키도 모델 설치도 필요 없어요.
           <div class="small muted" style="margin-top:4px">학생 이름은 이 컴퓨터에서 '학생1'처럼 가린 뒤 보내요. 서리아트 서버는 내용을 저장하지 않아요.</div>
