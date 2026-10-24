@@ -142,8 +142,21 @@ object Relay {
         }))
         r.classUid?.let { c -> meta.put("class_uid", c).put("class_title", db.classes.firstOrNull { it.uid == c }?.title ?: "") }
         r.period?.let { meta.put("period", it) }
-        val name = "rec-" + r.createdAt + "-" + r.id.take(8) + ".bin"
-        req("PUT", "/pc/$name", seal(master, meta, if (r.isAudio) bytes else ByteArray(0)))
+        req("PUT", "/pc/${uploadName(r)}", seal(master, meta, if (r.isAudio) bytes else ByteArray(0)))
+    }
+
+    /** 중계 상자에 올리는 이름 — 컴퓨터가 '받음' 목록에 이 이름을 적어 돌려준다 */
+    fun uploadName(r: Recording) = "rec-" + r.createdAt + "-" + r.id.take(8) + ".bin"
+
+    /** 컴퓨터가 받아 간 녹음 이름들 (컴퓨터 쓰담이 phone/ack-<기기>.bin 에 올려 둠) */
+    fun receivedNames(): Set<String> {
+        val (_, _, master) = creds() ?: return emptySet()
+        val dev = DataStore.deviceId.filter { it.code < 128 && (it.isLetterOrDigit() || it == '-' || it == '_') }.take(40).ifEmpty { "phone" }
+        return try {
+            val (_, body) = open(master, req("GET", "/phone/ack-$dev.bin"))
+            val a = JSONObject(String(body, Charsets.UTF_8)).optJSONArray("received") ?: return emptySet()
+            (0 until a.length()).map { a.getString(it) }.toSet()
+        } catch (e: NoSuchElementException) { emptySet() }
     }
 
     /** 학생 기록 맞추기: 내 기록 올리기(바뀐 경우만) + 컴퓨터 기록 받아 합치기. 받아서 바뀐 수 반환 */

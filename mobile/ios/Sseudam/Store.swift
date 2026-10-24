@@ -43,6 +43,8 @@ struct Entry: Codable, Identifiable, Equatable {
     /// 녹음하면서 고른 반(학급 uid)·교시
     var classUid: String? = nil
     var period: Int? = nil
+    /// QR 연동으로 마지막으로 보낸 때 (컴퓨터가 오래 안 받아 가면 다시 보냄)
+    var relaySentAt: Date? = nil
 
     var isAudio: Bool { type == "audio" }
     var editableUntil: Date { (savedAt ?? createdAt).addingTimeInterval(Store.grace) }
@@ -87,6 +89,7 @@ struct Entry: Codable, Identifiable, Equatable {
         starSnippets = try c.decodeIfPresent([String].self, forKey: .starSnippets) ?? []
         classUid = try c.decodeIfPresent(String.self, forKey: .classUid)
         period = try c.decodeIfPresent(Int.self, forKey: .period)
+        relaySentAt = try c.decodeIfPresent(Date.self, forKey: .relaySentAt)
     }
 }
 
@@ -402,7 +405,7 @@ final class Store: ObservableObject {
                 let bg = UIApplication.shared.beginBackgroundTask(withName: "relay")
                 do {
                     try await Relay.upload(file: url(cur), entry: cur, deviceId: DataStore.shared.deviceId)
-                    cur.relay = .done; cur.lastError = ""; computerSeen = true
+                    cur.relay = .done; cur.lastError = ""; cur.relaySentAt = Date()
                 } catch {
                     cur.relay = .failed; cur.lastError = "연결: \(error.localizedDescription)"
                 }
@@ -425,15 +428,47 @@ final class Store: ObservableObject {
         cleanupOld()
     }
 
-    /// 맥의 쓰담은 가져간 파일을 iCloud '쓰담/처리완료' 폴더로 옮긴다 → 그걸 보고 '컴퓨터가 받음'으로 표시
+    /// 컴퓨터가 받았는지 확인해 '컴퓨터가 받음'으로 표시.
+    /// QR 연동: 컴퓨터 쓰담이 받은 녹음 이름 목록을 올려 둠 · iCloud: 맥의 쓰담이 '쓰담/처리완료' 폴더로 옮김
     func checkReceived() async {
+        var changed = false
+        if Relay.paired, items.contains(where: { $0.relay == .done && !$0.received }),
+           let got = try? await Relay.receivedNames(deviceId: DataStore.shared.deviceId), !got.isEmpty {
+            for i in items.indices where !items[i].received && got.contains(Relay.uploadName(items[i])) {
+                items[i].received = true; changed = true
+            }
+        }
         let waiting = items.filter { $0.icloud == .done && !$0.received }.map(\.fileName)
-        guard !waiting.isEmpty else { return }
-        let got = await Sync.receivedNames(Set(waiting))
-        guard !got.isEmpty else { return }
-        for i in items.indices where got.contains(items[i].fileName) { items[i].received = true }
-        save()
-        computerSeen = true
+        if !waiting.isEmpty {
+            let got = await Sync.receivedNames(Set(waiting))
+            for i in items.indices where got.contains(items[i].fileName) { items[i].received = true; changed = true }
+        }
+        if changed { save(); computerSeen = true }
+        resendStale()
+    }
+
+    /// 보낸 지 오래됐는데 컴퓨터가 안 받아 간 녹음은 다시 보낸다 (중계 서버는 14일 뒤 지움)
+    nonisolated static let resendAfter: TimeInterval = 10 * 24 * 3600
+    private func resendStale() {
+        guard Relay.paired else { return }
+        var any = false
+        // 받음 확인이 없던 예전 버전에서 보낸 것(relaySentAt 없음)은 다시 보내지 않음 — 컴퓨터에 두 번 담기지 않게
+        for i in items.indices where items[i].relay == .done && !items[i].received
+            && items[i].relaySentAt.map({ Date().timeIntervalSince($0) > Store.resendAfter }) == true {
+            items[i].relay = .pending; any = true
+        }
+        if any { save(); scheduleSync() }
+    }
+
+    /// 기록함의 '다시 보내기' — 컴퓨터가 못 받았을 때
+    func resend(_ e: Entry) {
+        guard var cur = items.first(where: { $0.id == e.id }) else { return }
+        if Relay.paired { cur.relay = .pending }
+        if googlePaired && cur.google != .off { cur.google = .pending }
+        if useICloud && icloudAvailable && cur.icloud != .off { cur.icloud = .pending }
+        cur.received = false; cur.lastError = ""
+        update(cur)
+        Task { await syncAll(force: true) }
     }
 
     /// 선생님이 고른 경우에만, 컴퓨터로 전송이 끝난 기록을 휴대폰에서 지운다. 기본은 지우지 않음.

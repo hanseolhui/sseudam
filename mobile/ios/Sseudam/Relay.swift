@@ -156,8 +156,23 @@ enum Relay {
         if let p = e.period { meta["period"] = p }
         if !e.starSnippets.isEmpty { meta["star_snippets"] = e.starSnippets }
         let body = e.isAudio ? ((try? Data(contentsOf: file)) ?? Data()) : Data()
-        let name = "rec-\(Int(e.createdAt.timeIntervalSince1970 * 1000))-\(e.id.uuidString.prefix(8)).bin"
-        _ = try await req("PUT", "/pc/\(name)", body: try seal(c.key, meta: meta, body: body))
+        _ = try await req("PUT", "/pc/\(uploadName(e))", body: try seal(c.key, meta: meta, body: body))
+    }
+
+    /// 중계 상자에 올리는 이름 — 컴퓨터가 '받음' 목록에 이 이름을 적어 돌려준다
+    static func uploadName(_ e: Entry) -> String {
+        "rec-\(Int(e.createdAt.timeIntervalSince1970 * 1000))-\(e.id.uuidString.prefix(8)).bin"
+    }
+
+    /// 컴퓨터가 받아 간 녹음 이름들 (컴퓨터 쓰담이 phone/ack-<기기>.bin 에 올려 둠). 아직 없으면 빈 목록
+    static func receivedNames(deviceId: String) async throws -> Set<String> {
+        guard let c = creds() else { return [] }
+        let dev = String(deviceId.filter { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }.prefix(40))
+        do {
+            let body = try open(c.key, try await req("GET", "/phone/ack-\(dev.isEmpty ? "phone" : dev).bin")).body
+            let o = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
+            return Set((o?["received"] as? [String]) ?? [])
+        } catch RelayError.notFound { return [] }
     }
 
     /// 학생 기록: 내 문서 올리기(바뀐 경우만) + 컴퓨터 문서 받아 오기

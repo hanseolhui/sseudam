@@ -42,7 +42,12 @@ data class Recording(
     val markers: List<Marker> = emptyList(),
     val classUid: String? = null,
     val period: Int? = null,
+    /** QR 연동으로 마지막으로 보낸 때(ms) · 컴퓨터가 받아 갔는지 (컴퓨터가 올려 둔 '받음' 목록으로 확인) */
+    val sentAt: Long = 0,
+    val received: Boolean = false,
 ) {
+    /** 보냈는데 컴퓨터가 아직 안 받아 감 (받음 확인이 없던 예전 버전에서 보낸 것은 제외) */
+    val waiting: Boolean get() = google == Sync.DONE && sentAt > 0 && !received
     val isAudio: Boolean get() = type == "audio"
 
     fun toJson(): JSONObject = JSONObject().put("id", id).put("fileName", fileName).put("createdAt", createdAt)
@@ -51,6 +56,7 @@ data class Recording(
         .apply { splitNames?.let { put("splitNames", JSONArray(it)) } }
         .apply { if (markers.isNotEmpty()) put("markers", JSONArray(markers.map { it.toJson() })) }
         .apply { classUid?.let { put("classUid", it) }; period?.let { put("period", it) } }
+        .put("sentAt", sentAt).put("received", received)
 
     companion object {
         fun from(o: JSONObject) = Recording(
@@ -61,6 +67,7 @@ data class Recording(
             o.optString("splitLeftover", ""), o.optInt("splitUnsure", 0),
             o.optJSONArray("markers")?.let { a -> (0 until a.length()).map { Marker.from(a.getJSONObject(it)) } } ?: emptyList(),
             o.optString("classUid").ifEmpty { null }, if (o.has("period")) o.optInt("period") else null,
+            o.optLong("sentAt", 0), o.optBoolean("received", false),
         )
     }
 }
@@ -208,6 +215,12 @@ object Store {
     }
 
     fun update(r: Recording) = save(_items.value.map { if (it.id == r.id) r else it })
+
+    /** 기록함의 '다시 보내기' — 컴퓨터가 못 받았을 때 */
+    fun resend(r: Recording) {
+        update(r.copy(google = Sync.PENDING, received = false, lastError = ""))
+        UploadWorker.enqueue(ctx)
+    }
 
     fun delete(r: Recording) { file(r).delete(); save(_items.value.filter { it.id != r.id }) }
 

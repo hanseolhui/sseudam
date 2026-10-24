@@ -208,7 +208,7 @@ def unpair(remote=True):
             _req("DELETE", "", c)
         except Exception:  # noqa
             pass
-    db.set_settings({"relay_channel": "", "relay_key": "", "relay_devices": ""})
+    db.set_settings({"relay_channel": "", "relay_key": "", "relay_devices": "", "relay_acks": "{}"})
     _status.update(state="꺼짐")
 
 
@@ -255,7 +255,13 @@ def poll_once():
     with _lock:
         got = 0
         items = json.loads(_req("GET", "/pc", c)).get("items", [])
-        devices = set(filter(None, (db.get_settings().get("relay_devices") or "").split(",")))
+        settings = db.get_settings()
+        devices = set(filter(None, (settings.get("relay_devices") or "").split(",")))
+        try:
+            acks = json.loads(settings.get("relay_acks") or "{}")
+        except ValueError:
+            acks = {}
+        acked = set()
         for it in items:
             name = it["name"]
             try:
@@ -267,17 +273,35 @@ def poll_once():
             if meta.get("device_name"):
                 devices.add(str(meta["device_name"])[:40])
             if meta.get("type") == "rec":
-                _import_recording(meta, body)
+                dev = _dev(meta)
+                if name not in acks.get(dev, []):   # 폰이 다시 보낸 같은 녹음은 한 번만 담음
+                    _import_recording(meta, body)
+                    acks[dev] = (acks.get(dev, []) + [name])[-ACK_KEEP:]
+                acked.add(dev)
             elif meta.get("type") == "doc":
-                dev = "".join(ch for ch in str(meta.get("device") or "phone") if ch.isalnum() or ch in "-_")[:40] or "phone"
+                dev = _dev(meta)
                 with open(os.path.join(inbox_dir(), "relay-%s.json" % dev), "wb") as f:
                     f.write(body)
             _req("DELETE", "/pc/" + name, c)
             got += 1
-        db.set_settings({"relay_devices": ",".join(sorted(devices))})
+        db.set_settings({"relay_devices": ",".join(sorted(devices)), "relay_acks": json.dumps(acks)})
+        for dev in acked:   # 폰에 '컴퓨터가 받음' 알리기 (받은 녹음 이름 목록)
+            try:
+                _req("PUT", "/phone/ack-%s.bin" % dev, c, seal(c[1], {"type": "ack"}, json.dumps(
+                    {"received": acks.get(dev, []), "at": int(time.time())}).encode("utf-8")))
+            except Exception as e:  # noqa — 다음 번에 다시
+                print("[QR 연동] 받음 알리기 실패:", e)
         got += poll_peers(c)
         _status.update(state="연결됨", last=time.time(), error="", received=_status["received"] + got)
         return {"ok": True, "received": got}
+
+
+ACK_KEEP = 300   # 기기마다 기억할 '받은 녹음' 이름 수
+
+
+def _dev(meta):
+    """폰 기기 id → 중계 상자 이름에 쓸 수 있는 글자만 (폰도 같은 규칙으로 ack-<기기>.bin 을 찾음)."""
+    return "".join(ch for ch in str(meta.get("device") or "phone") if ch.isascii() and (ch.isalnum() or ch in "-_"))[:40] or "phone"
 
 
 def _import_recording(meta, audio):

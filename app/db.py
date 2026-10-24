@@ -64,6 +64,7 @@ DEFAULT_SETTINGS = {
     "relay_key": "",
     "relay_url": "",
     "relay_devices": "",
+    "relay_acks": "{}",          # 폰마다 받은 녹음 이름 (폰에 '컴퓨터가 받음' 알림 · 다시 보낸 것 한 번만 담기)
     "relay_doc_sig": "",
     "install_id": "",
     "last_ping": "",

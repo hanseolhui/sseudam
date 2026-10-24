@@ -407,9 +407,10 @@ extension SavedCard {
         if remaining > 0 { return "\(remaining)초 뒤에 보내요 · 그 전에 유형·메모를 고칠 수 있어요" }
         if e.stt == .working { return "글자로 바꾸고 나서 보낼게요" }
         if e.received { return "컴퓨터의 쓰담이 받았어요" }
+        if e.relay == .done { return "컴퓨터로 보냈어요 · 컴퓨터 쓰담이 켜지면 가져가요" }
         if e.google == .done { return "구글 드라이브로 보냈어요 · 컴퓨터 쓰담이 켜지면 가져가요" }
         if e.icloud == .done { return "iCloud에 올렸어요 · 맥에서 쓰담을 켜면 가져가요" }
-        if [e.icloud, e.google].contains(.failed) { return "보내지 못했어요 · 기록함에서 다시 시도해요" }
+        if [e.icloud, e.google, e.relay].contains(.failed) { return "보내지 못했어요 · 기록함에서 다시 시도해요" }
         if !store.autoSend { return "휴대폰에 보관했어요 · ‘연결’에서 컴퓨터와 연결하면 보내져요" }
         return "보내는 중이에요"
     }
@@ -417,7 +418,7 @@ extension SavedCard {
     var statusIcon: String {
         let e = current
         if e.received { return "checkmark.circle.fill" }
-        if e.icloud == .done || e.google == .done { return "icloud.and.arrow.up" }
+        if e.icloud == .done || e.google == .done || e.relay == .done { return "icloud.and.arrow.up" }
         if remaining > 0 || e.stt == .working { return "clock" }
         return "iphone"
     }

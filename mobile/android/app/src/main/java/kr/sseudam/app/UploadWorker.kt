@@ -24,6 +24,8 @@ import java.util.Locale
 /** 대기 중인 녹음을 선생님 본인의 구글 드라이브(쓰담 Apps Script)로 올린다. 인터넷이 될 때 자동 재시도. */
 class UploadWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     companion object {
+        const val RESEND_AFTER_MS = 10L * 24 * 3600 * 1000
+
         fun enqueue(c: Context) {
             val req = OneTimeWorkRequestBuilder<UploadWorker>()
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build()
@@ -65,16 +67,24 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
         if (Relay.paired()) {
             // QR 연동: 녹음·메모를 암호화해서 컴퓨터로, 학생 기록은 서로 맞추기
             var failed = false
+            // 보낸 지 오래됐는데 컴퓨터가 안 받아 간 것은 다시 보냄 (중계 서버는 14일 뒤 지움)
+            val stale = System.currentTimeMillis() - RESEND_AFTER_MS
+            Store.items.value.filter { it.waiting && it.sentAt < stale }.forEach { Store.update(it.copy(google = Sync.PENDING)) }
             for (r in Store.items.value.filter { it.google == Sync.PENDING || it.google == Sync.FAILED }) {
                 try {
                     Relay.uploadRecording(r, if (r.isAudio) Store.file(r).readBytes() else ByteArray(0))
-                    Store.update(r.copy(google = Sync.DONE, lastError = ""))
+                    Store.update(r.copy(google = Sync.DONE, lastError = "", sentAt = System.currentTimeMillis()))
                 } catch (e: Exception) {
                     failed = true
                     Store.update(r.copy(google = Sync.FAILED, lastError = "연결: ${e.message}"))
                 }
             }
             runCatching { Relay.syncDocs() }.onFailure { failed = true }
+            // 컴퓨터가 받아 간 것은 '컴퓨터가 받음'으로
+            if (Store.items.value.any { it.waiting }) runCatching {
+                val got = Relay.receivedNames()
+                Store.items.value.filter { it.waiting && Relay.uploadName(it) in got }.forEach { Store.update(it.copy(received = true)) }
+            }
             return@withContext if (failed) Result.retry() else Result.success()
         }
         val url = Store.googleUrl(); val token = Store.googleToken()

@@ -157,10 +157,11 @@ struct RecordsView: View {
     }
 
     @ViewBuilder func syncBadge(_ e: Entry) -> some View {
-        let states = [e.icloud, e.google].filter { $0 != .off }
+        let states = [e.icloud, e.google, e.relay].filter { $0 != .off }
         if e.stt == .working { mini("text.bubble", "받아쓰는 중", Theme.soft) }
         else if states.contains(.failed) { mini("exclamationmark.triangle.fill", "다시 시도", Theme.coral) }
         else if e.received { mini("checkmark.circle.fill", "컴퓨터가 받음", Theme.mint) }
+        else if e.relay == .done && e.relaySentAt != nil { mini("paperplane.fill", "보냄 · 컴퓨터 대기", Theme.blue) }
         else if e.google == .done { mini("checkmark.circle.fill", "보냄", Theme.mint) }
         else if e.icloud == .done { mini("icloud.fill", "iCloud에 올림", Theme.blue) }
         else if states.contains(.pending) { mini("clock", "보낼 예정", Theme.soft) }
@@ -229,9 +230,17 @@ struct EntryDetail: View {
                 }.card()
 
                 VStack(alignment: .leading, spacing: 10) {
+                    if current.relay != .off { status("컴퓨터 (QR 연결)", current.relay, received: current.received) }
                     status("iCloud (맥)", current.icloud, received: current.received)
                     status("구글 드라이브", current.google)
                     if !current.lastError.isEmpty { Text(current.lastError).font(Theme.font(12)).foregroundStyle(Theme.coral) }
+                    if !current.received && (current.relaySentAt != nil || current.icloud == .done) {
+                        HStack {
+                            Text("컴퓨터가 아직 안 받았어요. 컴퓨터 쓰담이 켜지면 가져가요.").font(Theme.font(12)).foregroundStyle(Theme.soft)
+                            Spacer()
+                            Button("다시 보내기") { store.resend(current) }.font(Theme.font(13, .bold))
+                        }
+                    }
                 }.card()
 
                 ShareLink(item: store.url(current)) {
@@ -312,6 +321,7 @@ struct EntryDetail: View {
             case .pending: Pill(text: "보낼 예정", icon: "clock", color: .gray)
             case .done where received: Pill(text: "컴퓨터가 받음", icon: "checkmark", color: Theme.mint)
             case .done where name.hasPrefix("iCloud"): Pill(text: "iCloud에 올림 · 맥 대기", icon: "icloud", color: Theme.blue)
+            case .done where name.hasPrefix("컴퓨터") && current.relaySentAt != nil: Pill(text: "보냄 · 컴퓨터 대기", icon: "paperplane", color: Theme.blue)
             case .done: Pill(text: "보냄", icon: "checkmark", color: Theme.mint)
             case .failed: Pill(text: "다시 시도", icon: "exclamationmark.triangle", color: Theme.coral)
             }

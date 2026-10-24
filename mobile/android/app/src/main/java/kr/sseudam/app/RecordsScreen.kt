@@ -84,8 +84,13 @@ fun RecordsScreen(nav: Nav) {
                                     fontSize = 12.sp, color = T.soft)
                                 if (r.google == Sync.FAILED && r.lastError.isNotEmpty()) Text(r.lastError, fontSize = 11.sp, color = T.coral)
                             }
-                            Text(when (r.google) { Sync.DONE -> "✓ 보냄"; Sync.PENDING -> "대기"; Sync.FAILED -> "다시 시도"; Sync.OFF -> "" },
-                                fontSize = 12.sp, color = when (r.google) { Sync.DONE -> T.mint; Sync.FAILED -> T.coral; else -> T.soft })
+                            Text(when {
+                                r.received -> "✓ 컴퓨터가 받음"; r.waiting -> "보냄 · 컴퓨터 대기"
+                                else -> when (r.google) { Sync.DONE -> "✓ 보냄"; Sync.PENDING -> "대기"; Sync.FAILED -> "다시 시도"; Sync.OFF -> "" }
+                            }, fontSize = 12.sp, color = when {
+                                r.received -> T.mint; r.waiting -> T.blue
+                                else -> when (r.google) { Sync.DONE -> T.mint; Sync.FAILED -> T.coral; else -> T.soft }
+                            })
                             IconButton({ confirmDelete = r }) { Icon(Icons.Filled.DeleteOutline, "지우기", tint = T.soft) }
                         }
                         val names = db.notesForSource(r.fileName).mapNotNull { db.student(it.studentUid)?.displayName }.distinct()
@@ -127,6 +132,11 @@ fun EntryScreen(nav: Nav, id: String) {
                     Text("🖥️ 녹음은 컴퓨터의 쓰담이 글자로 바꾸고 학생별로 나눠요. 안드로이드 폰에서는 긴 녹음을 글자로 바꾸지 않아요 (‘한 줄로 남기기’의 🎤는 폰에서 바로 글자가 돼요).",
                         fontSize = 13.sp, color = T.soft)
                 } else Text(text, fontSize = 15.sp, color = T.ink)
+                if (e.waiting || e.google == Sync.FAILED) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (e.waiting) "컴퓨터가 아직 안 받았어요. 컴퓨터 쓰담이 켜지면 가져가요." else "보내지 못했어요. ${e.lastError}",
+                        fontSize = 12.sp, color = if (e.waiting) T.soft else T.coral, modifier = Modifier.weight(1f))
+                    TextButton({ Store.resend(e) }) { Text("다시 보내기") }
+                } else if (e.received) Text("✓ 컴퓨터의 쓰담이 받았어요", fontSize = 12.sp, color = T.mint)
             }
             if (!e.isAudio) Column(Modifier.fillMaxWidth().card(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
