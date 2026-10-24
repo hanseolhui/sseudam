@@ -137,9 +137,24 @@ enum Relay {
         guard let c = creds() else { throw RelayError.notPaired }
         let df = DateFormatter(); df.locale = Locale(identifier: "ko_KR"); df.dateFormat = "yyyy-MM-dd HH:mm"
         let ext = "." + (e.fileName.split(separator: ".").last.map(String.init) ?? "m4a")
-        let meta: [String: Any] = ["type": "rec", "name": e.fileName, "ext": ext, "recorded_at": df.string(from: e.createdAt),
+        var meta: [String: Any] = ["type": "rec", "name": e.fileName, "ext": ext, "recorded_at": df.string(from: e.createdAt),
                                    "kind": e.kind, "title": (e.fileName as NSString).deletingPathExtension, "memo": e.memo,
-                                   "transcript": e.isAudio ? e.transcript : e.text, "device": deviceId, "device_name": deviceName]
+                                   "transcript": e.isAudio ? e.transcript : e.text, "device": deviceId, "device_name": deviceName,
+                                   "duration": e.duration]
+        // 녹음하면서 누른 학생 이름표·⭐, 고른 반·교시 — 컴퓨터가 이 표시대로 학생별로 나눈다
+        let (marks, classTitle): ([[String: Any]], String) = await MainActor.run {
+            let data = DataStore.shared
+            let m = e.markers.map { m -> [String: Any] in
+                var o: [String: Any] = ["t": m.t, "star": m.star]
+                if let uid = m.student { o["student_uid"] = uid; o["name"] = data.student(uid)?.displayName ?? "" }
+                return o
+            }
+            return (m, data.activeClasses.first { $0.uid == e.classUid }?.title ?? "")
+        }
+        if !marks.isEmpty { meta["markers"] = marks }
+        if let c = e.classUid { meta["class_uid"] = c; meta["class_title"] = classTitle }
+        if let p = e.period { meta["period"] = p }
+        if !e.starSnippets.isEmpty { meta["star_snippets"] = e.starSnippets }
         let body = e.isAudio ? ((try? Data(contentsOf: file)) ?? Data()) : Data()
         let name = "rec-\(Int(e.createdAt.timeIntervalSince1970 * 1000))-\(e.id.uuidString.prefix(8)).bin"
         _ = try await req("PUT", "/pc/\(name)", body: try seal(c.key, meta: meta, body: body))

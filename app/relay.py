@@ -291,14 +291,70 @@ def _import_recording(meta, audio):
     try:
         name = meta.get("name") or ("휴대폰 녹음" + ext)
         watcher.create_recording(
-            class_id=None, kind=meta.get("kind"), title=meta.get("title") or os.path.splitext(name)[0],
+            class_id=_phone_class(meta), kind=meta.get("kind"), title=meta.get("title") or os.path.splitext(name)[0],
             recorded_at=meta.get("recorded_at"), audio_src=tmp if audio else None,
-            transcript=meta.get("transcript") or "", original_name=name, copy=True)
+            transcript=meta.get("transcript") or "", original_name=name, copy=True,
+            phone_meta=phone_meta_json(meta))
     finally:
         try:
             os.remove(tmp)
         except OSError:
             pass
+
+
+def phone_meta_json(meta):
+    """휴대폰이 녹음과 함께 보낸 정보(학생 이름표·⭐·교시·길이) 중 쓸 것만 JSON으로."""
+    marks = []
+    for m in meta.get("markers") or []:
+        if not isinstance(m, dict):
+            continue
+        try:
+            t = max(0.0, float(m.get("t") or 0))
+        except (TypeError, ValueError):
+            continue
+        uid = str(m.get("student_uid") or "")[:40]
+        if uid or m.get("star"):
+            marks.append({"t": round(t, 1), "student_uid": uid, "name": str(m.get("name") or "")[:20],
+                          "star": bool(m.get("star"))})
+    out = {"markers": marks[:300]}
+    for k in ("class_uid", "class_title"):
+        if meta.get(k):
+            out[k] = str(meta[k])[:60]
+    try:
+        if meta.get("period"):
+            out["period"] = int(meta["period"])
+        if meta.get("duration"):
+            out["duration"] = round(float(meta["duration"]), 1)
+    except (TypeError, ValueError):
+        pass
+    snippets = [str(s)[:300] for s in (meta.get("star_snippets") or []) if s]
+    if snippets:
+        out["star_snippets"] = snippets[:30]
+    return json.dumps(out, ensure_ascii=False) if len(out) > 1 or marks else ""
+
+
+def _phone_class(meta):
+    """폰에서 고른 반(학급 uid) → 이름표를 누른 학생의 반 → 고른 교시와 시간표 순으로 학급을 찾는다."""
+    import pipeline
+    conn = db.connect()
+    try:
+        if meta.get("class_uid"):
+            r = db.row(conn, "SELECT id FROM classes WHERE uid=?", (str(meta["class_uid"]),))
+            if r:
+                return r["id"]
+        for m in meta.get("markers") or []:
+            uid = isinstance(m, dict) and m.get("student_uid")
+            if uid:
+                r = db.row(conn, "SELECT class_id FROM students WHERE uid=?", (str(uid),))
+                if r:
+                    return r["class_id"]
+        if meta.get("period"):
+            return pipeline.class_by_period(conn, meta.get("recorded_at"), meta.get("period"))
+    except Exception as e:  # noqa — 못 찾으면 원래대로 제목·시간표로
+        print("[QR 연동] 반 찾기 실패:", e)
+    finally:
+        conn.close()
+    return None
 
 
 def status():

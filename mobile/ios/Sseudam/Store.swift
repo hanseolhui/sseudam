@@ -40,6 +40,9 @@ struct Entry: Codable, Identifiable, Equatable {
     var markers: [Marker] = []
     /// ⭐ 누른 순간의 문장들
     var starSnippets: [String] = []
+    /// 녹음하면서 고른 반(학급 uid)·교시
+    var classUid: String? = nil
+    var period: Int? = nil
 
     var isAudio: Bool { type == "audio" }
     var editableUntil: Date { (savedAt ?? createdAt).addingTimeInterval(Store.grace) }
@@ -82,6 +85,8 @@ struct Entry: Codable, Identifiable, Equatable {
         aiRefined = try c.decodeIfPresent(Bool.self, forKey: .aiRefined) ?? false
         markers = try c.decodeIfPresent([Marker].self, forKey: .markers) ?? []
         starSnippets = try c.decodeIfPresent([String].self, forKey: .starSnippets) ?? []
+        classUid = try c.decodeIfPresent(String.self, forKey: .classUid)
+        period = try c.decodeIfPresent(Int.self, forKey: .period)
     }
 }
 
@@ -205,12 +210,15 @@ final class Store: ObservableObject {
 
     /// 녹음을 바로 저장 (묻지 않음). 유형은 지난번과 같게 — 저장 후 카드에서 바꿀 수 있다.
     @discardableResult
-    func addAudio(tempFile: URL, duration: Double, at date: Date, markers: [Marker] = []) -> Entry {
+    func addAudio(tempFile: URL, duration: Double, at date: Date, markers: [Marker] = [],
+                  classUid: String? = nil, period: Int? = nil) -> Entry {
         let kind = lastKind
         let fileName = uniqueFile(baseName(date: date, kind: kind, memo: ""), "m4a")
         try? FileManager.default.moveItem(at: tempFile, to: Store.folder.appendingPathComponent(fileName))
         var e = Entry(type: "audio", fileName: fileName, createdAt: date, duration: duration, kind: kind)
         e.markers = markers
+        e.classUid = classUid
+        e.period = period
         if transcribeOnPhone { e.stt = .working }
         let saved = newEntry(e)
         if transcribeOnPhone { transcribe(saved) }

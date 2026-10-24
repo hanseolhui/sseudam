@@ -276,6 +276,8 @@ def _migrate_columns(conn):
         conn.execute("ALTER TABLE classes ADD COLUMN kind TEXT DEFAULT '교과'")
     if "area" not in cols("notes"):
         conn.execute("ALTER TABLE notes ADD COLUMN area TEXT DEFAULT ''")
+    if "phone_meta" not in cols("recordings"):   # 휴대폰이 보낸 학생 이름표·⭐·교시 (JSON)
+        conn.execute("ALTER TABLE recordings ADD COLUMN phone_meta TEXT DEFAULT ''")
     conn.execute("UPDATE drafts SET area='subject' WHERE area IS NULL OR area='' OR area='세특'")
     # 데이터 폴더 이름이 바뀐 경우(세특도우미 → 쓰담) 녹음 경로 고침
     old = os.sep + platform_util.OLD_APP_NAME + os.sep

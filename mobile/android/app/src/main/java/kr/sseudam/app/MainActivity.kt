@@ -15,6 +15,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -214,9 +215,16 @@ fun HomeScreen(nav: Nav) {
             Text(if (!recording) "학년·반·이름부터 말하면 학생별로 쏙쏙 담겨요 ✨\n“2학년 3반 김민수! 친구 의견 모아 멋지게 발표 🌟”"
                 else if (paused) "잠깐 멈췄어요" else "화면을 꺼도 계속 녹음돼요 · 끝나면 한 번 더 누르세요",
                 fontSize = 14.sp, color = T.soft, textAlign = TextAlign.Center)
+            if (recording && db.hasRoster) {
+                Spacer(Modifier.height(12.dp))
+                MarkStrip(db)
+            }
             if (recording) {
                 Spacer(Modifier.height(12.dp))
-                ChipButton(if (paused) "▶ 이어서" else "⏸ 잠깐 멈춤") { RecordService.togglePause(ctx) }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    PeriodChip()
+                    ChipButton(if (paused) "▶ 이어서" else "⏸ 잠깐 멈춤") { RecordService.togglePause(ctx) }
+                }
             }
             Spacer(Modifier.height(10.dp))
             Text("🖥️ 녹음은 컴퓨터의 쓰담이 글자로 바꾸고 학생별로 정리해요", fontSize = 12.sp, color = T.soft, textAlign = TextAlign.Center)
@@ -246,14 +254,73 @@ fun HomeScreen(nav: Nav) {
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(memo, { memo = it }, label = { Text("메모 (선택) 예: 2-3 국어") }, singleLine = true)
-                    Text("반은 컴퓨터의 시간표나 녹음 내용으로 자동으로 정해져요.", fontSize = 12.sp, color = T.soft)
+                    val marks = RecordService.markers.value
+                    val named = marks.count { it.student != null }; val stars = marks.count { it.star }
+                    if (named > 0 || stars > 0) Text("👥 이름표 ${named}번 · ⭐ ${stars}번 — 컴퓨터가 이 표시대로 학생별로 나눠요",
+                        fontSize = 12.sp, color = T.lavender)
+                    Text(if (RecordService.pickedClass.value != null || RecordService.period.value != null) "고른 반·교시로 컴퓨터에 담겨요."
+                        else "반은 컴퓨터의 시간표나 녹음 내용으로 자동으로 정해져요.", fontSize = 12.sp, color = T.soft)
                 }
             },
             // 상담 유형은 아이폰과 같이 지금은 숨김 (수업 기록 위주)
-            confirmButton = { TextButton({ Store.add(file, dur / 1000.0, "수업", memo, at); pending = null
+            confirmButton = { TextButton({ Store.add(file, dur / 1000.0, "수업", memo, at, RecordService.markers.value,
+                RecordService.pickedClass.value, RecordService.period.value); pending = null
                 savedId = Store.items.value.firstOrNull()?.id }) { Text("담기") } },
             dismissButton = { TextButton({ file.delete(); pending = null }) { Text("버리기", color = T.coral) } },
         )
+    }
+}
+
+/** 녹음하면서 톡: 이 학생 이야기 / ⭐ 중요한 순간 (컴퓨터가 누른 시점대로 학생별로 나눈다) */
+@Composable
+fun MarkStrip(db: DB) {
+    val markers by RecordService.markers.collectAsStateWithLifecycle()
+    val current by RecordService.currentStudent.collectAsStateWithLifecycle()
+    val picked by RecordService.pickedClass.collectAsStateWithLifecycle()
+    val prefs = LocalContext.current.getSharedPreferences("sseudam", android.content.Context.MODE_PRIVATE)
+    var markClass by remember { mutableStateOf(prefs.getString("markClass", "") ?: "") }
+    val cls = db.currentClasses.firstOrNull { it.uid == (picked ?: markClass) } ?: db.currentClasses.firstOrNull() ?: db.activeClasses.firstOrNull()
+    var menu by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(T.bg.copy(alpha = 0.6f)).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("누구 이야기인지 톡", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = T.soft)
+            Box {
+                Pill((cls?.title ?: "반 고르기") + " ▾", T.blue) { menu = true }
+                DropdownMenu(menu, { menu = false }) {
+                    db.activeClasses.forEach { c ->
+                        DropdownMenuItem({ Text(c.title) }, {
+                            markClass = c.uid; prefs.edit().putString("markClass", c.uid).apply()
+                            RecordService.pickedClass.value = c.uid; menu = false
+                        })
+                    }
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            ChipButton("⭐ ${markers.count { it.star }}", T.butter) { RecordService.star() }
+        }
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            (cls?.let { db.studentsIn(it) } ?: emptyList()).forEach { s ->
+                ChipButton(s.displayName, T.blue, filled = current == s.uid) { RecordService.mark(s.uid) }
+            }
+        }
+        db.students.firstOrNull { it.uid == current }?.let {
+            Text("지금부터 ${it.displayName} 이야기로 담아요 ✍️", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = T.lavender)
+        }
+    }
+}
+
+/** 몇 교시 수업인지 (컴퓨터 시간표로 반을 정확히 찾게 · 고르지 않으면 녹음 시각으로 찾음) */
+@Composable
+fun PeriodChip() {
+    val period by RecordService.period.collectAsStateWithLifecycle()
+    var menu by remember { mutableStateOf(false) }
+    Box {
+        ChipButton("🕘 " + (period?.let { "${it}교시" } ?: "교시"), T.lavender, filled = period != null) { menu = true }
+        DropdownMenu(menu, { menu = false }) {
+            DropdownMenuItem({ Text("안 정함") }, { RecordService.period.value = null; menu = false })
+            (1..9).forEach { p -> DropdownMenuItem({ Text("${p}교시") }, { RecordService.period.value = p; menu = false }) }
+        }
     }
 }
 

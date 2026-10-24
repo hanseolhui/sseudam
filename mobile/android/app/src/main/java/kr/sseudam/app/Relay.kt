@@ -3,6 +3,7 @@ package kr.sseudam.app
 import android.content.Context
 import android.os.Build
 import android.util.Base64
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
@@ -131,7 +132,16 @@ object Relay {
         val meta = JSONObject().put("type", "rec").put("name", r.fileName).put("ext", "." + r.fileName.substringAfterLast('.', "m4a"))
             .put("recorded_at", df.format(Date(r.createdAt))).put("kind", r.kind).put("title", r.fileName.substringBeforeLast('.'))
             .put("memo", r.memo).put("transcript", if (r.isAudio) "" else r.text)
-            .put("device", DataStore.deviceId).put("device_name", deviceName())
+            .put("device", DataStore.deviceId).put("device_name", deviceName()).put("duration", r.durationSec)
+        // 녹음하면서 누른 학생 이름표·⭐, 고른 반·교시 — 컴퓨터가 이 표시대로 학생별로 나눈다
+        val db = DataStore.db.value
+        if (r.markers.isNotEmpty()) meta.put("markers", JSONArray(r.markers.map { m ->
+            JSONObject().put("t", m.t).put("star", m.star).apply {
+                m.student?.let { uid -> put("student_uid", uid).put("name", db.students.firstOrNull { it.uid == uid }?.displayName ?: "") }
+            }
+        }))
+        r.classUid?.let { c -> meta.put("class_uid", c).put("class_title", db.classes.firstOrNull { it.uid == c }?.title ?: "") }
+        r.period?.let { meta.put("period", it) }
         val name = "rec-" + r.createdAt + "-" + r.id.take(8) + ".bin"
         req("PUT", "/pc/$name", seal(master, meta, if (r.isAudio) bytes else ByteArray(0)))
     }

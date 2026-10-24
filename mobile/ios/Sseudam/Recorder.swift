@@ -21,6 +21,9 @@ final class Recorder: NSObject, ObservableObject {
     @Published var liveText = ""              // 실시간 받아쓰기 (미리 보기)
     @Published var markers: [Marker] = []
     @Published var currentStudent: String?
+    /// 이번 녹음에서 선생님이 직접 고른 반(학급 uid)·교시 — 컴퓨터가 학급을 정할 때 쓴다
+    @Published var pickedClass: String?
+    @Published var period: Int?
 
     private let engine = AVAudioEngine()
     private var file: AVAudioFile?
@@ -75,7 +78,7 @@ final class Recorder: NSObject, ObservableObject {
             engine.prepare()
             try engine.start()
             startedAt = Date()
-            isRecording = true; isPaused = false; elapsed = 0; liveText = ""; committed = ""; markers = []; currentStudent = nil
+            isRecording = true; isPaused = false; elapsed = 0; liveText = ""; committed = ""; markers = []; currentStudent = nil; pickedClass = nil; period = nil
             timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
                 Task { @MainActor in self?.tick() }
             }

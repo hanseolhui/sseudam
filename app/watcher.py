@@ -70,7 +70,7 @@ def _file_time(path):
 
 
 def create_recording(class_id=None, kind=None, title="", recorded_at=None, audio_src=None, transcript="",
-                     original_name="", hint_text="", copy=True, auto=None):
+                     original_name="", hint_text="", copy=True, auto=None, phone_meta=""):
     """기록 하나를 만든다. 학급은 지정값 → 제목/파일명(2-3, 2학년 3반) → 시간표 순으로 찾는다."""
     recorded_at = recorded_at or datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     hint_text = hint_text or title or original_name
@@ -89,9 +89,9 @@ def create_recording(class_id=None, kind=None, title="", recorded_at=None, audio
             audio_path = db.move_audio_into_archive(audio_src, recorded_at, hint, kind, copy=copy)
         status = "전사완료" if (transcript or "").strip() else "보관됨"
         rid = conn.execute("INSERT INTO recordings(class_id, kind, title, recorded_at, audio_path, original_name, "
-                           "transcript, status) VALUES (?,?,?,?,?,?,?,?)",
+                           "transcript, status, phone_meta) VALUES (?,?,?,?,?,?,?,?,?)",
                            (class_id, kind, title, recorded_at, audio_path, original_name,
-                            transcript or "", status)).lastrowid
+                            transcript or "", status, phone_meta or "")).lastrowid
         conn.commit()
     finally:
         conn.close()

@@ -199,6 +199,11 @@ Apps Script 요청은 앱이 자동 생성한 토큰으로 보호(스크립트 �
 - 폰 녹음은 먼저 받은 컴퓨터가 가져가고, 정리된 기록이 peer 로 다른 컴퓨터에 감. 바뀐 게 없어도 사흘마다 다시 올림(중계 서버 14일 자동 삭제 대비).
 - 쓰담 플러스가 아니면 peer 상자를 읽고 쓰지 않음 (`relay.peer_enabled`).
 
+**휴대폰 녹음의 학생 이름표·반·교시 (QR 연동)**
+- 녹음하면서 폰에서 학생 이름표·⭐를 누르고 반·교시를 고르면 녹음 메타(`markers` [{t, student_uid, name, star}], `class_uid`, `period`, `duration`, `star_snippets`)로 함께 감 (아이폰 `Relay.upload`, 안드로이드 `Relay.uploadRecording`).
+- 컴퓨터 `relay._import_recording`: 학급 = 고른 반(uid) → 이름표 학생의 반 → 교시 + 요일 시간표(`pipeline.class_by_period`) → 원래대로 제목·녹음 시각. 메타는 `recordings.phone_meta`(JSON)에 둠.
+- `pipeline.marker_segment`: 이름표 누른 때(1.5초 여유)부터 다음 이름표까지가 그 학생 몫. Whisper 글은 [분:초]로, 시각 없는 폰 글은 글자 위치로 시각을 어림. ⭐가 든 구간은 근거 칸에 '⭐ 중요 표시', 첫 이름표 전 내용은 미분류(긴 수업 녹음은 버림). 폰이 이미 나눠 보낸 녹음은 이전처럼 연결만.
+
 **열 때 할 일**
 1. 포트원 정기결제(빌링키) 채널 심사 → 카드 등록·1주 체험·자동 결제·해지·결제 실패 유예 붙이기 (2단계).
 2. Vercel 에 `ANTHROPIC_API_KEY`, `sseudam-plus` 브랜치를 main 에 합쳐 배포.

@@ -123,6 +123,7 @@ struct HomeView: View {
             }
             if rec.isRecording {
                 HStack(spacing: 10) {
+                    periodMenu
                     Button { rec.togglePause() } label: {
                         Label(rec.isPaused ? "이어서" : "잠깐 멈춤", systemImage: rec.isPaused ? "play.fill" : "pause.fill")
                             .font(Theme.font(15, .semibold)).padding(.horizontal, 18).padding(.vertical, 10)
@@ -141,6 +142,20 @@ struct HomeView: View {
         .card(padding: 22)
     }
 
+    /// 몇 교시 수업인지 (컴퓨터 시간표로 반을 정확히 찾게 · 고르지 않으면 녹음 시각으로 찾음)
+    var periodMenu: some View {
+        Menu {
+            Button("안 정함") { rec.period = nil }
+            ForEach(1...9, id: \.self) { p in Button("\(p)교시") { rec.period = p } }
+        } label: {
+            Label(rec.period.map { "\($0)교시" } ?? "교시", systemImage: "clock")
+                .font(Theme.font(15, .semibold)).padding(.horizontal, 14).padding(.vertical, 10)
+                .background(Theme.lavender.opacity(rec.period == nil ? 0.12 : 0.25), in: Capsule())
+                .foregroundStyle(Theme.lavender)
+        }
+        .accessibilityLabel("몇 교시 수업인지 고르기")
+    }
+
     /// 녹음하면서 톡: 이 학생 이야기 / ⭐ 중요
     var markClassObj: SClass? {
         data.currentClasses.first { $0.uid == markClass } ?? data.currentClasses.first ?? data.activeClasses.first
@@ -151,7 +166,7 @@ struct HomeView: View {
             HStack(spacing: 8) {
                 Text("누구 이야기인지 톡").font(Theme.font(13, .bold)).foregroundStyle(Theme.soft)
                 Menu {
-                    ForEach(data.activeClasses) { c in Button(c.title) { markClass = c.uid } }
+                    ForEach(data.activeClasses) { c in Button(c.title) { markClass = c.uid; rec.pickedClass = c.uid } }
                 } label: {
                     HStack(spacing: 3) {
                         Text(markClassObj?.title ?? "반 고르기").font(Theme.font(12, .bold))
@@ -221,7 +236,8 @@ struct HomeView: View {
             if let r = rec.stop() {
                 if r.1 < 1 { try? FileManager.default.removeItem(at: r.0) }
                 else {
-                    store.addAudio(tempFile: r.0, duration: r.1, at: r.2, markers: r.3)
+                    store.addAudio(tempFile: r.0, duration: r.1, at: r.2, markers: r.3,
+                                   classUid: rec.pickedClass, period: rec.period)
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
                 }
             }

@@ -13,6 +13,14 @@ import java.util.UUID
 
 enum class Sync { OFF, PENDING, DONE, FAILED }
 
+/** 녹음 중에 누른 표시: 학생 이름표(이제부터 이 학생 이야기) 또는 ⭐(중요한 순간). t = 녹음 시작부터 초 */
+data class Marker(val t: Double, val student: String? = null, val star: Boolean = false) {
+    fun toJson(): JSONObject = JSONObject().put("t", t).put("star", star).apply { student?.let { put("student", it) } }
+    companion object {
+        fun from(o: JSONObject) = Marker(o.optDouble("t", 0.0), o.optString("student").ifEmpty { null }, o.optBoolean("star"))
+    }
+}
+
 /** 기록함 한 줄: 녹음(m4a) 또는 한 줄 메모(txt). 둘 다 선생님 구글 드라이브를 거쳐 컴퓨터로 간다. */
 data class Recording(
     val id: String = UUID.randomUUID().toString(),
@@ -30,6 +38,10 @@ data class Recording(
     /** 학생 이름을 못 찾은 앞부분 (선생님이 학생을 골라 줄 수 있게) */
     val splitLeftover: String = "",
     val splitUnsure: Int = 0,
+    /** 녹음하면서 누른 이름표·⭐, 고른 반(학급 uid)·교시 — 컴퓨터가 이 표시대로 학생별로 나눈다 */
+    val markers: List<Marker> = emptyList(),
+    val classUid: String? = null,
+    val period: Int? = null,
 ) {
     val isAudio: Boolean get() = type == "audio"
 
@@ -37,6 +49,8 @@ data class Recording(
         .put("duration", durationSec).put("kind", kind).put("memo", memo).put("google", google.name).put("lastError", lastError)
         .put("type", type).put("text", text).put("splitLeftover", splitLeftover).put("splitUnsure", splitUnsure)
         .apply { splitNames?.let { put("splitNames", JSONArray(it)) } }
+        .apply { if (markers.isNotEmpty()) put("markers", JSONArray(markers.map { it.toJson() })) }
+        .apply { classUid?.let { put("classUid", it) }; period?.let { put("period", it) } }
 
     companion object {
         fun from(o: JSONObject) = Recording(
@@ -45,6 +59,8 @@ data class Recording(
             o.optString("lastError", ""), o.optString("type", "audio"), o.optString("text", ""),
             o.optJSONArray("splitNames")?.let { a -> (0 until a.length()).map { a.getString(it) } },
             o.optString("splitLeftover", ""), o.optInt("splitUnsure", 0),
+            o.optJSONArray("markers")?.let { a -> (0 until a.length()).map { Marker.from(a.getJSONObject(it)) } } ?: emptyList(),
+            o.optString("classUid").ifEmpty { null }, if (o.has("period")) o.optInt("period") else null,
         )
     }
 }
@@ -116,11 +132,12 @@ object Store {
         return fileName
     }
 
-    fun add(temp: File, durationSec: Double, kind: String, memo: String, at: Long) {
+    fun add(temp: File, durationSec: Double, kind: String, memo: String, at: Long,
+            markers: List<Marker> = emptyList(), classUid: String? = null, period: Int? = null) {
         val fileName = uniqueFile(baseName(at, kind, memo), "m4a")
         temp.copyTo(File(folder, fileName)); temp.delete()
         val r = Recording(fileName = fileName, createdAt = at, durationSec = durationSec, kind = kind, memo = memo,
-            google = if (_paired.value) Sync.PENDING else Sync.OFF)
+            google = if (_paired.value) Sync.PENDING else Sync.OFF, markers = markers, classUid = classUid, period = period)
         save(listOf(r) + _items.value)
         UploadWorker.enqueue(ctx)
     }

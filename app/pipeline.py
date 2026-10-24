@@ -410,6 +410,20 @@ def guess_class_by_time(conn, recorded_at, settings=None):
     return None
 
 
+def class_by_period(conn, recorded_at, period, settings=None):
+    """휴대폰에서 고른 교시 + 녹음한 요일 → 시간표의 학급."""
+    settings = settings or db.get_settings(conn)
+    try:
+        table = json.loads(settings.get("timetable") or "{}")
+        dt = datetime.datetime.strptime((recorded_at or "")[:16], "%Y-%m-%d %H:%M")
+        cid = table.get("%d-%d" % (dt.isoweekday(), int(period)))
+    except (ValueError, TypeError):
+        return None
+    if cid and db.row(conn, "SELECT id FROM classes WHERE id=?", (int(cid),)):
+        return int(cid)
+    return None
+
+
 def auto_process(rid, force=False):
     """새로 들어온 기록을 설정에 맞게 자동 처리. API 키가 없으면 AI 없이 이름 기준으로 나눈다."""
     conn = db.connect()
@@ -486,6 +500,12 @@ def segment_after_transcript(rid, settings=None):
             return
     finally:
         conn.close()
+    # 녹음 중 휴대폰에서 학생 이름표를 눌렀으면 그 시점대로 나눈다 (선생님이 직접 고른 것이 가장 정확)
+    try:
+        if marker_segment(rid):
+            return
+    except Exception as e:  # noqa — 실패하면 평소처럼 이름 기준으로
+        print("[marker_segment] 실패, 평소대로 나눔:", e)
     eng = seg_engine(settings)
     if eng == "gemini":
         enqueue("segment", {"recording_id": rid}, "학생별 분리 #%d" % rid)
@@ -497,6 +517,98 @@ def segment_after_transcript(rid, settings=None):
             rule_segment(rid)
         except ValueError:
             pass  # 학급 미지정 등 → 녹음함에서 사용자가 처리
+
+
+# ───────────────────────── 휴대폰 이름표 기준 분리 ─────────────────────────
+
+MARK_SLACK = 1.5   # 이름표는 말을 꺼내면서 누르므로, 누르기 조금 전에 시작한 문장부터 그 학생 몫
+
+
+def _timed_pieces(transcript, duration=0):
+    """전사문 → [(초, 문장)]. Whisper 글은 줄마다 [분:초]가 있고, 없으면(폰 받아쓰기) 글자 위치로 시각을 어림한다."""
+    out = []
+    for m in re.finditer(r"^\[(\d{1,3}):(\d{2})(?::(\d{2}))?\]\s*(.*)$", transcript or "", re.M):
+        a, b, c = int(m.group(1)), int(m.group(2)), m.group(3)
+        t = a * 3600 + b * 60 + int(c) if c else a * 60 + b
+        if m.group(4).strip():
+            out.append((t, m.group(4).strip()))
+    if out:
+        return out
+    text = re.sub(r"\s+", " ", transcript or "").strip()
+    if not text or not duration:
+        return []
+    return [(duration * a / len(text), text[a:b].strip()) for a, b in _sentences(text) if text[a:b].strip()]
+
+
+def marker_segment(rid):
+    """녹음하면서 휴대폰에서 누른 학생 이름표대로 나눈다: 이름표를 누른 때부터 다음 이름표까지가 그 학생 이야기.
+    이름표가 없으면 False (평소처럼 이름 기준으로 나눔)."""
+    conn = db.connect()
+    try:
+        r = db.row(conn, "SELECT * FROM recordings WHERE id=?", (rid,))
+        try:
+            meta = json.loads((r or {}).get("phone_meta") or "{}")
+        except ValueError:
+            return False
+        studs = {}
+        for m in meta.get("markers") or []:
+            uid = m.get("student_uid")
+            if uid and uid not in studs:
+                s = db.row(conn, "SELECT * FROM students WHERE uid=?", (uid,))
+                if s:
+                    studs[uid] = s
+        marks = sorted((m for m in meta.get("markers") or [] if m.get("student_uid") in studs), key=lambda m: m["t"])
+        pieces = _timed_pieces(r["transcript"], meta.get("duration") or 0) if marks else []
+        if not pieces:
+            return False
+        if not r["class_id"]:
+            conn.execute("UPDATE recordings SET class_id=? WHERE id=?", (studs[marks[0]["student_uid"]]["class_id"], rid))
+        long_rec = sum(len(p[1]) for p in pieces) > LONG_RECORDING_CHARS
+        lead, blocks = [], []   # blocks: [학생 uid, [문장], 시작 초]
+        for t, sent in pieces:
+            k = -1
+            for i, m in enumerate(marks):
+                if t >= m["t"] - MARK_SLACK:
+                    k = i
+                else:
+                    break
+            if k < 0:
+                lead.append(sent)
+                continue
+            uid = marks[k]["student_uid"]
+            if blocks and blocks[-1][0] == uid:
+                blocks[-1][1].append(sent)
+            else:
+                blocks.append([uid, [sent], marks[k]["t"]])
+        stars = [m["t"] for m in meta.get("markers") or [] if m.get("star")]
+        date = (r["recorded_at"] or "")[:10] or datetime.date.today().isoformat()
+        conn.execute("DELETE FROM notes WHERE recording_id=?", (rid,))
+        conn.execute("DELETE FROM unmatched WHERE recording_id=?", (rid,))
+        count = 0
+        for i, (uid, sents, start) in enumerate(blocks):
+            if long_rec:   # 한 교시 녹음: 이름표 뒤에 이어지는 짧은 지도 말("앉아요")은 빼고
+                sents = [s for s in sents if not (len(s) < 30 and _is_talk(s))]
+            chunk = strip_class_words(re.sub(r"\s+", " ", " ".join(sents)).strip())
+            if len(chunk) < 4:
+                continue
+            end = blocks[i + 1][2] if i + 1 < len(blocks) else float("inf")
+            starred = any(start - MARK_SLACK <= st < end for st in stars)
+            conn.execute("INSERT INTO notes(student_id, recording_id, date, kind, category, content, evidence) "
+                         "VALUES (?,?,?,?,?,?,?)",
+                         (studs[uid]["id"], rid, date, r["kind"], "기타", chunk[:1500],
+                          "⭐ 녹음하면서 중요 표시한 부분" if starred else ""))
+            count += 1
+        rest = re.sub(r"\s+", " ", " ".join(lead)).strip()
+        unmatched = 0
+        if len(rest) >= 10 and not long_rec:
+            conn.execute("INSERT INTO unmatched(recording_id, name_heard, content, evidence, category) VALUES (?,?,?,?,?)",
+                         (rid, "이름표 누르기 전", rest[:1200], "", "기타"))
+            unmatched = 1
+        conn.execute("UPDATE recordings SET status='확인필요', error='' WHERE id=?", (rid,))
+        conn.commit()
+        return {"ok": True, "matched": count, "unmatched": unmatched, "by": "markers"}
+    finally:
+        conn.close()
 
 
 # ───────────────────────── 규칙 기반 분리 (AI 없이) ─────────────────────────

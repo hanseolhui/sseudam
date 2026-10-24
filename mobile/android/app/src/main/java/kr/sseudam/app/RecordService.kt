@@ -25,6 +25,17 @@ class RecordService : Service() {
         private var base = 0L          // 일시정지 고려한 경과 기준
         private var pausedAt = 0L
         var lastFile: File? = null; private set
+        /** 녹음하면서 누른 이름표·⭐, 고른 반·교시 (녹음을 시작할 때 비움) */
+        val markers = MutableStateFlow<List<Marker>>(emptyList())
+        val currentStudent = MutableStateFlow<String?>(null)
+        val pickedClass = MutableStateFlow<String?>(null)
+        val period = MutableStateFlow<Int?>(null)
+        fun mark(student: String) {
+            if (!recording.value) return
+            currentStudent.value = student
+            markers.value = markers.value + Marker(elapsedMs() / 1000.0, student)
+        }
+        fun star() { if (recording.value) markers.value = markers.value + Marker(elapsedMs() / 1000.0, star = true) }
         fun elapsedMs(): Long = if (!recording.value) 0 else if (paused.value) pausedAt - base else SystemClock.elapsedRealtime() - base
 
         fun start(c: Context) = c.startForegroundService(Intent(c, RecordService::class.java).setAction("start"))
@@ -73,6 +84,7 @@ class RecordService : Service() {
         r.prepare(); r.start()
         recorder = r; lastFile = f
         startedAt = System.currentTimeMillis(); base = SystemClock.elapsedRealtime()
+        markers.value = emptyList(); currentStudent.value = null; pickedClass.value = null; period.value = null
         recording.value = true; paused.value = false
         android.os.Handler(mainLooper).post(meter)
     }
