@@ -135,7 +135,7 @@ def clean_draft(text, student=None):
     return t
 
 
-def draft(student, class_info, notes, settings, extra="", area="subject", context=None, target=None):
+def draft(student, class_info, notes, settings, extra="", area="subject", context=None, target=None, deep=False):
     import db
     limit = db.area_limit(area, settings)
     if target:   # 학생별로 정한 분량이 있으면 그걸 씀
@@ -172,6 +172,8 @@ def draft(student, class_info, notes, settings, extra="", area="subject", contex
 - **절대 지어내지 말 것**: 관찰기록에 없는 경기·장면·대화·결과·숫자·역할(예: '전략적 판단이 미흡하자 휴식을 제안함' 같은 일)은 쓰지 않음.
   해석은 '이 행동이 어떤 태도·역량을 보여 주는지'까지만. 확실하지 않으면 쓰지 않음.
 - 기록이 여러 건이면 공통된 강점으로 묶어 한 흐름의 글로 엮기. 같은 내용이 두 번 있으면 한 번만.
+- 꾸밈을 아낄 것: '인상적임', '돋보임', '탁월함' 같은 평가어는 글 전체에서 두 번 이하, 같은 말은 반복하지 말 것.
+  평가어는 반드시 그 근거가 된 관찰 사실 바로 뒤에만. 기록에 없는 탐구 단계(가설 설정, 변인 통제, 추가 조사 등)를 덧붙이지 말 것.
 - 상담 기록은 학업·진로·성장과 관련된 내용만 활용하고, 가정사·건강·교우 갈등 등 민감한 개인사는 쓰지 말 것.
 - 기재 금지: 교외 대회·수상, 공인어학시험 점수, 논문·학회, 특허, 도서 출간, 해외 활동, 부모의 직업·사회경제적 지위, 사교육, 특정 대학·기관·상호명.
 - 분량: NEIS 기준 %d바이트 이내(한글 약 %d자 이내), 한 문단, 줄바꿈 없이. 기록이 충분하면 한도의 80~95%%까지 쓰고,
@@ -193,6 +195,15 @@ def draft(student, class_info, notes, settings, extra="", area="subject", contex
         block = ("\n[수업 정보 — 반드시 초안에 반영할 것. 단, 관찰기록에 없는 활동·성과를 지어내지는 말 것]\n%s\n"
                  % "\n".join(lesson))
         out = out.replace("\n[이 영역의 초점]", block + "\n[이 영역의 초점]", 1)
+    if deep:
+        # 쓰담 플러스 '정성 초안': 사실은 늘리지 않되, 의미를 깊게 풀어 분량을 채움
+        out += ("\n[정성 초안 — 더 깊게]\n"
+                "- 분량: 한글 **최소 %d자 이상, %d자 이하**(%d바이트 한도의 85~95%%). 짧게 끝내지 말 것. 단, 관찰 사실을 새로 만들지 말고\n"
+                "  ① 수업 상황과 과제의 의미 ② 학생이 한 행동의 구체적인 과정 ③ 그 행동이 보여 주는 역량을 수업의 성취 역량과 연결한 해석\n"
+                "  ④ 다음 배움으로 이어질 성장 방향을 차례로 깊게 풀어 써서 채울 것.\n"
+                "- 기록이 아주 적으면(1~2건) 억지로 늘리지 말고 해석을 충실히 한 만큼만 쓸 것.\n"
+                "- 문장마다 어떤 관찰 사실에 근거했는지 분명해야 함. 교사가 그대로 옮겨 적어도 될 만큼 완성된 문장으로.\n"
+                % (int(approx_chars * 0.9), approx_chars, limit))
     if guidance:
         out += "\n[교사의 추가 지침]\n%s\n" % guidance
     if style:

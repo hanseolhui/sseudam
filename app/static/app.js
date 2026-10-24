@@ -1712,7 +1712,7 @@ async function viewSettings(section) {
       } else {
         d = plusSt.pay
           ? `<div class="spec">💜 <b>${esc(plusSt.email)}</b>로 로그인했어요. 지금은 구독 기간이 아니에요.
-          <div class="small muted" style="margin-top:4px">월 9,900원 · 반년 29,000원 · 1년 49,000원. 카드를 등록하면 처음 2주는 체험이에요(계정당 한 번).</div>
+          <div class="small muted" style="margin-top:4px">월 9,900원 · 반년 29,000원 · 1년 49,000원. 카드를 등록하면 처음 1주는 체험이에요(계정당 한 번 · 체험 중 기본 AI 200회 · 정성 초안 10회).</div>
           <div class="row" style="margin-top:8px"><a class="btn sm primary shrink" href="https://apps.seoriarts.com/sseudam/plus" target="_blank">구독 시작하기 ↗</a><button class="sm shrink" id="plus-refresh">구독 다시 확인</button><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`
           : plusSt.betaRequested
           ? `<div class="spec">💜 <b>${esc(plusSt.email)}</b> · <b>베타 신청을 받았어요.</b>

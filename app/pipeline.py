@@ -120,7 +120,7 @@ def build_prompt(op, params):
                          (s["class_id"], area)) or {}
             t = db.row(conn, "SELECT bytes FROM student_targets WHERE student_id=? AND area=?", (s["id"], area))
             return {"prompt": prompts.draft(s, c, notes, settings, params.get("extra", ""), area,
-                                            context=ctx, target=(t or {}).get("bytes")),
+                                            context=ctx, target=(t or {}).get("bytes"), deep=bool(params.get("deep"))),
                     "system": prompts.DRAFT_SYSTEM}
         if op == "shorten":
             text = params.get("text", "")
