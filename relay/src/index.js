@@ -1,5 +1,6 @@
 // 쓰담 중계 서버 — 휴대폰과 컴퓨터가 QR로 나눠 가진 채널(무작위 128비트)로 암호문을 주고받는 우편함.
 // 내용은 폰·컴퓨터만 아는 열쇠로 암호화돼 있어서 여기서는 열 수 없다. 받으면 지우고, 14일 지난 것은 R2 수명 규칙이 지운다.
+//   상자: pc(폰→컴퓨터) · phone(컴퓨터→폰) · peer(컴퓨터↔컴퓨터, 쓰담 플러스 — 덮어써 가며 둠)
 //   GET    /v1/<채널>/<pc|phone>            → 그 상자에 들어 있는 것 목록
 //   PUT    /v1/<채널>/<pc|phone>/<이름>     → 넣기 (최대 100MB)
 //   GET    /v1/<채널>/<pc|phone>/<이름>     → 꺼내기
@@ -20,7 +21,7 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
     if (url.pathname === "/" || url.pathname === "/health") return new Response("sseudam relay ok");
-    const m = url.pathname.match(/^\/v1\/([0-9a-f]{32})(?:\/(pc|phone)(?:\/([A-Za-z0-9._-]{1,100}))?)?$/);
+    const m = url.pathname.match(/^\/v1\/([0-9a-f]{32})(?:\/(pc|phone|peer)(?:\/([A-Za-z0-9._-]{1,100}))?)?$/);
     if (!m) return json({ error: "not found" }, 404);
     const [, ch, box, name] = m;
     const token = req.headers.get("x-relay-token") || "";

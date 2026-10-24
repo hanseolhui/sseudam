@@ -1554,6 +1554,10 @@ async function viewSettings(section) {
             <p class="small muted" style="margin:8px 0 0">아이폰과 맥이 같은 Apple ID면 QR 없이도 iCloud로 이어져요. 둘 다 써도 괜찮아요.</p>
           </div>
         </div>
+        <div class="info-box" id="pc-sync" style="margin-top:14px"><b>💜 다른 컴퓨터와 자동 맞추기</b> <span class="small muted">— 쓰담 플러스</span>
+          <div class="small muted" style="margin-top:4px">집 맥과 학교 윈도우처럼 컴퓨터 두 대 이상에서 학급·학생·관찰 기록·초안이 저절로 같아져요. 휴대폰 녹음은 먼저 켜진 컴퓨터가 받고, 정리된 기록은 다른 컴퓨터에도 가요. 모두 암호화돼서 건너가요.</div>
+          <div id="pc-sync-body" style="margin-top:8px"></div>
+        </div>
       </div>
       <div class="card" style="grid-column:1 / -1;order:1" id="phone" data-pane="phone">
         <div class="section-title"><h2>구글 드라이브로 연결 (예전 방식)</h2><label class="check"><input type="checkbox" id="drive_inbox" ${s.drive_inbox === '1' ? 'checked' : ''}> 휴대폰 녹음 자동으로 가져오기</label></div>
@@ -1829,6 +1833,7 @@ async function viewSettings(section) {
   const rlDraw = async (r) => {
     r = r || await api('/api/relay', undefined, { silent: true }).catch(() => null);
     if (!r) return;
+    pcDraw(r);
     if (!r.paired) {
       $('#rl-qr').innerHTML = '<button class="primary" id="rl-make">QR 만들기</button>';
       $('#rl-make').onclick = async () => { rlDraw(await api('/api/relay/pair', {})); };
@@ -1841,6 +1846,27 @@ async function viewSettings(section) {
     $('#rl-qr').innerHTML = `<div style="background:#fff;display:inline-block;padding:10px;border-radius:12px">${qr.createSvgTag({ cellSize: 4, margin: 2 })}</div><div class="small muted" style="margin-top:6px">휴대폰 쓰담 → 컴퓨터 연결 → QR 찍기</div>`;
     $('#rl-state').innerHTML = r.devices.length ? '<span class="ok-text">✓ 연결됨</span>' : '<span class="muted">휴대폰이 찍기를 기다리는 중</span>';
     $('#rl-devs').innerHTML = r.devices.length ? '연결된 휴대폰: <b>' + r.devices.map(esc).join(', ') + '</b>' + (r.last ? ` · 마지막 확인 ${new Date(r.last * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : '') : '';
+  };
+  // 💜 컴퓨터끼리 자동 맞추기 (쓰담 플러스)
+  const pcDraw = (r) => {
+    const box = $('#pc-sync-body'); if (!box) return;
+    if (!r.peer_enabled) {
+      box.innerHTML = r.paired
+        ? `<div class="small">쓰담 플러스를 쓰는 중일 때 켜져요. <a href="#/settings" id="pc-go-plus">설정 → AI → 쓰담 플러스</a></div>
+           <div class="row" style="margin-top:6px"><input id="pc-code" placeholder="다른 컴퓨터의 연결 코드 붙여넣기" style="flex:1 1 260px"><button class="sm shrink" id="pc-join">이 컴퓨터를 연결</button></div>`
+        : `<div class="small">먼저 위에서 QR을 만들거나, 다른 컴퓨터의 연결 코드를 붙여넣어 주세요.</div>
+           <div class="row" style="margin-top:6px"><input id="pc-code" placeholder="다른 컴퓨터의 연결 코드 붙여넣기" style="flex:1 1 260px"><button class="sm shrink" id="pc-join">이 컴퓨터를 연결</button></div>`;
+    } else {
+      box.innerHTML = `<div class="small">${r.peers ? `<span class="ok-text">✓ 다른 컴퓨터 ${r.peers}대와 맞추는 중</span>` : '<span class="muted">다른 컴퓨터를 기다리는 중</span>'}</div>
+        <div class="row" style="margin-top:6px;gap:8px;flex-wrap:wrap"><button class="sm primary shrink" id="pc-copy">연결 코드 복사</button><span class="small muted">→ 다른 컴퓨터의 쓰담 → 설정 → 휴대폰 → 여기에 붙여넣기</span></div>
+        <div class="row" style="margin-top:6px"><input id="pc-code" placeholder="또는: 다른 컴퓨터의 연결 코드 붙여넣기" style="flex:1 1 260px"><button class="sm shrink" id="pc-join">이 컴퓨터를 연결</button></div>`;
+    }
+    if ($('#pc-copy')) $('#pc-copy').onclick = async () => { try { await navigator.clipboard.writeText(r.qr); toast('연결 코드를 복사했어요. 다른 컴퓨터에 붙여넣어 주세요 ✓'); } catch (e) { prompt('아래 코드를 복사해 주세요', r.qr); } };
+    if ($('#pc-join')) $('#pc-join').onclick = async () => {
+      const code = $('#pc-code').value.trim(); if (!code) return toast('연결 코드를 붙여넣어 주세요', true);
+      if (r.paired && !confirmBox('이 컴퓨터를 다른 컴퓨터와 같은 연결로 바꿔요. 이 컴퓨터에 따로 연결했던 휴대폰은 다른 컴퓨터의 QR로 다시 찍어야 해요. 계속할까요?')) return;
+      try { const x = await api('/api/relay/join', { code }); toast('다른 컴퓨터와 연결했어요 ✓ 기록이 곧 맞춰져요'); rlDraw(x); } catch (e) { /* 토스트 */ }
+    };
   };
   $('#rl-poll').onclick = async () => { const r = await api('/api/relay/poll', {}); toast(r.received ? `휴대폰에서 ${r.received}개를 받았어요 ✓` : '새로 온 건 없어요'); rlDraw(); };
   $('#rl-new').onclick = async () => { if (!confirmBox('새 QR을 만들면 지금 연결된 휴대폰은 끊겨요. 다시 찍어야 해요. 계속할까요?')) return; rlDraw(await api('/api/relay/pair', { new: true })); toast('새 QR을 만들었어요'); };

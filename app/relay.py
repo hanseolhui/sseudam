@@ -11,6 +11,9 @@
   tag   = HMAC-SHA256(kMac, "SSD1" ‖ nonce ‖ 암호문)        (암호화한 뒤 MAC — 위조·변조 확인)
   평문   = 메타 JSON 길이(4바이트 big-endian) + 메타 JSON(UTF-8) + 본문(녹음 바이트, 없으면 빈)
 상자 이름: phone → pc 는 'pc' 상자 (rec-….bin 녹음, doc-<기기>.bin 학생 기록), pc → phone 은 'phone' 상자 (doc-pc.bin).
+컴퓨터 ↔ 컴퓨터(쓰담 플러스): 다른 컴퓨터가 이 컴퓨터의 '연결 코드'로 같은 채널에 들어오면, 둘 다 'peer' 상자에
+자기 학생 기록(doc-<기기>.bin)을 올려 두고 서로의 것을 읽어 합친다 (지우지 않고 덮어씀 · sync_text 가 최신 것을 고름).
+폰이 보낸 녹음은 먼저 받은 컴퓨터가 가져가고, 거기서 나온 학생 기록은 peer 로 다른 컴퓨터에도 간다.
 """
 import base64
 import hashlib
@@ -112,6 +115,92 @@ def pair_info(new=False):
     return {"qr": q, "channel": ch[:6], "url": url}
 
 
+def peer_enabled():
+    """컴퓨터끼리 자동 맞추기: 쓰담 플러스 기능."""
+    import plus
+    return paired() and plus.ENABLED and plus.active()
+
+
+def join(code):
+    """다른 컴퓨터의 연결 코드(sseudam://pair…)로 그 컴퓨터와 같은 채널에 들어가기 (이 컴퓨터의 휴대폰 연결은 바뀜)."""
+    import urllib.parse
+    u = urllib.parse.urlparse((code or "").strip())
+    q = dict(urllib.parse.parse_qsl(u.query))
+    if u.scheme != "sseudam" or u.netloc != "pair" or q.get("v") != "1":
+        raise ValueError("연결 코드가 아니에요. 다른 컴퓨터의 쓰담 → 설정 → 휴대폰에서 '연결 코드 복사'로 받은 글을 붙여넣어 주세요.")
+    ch, key, url = q.get("c", ""), q.get("k", ""), q.get("u", "")
+    if not (len(ch) == 32 and all(c in "0123456789abcdef" for c in ch) and url.startswith("https://") and len(unb64u(key)) == 32):
+        raise ValueError("연결 코드가 올바르지 않아요.")
+    if paired() and db.get_settings().get("relay_channel") == ch:
+        return pair_info()
+    db.set_settings({"relay_channel": ch, "relay_key": key, "relay_url": url.rstrip("/"), "relay_devices": "", "relay_doc_sig": "", "relay_peer_sig": ""})
+    _status.update(state="연결됨")
+    return pair_info()
+
+
+def _peer_id():
+    import sync_text
+    conn = db.connect()
+    try:
+        return "".join(c for c in sync_text._device(conn) if c.isalnum() or c in "-_")[:40] or "pc"
+    finally:
+        conn.close()
+
+
+def push_peer(doc):
+    """다른 컴퓨터가 읽게 'peer' 상자에 내 기록 — 바뀌었거나 사흘 지났으면 (14일 자동 삭제 전에 다시 올림)."""
+    c = _creds()
+    if not c or not peer_enabled():
+        return False
+    body = json.dumps({k: v for k, v in doc.items() if k != "updated_at"}, sort_keys=True, default=str)
+    sig = hashlib.sha256(body.encode()).hexdigest()
+    s = db.get_settings()
+    last = float(s.get("relay_peer_at") or 0)
+    if s.get("relay_peer_sig") == sig and time.time() - last < 3 * 86400:
+        return False
+    meta = {"type": "doc", "device": _peer_id(), "device_name": socket.gethostname().replace(".local", "")[:40], "peer": True}
+    _req("PUT", "/peer/doc-%s.bin" % _peer_id(), c, seal(c[1], meta, json.dumps(doc, ensure_ascii=False, default=str).encode("utf-8")))
+    db.set_settings({"relay_peer_sig": sig, "relay_peer_at": str(time.time())})
+    return True
+
+
+_peer_seen = {}
+
+
+def poll_peers(c):
+    """다른 컴퓨터들이 올린 기록 받아 오기 (지우지 않음 · 바뀐 것만)."""
+    if not peer_enabled():
+        return 0
+    me = "doc-%s.bin" % _peer_id()
+    got = 0
+    try:
+        items = json.loads(_req("GET", "/peer", c)).get("items", [])
+    except Exception:  # noqa — 예전 중계 서버 등
+        return 0
+    names = []
+    for it in items:
+        name = it["name"]
+        if name == me or not name.startswith("doc-"):
+            continue
+        stamp = "%s/%s" % (it.get("size"), it.get("at"))
+        if _peer_seen.get(name) == stamp:
+            names.append(name)
+            continue
+        try:
+            meta, body = open_(c[1], _req("GET", "/peer/" + name, c, timeout=120))
+        except Exception as e:  # noqa
+            print("[컴퓨터 맞추기] 열지 못함:", name, e)
+            continue
+        dev = "".join(ch for ch in str(meta.get("device") or name) if ch.isalnum() or ch in "-_")[:40]
+        with open(os.path.join(inbox_dir(), "relay-peer-%s.json" % dev), "wb") as f:
+            f.write(body)
+        _peer_seen[name] = stamp
+        names.append(name)
+        got += 1
+    _status["peers"] = len(names)
+    return got
+
+
 def unpair(remote=True):
     c = _creds()
     if c and remote:
@@ -186,6 +275,7 @@ def poll_once():
             _req("DELETE", "/pc/" + name, c)
             got += 1
         db.set_settings({"relay_devices": ",".join(sorted(devices))})
+        got += poll_peers(c)
         _status.update(state="연결됨", last=time.time(), error="", received=_status["received"] + got)
         return {"ok": True, "received": got}
 
@@ -213,7 +303,8 @@ def _import_recording(meta, audio):
 
 def status():
     s = db.get_settings()
-    return dict(_status, paired=paired(), devices=[d for d in (s.get("relay_devices") or "").split(",") if d])
+    return dict(_status, paired=paired(), devices=[d for d in (s.get("relay_devices") or "").split(",") if d],
+                peer_enabled=peer_enabled())
 
 
 def _loop():

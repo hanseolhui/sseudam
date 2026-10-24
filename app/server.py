@@ -1000,6 +1000,23 @@ def relay_pair(h, q, b):
     return dict(relay.status(), **relay.pair_info(new=bool(b.get("new"))), paired=True)
 
 
+@route("POST", "/api/relay/join")
+def relay_join(h, q, b):
+    """다른 컴퓨터의 연결 코드로 그 컴퓨터와 같은 채널에 (쓰담 플러스: 컴퓨터끼리 자동 맞추기)."""
+    if not relay.peer_enabled() and not (plus.ENABLED and plus.active()):
+        raise ApiError("컴퓨터끼리 자동 맞추기는 쓰담 플러스에서 쓸 수 있어요.")
+    try:
+        info = relay.join(b.get("code") or "")
+    except ValueError as e:
+        raise ApiError(str(e))
+    try:
+        relay.poll_once()
+        sync_text.sync_once()
+    except Exception:  # noqa
+        pass
+    return dict(relay.status(), **info, paired=True)
+
+
 @route("POST", "/api/relay/unpair")
 def relay_unpair(h, q, b):
     relay.unpair()

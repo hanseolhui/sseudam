@@ -335,6 +335,7 @@ def sync_once():
             if rfolder:
                 try:
                     relay.push_doc(doc)     # QR 연동한 폰에도 (암호화해서)
+                    relay.push_peer(doc)    # 같은 채널의 다른 컴퓨터에도 (쓰담 플러스)
                 except Exception as e:  # noqa
                     print("[QR 연동] 기록 올리기 실패:", e)
             _status.update(state="정상", last=time.time(), error="",

@@ -31,6 +31,8 @@ DEFAULT_SETTINGS = {
     "plus_active": "0",
     "plus_status": "",
     "plus_checked": "0",
+    "relay_peer_sig": "",               # 컴퓨터끼리 맞추기: 마지막으로 올린 내 기록
+    "relay_peer_at": "0",
     "byte_limit": "1500",
     "school_level": "고등학교",
     "teacher_subject": "",
