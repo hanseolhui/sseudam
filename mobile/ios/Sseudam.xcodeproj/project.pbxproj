@@ -15,6 +15,7 @@
 		3461824010FB4D253F770882 /* ConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE147E1357C039411699FAD9 /* ConnectView.swift */; };
 		3CCC1D476D7F96DEB290DD9E /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BD0D2D816588F4CF251ACAC /* HomeView.swift */; };
 		3FA55CD3B5AC7F00AB35D199 /* AppLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F2CE36A4BB3BC47AA4D7B44 /* AppLock.swift */; };
+		4E1DB116A3C90E56946A8286 /* BackgroundSend.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD01DFCF47256D7982E7B838 /* BackgroundSend.swift */; };
 		52261A6115B359EC32412053 /* Recorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F955F5BA710F49B8D0B2DCF0 /* Recorder.swift */; };
 		643303B738F3711C7FD66760 /* AIEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13991F5DEA4767DA151166A9 /* AIEngine.swift */; };
 		64EC77FCADC55903F401479E /* Store.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A6FF75DAAEF58C8169B93BA /* Store.swift */; };
@@ -110,6 +111,7 @@
 		C2BAE67B406D313F4E1BFD09 /* RecordsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordsView.swift; sourceTree = "<group>"; };
 		C57348737277454D799DAD7A /* Relay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Relay.swift; sourceTree = "<group>"; };
 		CE147E1357C039411699FAD9 /* ConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectView.swift; sourceTree = "<group>"; };
+		DD01DFCF47256D7982E7B838 /* BackgroundSend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundSend.swift; sourceTree = "<group>"; };
 		E99527ED634E25B9619D48CD /* SseudamWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SseudamWatchApp.swift; sourceTree = "<group>"; };
 		E9EB58E1007EDBA6224B5847 /* OpenRecordIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenRecordIntent.swift; sourceTree = "<group>"; };
 		EBF057AE1C9754955DF8AE06 /* Sseudam.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Sseudam.entitlements; sourceTree = "<group>"; };
@@ -168,6 +170,7 @@
 				3F2CE36A4BB3BC47AA4D7B44 /* AppLock.swift */,
 				AEA1284C4F15C899D71C7C32 /* Assets.xcassets */,
 				AC3062820F22EC3F4C3D9B59 /* AssignViews.swift */,
+				DD01DFCF47256D7982E7B838 /* BackgroundSend.swift */,
 				CE147E1357C039411699FAD9 /* ConnectView.swift */,
 				F59B2DA838F91102FE689C18 /* DraftTools.swift */,
 				9BD0D2D816588F4CF251ACAC /* HomeView.swift */,
@@ -340,6 +343,7 @@
 				A25527A0C1C17C7A079951CC /* App.swift in Sources */,
 				3FA55CD3B5AC7F00AB35D199 /* AppLock.swift in Sources */,
 				2CE9844BCEBC52E55B5405F8 /* AssignViews.swift in Sources */,
+				4E1DB116A3C90E56946A8286 /* BackgroundSend.swift in Sources */,
 				3461824010FB4D253F770882 /* ConnectView.swift in Sources */,
 				103183D0B7B826444E42240D /* DraftTools.swift in Sources */,
 				3CCC1D476D7F96DEB290DD9E /* HomeView.swift in Sources */,
@@ -440,7 +444,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 967DUR6926;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -500,7 +504,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 967DUR6926;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

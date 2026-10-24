@@ -132,9 +132,9 @@ enum Relay {
 
     private static var deviceName: String { String(UIDevice.current.name.prefix(40)) }
 
-    /// 녹음(또는 한 줄 메모) 하나를 컴퓨터로
-    static func upload(file: URL, entry e: Entry, deviceId: String) async throws {
-        guard let c = creds() else { throw RelayError.notPaired }
+    /// 녹음(또는 한 줄 메모) 하나를 컴퓨터로 보낼 요청과 암호화한 내용 — 백그라운드 전송(BackgroundSend)이 올린다
+    static func prepareUpload(file: URL, entry e: Entry, deviceId: String) async throws -> (URLRequest, Data) {
+        guard let c = creds(), let url = URL(string: "\(c.url)/v1/\(c.ch)/pc/\(uploadName(e))") else { throw RelayError.notPaired }
         let df = DateFormatter(); df.locale = Locale(identifier: "ko_KR"); df.dateFormat = "yyyy-MM-dd HH:mm"
         let ext = "." + (e.fileName.split(separator: ".").last.map(String.init) ?? "m4a")
         var meta: [String: Any] = ["type": "rec", "name": e.fileName, "ext": ext, "recorded_at": df.string(from: e.createdAt),
@@ -156,7 +156,11 @@ enum Relay {
         if let p = e.period { meta["period"] = p }
         if !e.starSnippets.isEmpty { meta["star_snippets"] = e.starSnippets }
         let body = e.isAudio ? ((try? Data(contentsOf: file)) ?? Data()) : Data()
-        _ = try await req("PUT", "/pc/\(uploadName(e))", body: try seal(c.key, meta: meta, body: body))
+        var r = URLRequest(url: url)
+        r.httpMethod = "PUT"
+        r.setValue(token(c.key), forHTTPHeaderField: "x-relay-token")
+        r.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        return (r, try seal(c.key, meta: meta, body: body))
     }
 
     /// 중계 상자에 올리는 이름 — 컴퓨터가 '받음' 목록에 이 이름을 적어 돌려준다

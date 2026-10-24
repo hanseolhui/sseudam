@@ -3,6 +3,7 @@ import SwiftUI
 
 @main
 struct SseudamApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var store = Store.shared
     @StateObject private var nav = Nav.shared
     @StateObject private var data = DataStore.shared
@@ -50,6 +51,7 @@ struct SseudamApp: App {
         .onChange(of: phase) { p in
             lock.phase(p)
             if p == .active { Task { await store.syncAll(); await data.syncNow() } }
+            if p == .background { BackgroundSend.scheduleRefresh() }
         }
     }
 }

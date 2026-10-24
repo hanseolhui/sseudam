@@ -2,7 +2,8 @@ import AVFoundation
 import Foundation
 import UIKit
 
-enum SyncState: String, Codable { case off, pending, done, failed }
+/// sending = iOS 백그라운드 전송에 맡겨 올리는 중 (앱이 꺼져도 계속)
+enum SyncState: String, Codable { case off, pending, sending, done, failed }
 /// 아이폰 안 받아쓰기 상태: 대기·진행 중·끝·지원 안 함·실패
 enum SttState: String, Codable { case none, working, done, unavailable, failed }
 
@@ -131,7 +132,7 @@ final class Store: ObservableObject {
     var googleToken: String { Keychain.get("googleToken") ?? "" }
     var teacherName: String { defaults.string(forKey: "teacherName") ?? "" }
     var googlePaired: Bool { !googleURL.isEmpty && !googleToken.isEmpty }
-    var autoSend: Bool { googlePaired || (useICloud && icloudAvailable) }
+    var autoSend: Bool { Relay.paired || googlePaired || (useICloud && icloudAvailable) }
     /// 컴퓨터의 쓰담이 한 번이라도 기록을 받아 갔는지 (구글 연결은 컴퓨터에서 QR을 띄워야 하므로 받은 것으로 봄)
     var computerSeen: Bool {
         get { googlePaired || defaults.bool(forKey: "computerSeen") }
@@ -378,10 +379,14 @@ final class Store: ObservableObject {
 
     func scheduleSync() {
         syncTask?.cancel()
+        // 녹음을 끝내자마자 화면을 꺼도 고칠 시간(20초)이 지나면 보내기를 맡길 수 있게 잠깐 깨어 있음
+        let bg = UIApplication.shared.beginBackgroundTask(withName: "send-after-grace")
         syncTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64((Store.grace + 1) * 1_000_000_000))
+            defer { UIApplication.shared.endBackgroundTask(bg) }
+            do { try await Task.sleep(nanoseconds: UInt64((Store.grace + 1) * 1_000_000_000)) } catch { return }
             await self?.syncAll()
         }
+        BackgroundSend.scheduleRefresh()
     }
 
     /// 대기·실패한 기록을 모두 보낸다. 앱이 켜질 때·돌아올 때·저장 후 잠시 뒤 호출.
@@ -390,6 +395,9 @@ final class Store: ObservableObject {
         syncing = true
         defer { syncing = false }
         icloudAvailable = FileManager.default.ubiquityIdentityToken != nil
+        // 올리는 중으로 남아 있는데 iOS 전송 목록에 없으면(앱 재설치·전송 취소 등) 다시 보낼 차례로
+        let flying = await BackgroundSend.shared.inFlight()
+        for i in items.indices where items[i].relay == .sending && !flying.contains(items[i].id) { items[i].relay = .pending }
         let now = Date()
         for e in items {
             if !force && now < e.editableUntil { continue }  // 고칠 시간
@@ -402,14 +410,14 @@ final class Store: ObservableObject {
                 update(cur)
             }
             if Relay.paired && [.pending, .failed, .off].contains(cur.relay) {
-                let bg = UIApplication.shared.beginBackgroundTask(withName: "relay")
+                // iOS 백그라운드 전송에 맡김 — 앱을 닫거나 화면이 꺼져도 끝까지 올라감 (끝나면 relayFinished)
                 do {
-                    try await Relay.upload(file: url(cur), entry: cur, deviceId: DataStore.shared.deviceId)
-                    cur.relay = .done; cur.lastError = ""; cur.relaySentAt = Date()
+                    let (req, body) = try await Relay.prepareUpload(file: url(cur), entry: cur, deviceId: DataStore.shared.deviceId)
+                    try BackgroundSend.shared.enqueue(req, body: body, entry: cur.id)
+                    cur.relay = .sending; cur.lastError = ""
                 } catch {
                     cur.relay = .failed; cur.lastError = "연결: \(error.localizedDescription)"
                 }
-                UIApplication.shared.endBackgroundTask(bg)
                 update(cur)
             }
             if googlePaired && [.pending, .failed, .off].contains(cur.google) {
@@ -460,10 +468,19 @@ final class Store: ObservableObject {
         if any { save(); scheduleSync() }
     }
 
+    /// 백그라운드 전송이 끝났을 때 (앱이 꺼져 있었으면 iOS가 잠깐 깨워서 부름)
+    func relayFinished(_ id: UUID, ok: Bool, error: String) {
+        guard var cur = items.first(where: { $0.id == id }) else { return }
+        if ok { cur.relay = .done; cur.relaySentAt = Date(); cur.lastError = "" }
+        else { cur.relay = .failed; cur.lastError = "연결: \(error)" }
+        update(cur)
+        if !ok { BackgroundSend.scheduleRefresh() }   // 인터넷이 돌아오면 다시
+    }
+
     /// 기록함의 '다시 보내기' — 컴퓨터가 못 받았을 때
     func resend(_ e: Entry) {
         guard var cur = items.first(where: { $0.id == e.id }) else { return }
-        if Relay.paired { cur.relay = .pending }
+        if Relay.paired && cur.relay != .sending { cur.relay = .pending }
         if googlePaired && cur.google != .off { cur.google = .pending }
         if useICloud && icloudAvailable && cur.icloud != .off { cur.icloud = .pending }
         cur.received = false; cur.lastError = ""

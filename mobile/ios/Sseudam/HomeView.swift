@@ -408,6 +408,7 @@ extension SavedCard {
         if e.stt == .working { return "글자로 바꾸고 나서 보낼게요" }
         if e.received { return "컴퓨터의 쓰담이 받았어요" }
         if e.relay == .done { return "컴퓨터로 보냈어요 · 컴퓨터 쓰담이 켜지면 가져가요" }
+        if e.relay == .sending { return "컴퓨터로 보내는 중이에요 · 앱을 닫아도 계속 보내요" }
         if e.google == .done { return "구글 드라이브로 보냈어요 · 컴퓨터 쓰담이 켜지면 가져가요" }
         if e.icloud == .done { return "iCloud에 올렸어요 · 맥에서 쓰담을 켜면 가져가요" }
         if [e.icloud, e.google, e.relay].contains(.failed) { return "보내지 못했어요 · 기록함에서 다시 시도해요" }

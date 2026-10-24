@@ -164,6 +164,7 @@ struct RecordsView: View {
         else if e.relay == .done && e.relaySentAt != nil { mini("paperplane.fill", "보냄 · 컴퓨터 대기", Theme.blue) }
         else if e.google == .done { mini("checkmark.circle.fill", "보냄", Theme.mint) }
         else if e.icloud == .done { mini("icloud.fill", "iCloud에 올림", Theme.blue) }
+        else if states.contains(.sending) { mini("arrow.up.circle", "보내는 중", Theme.blue) }
         else if states.contains(.pending) { mini("clock", "보낼 예정", Theme.soft) }
         else if states.contains(.done) { mini("checkmark.circle.fill", "보냄", Theme.mint) }
         else { mini("iphone", "휴대폰에만 있음", Theme.soft) }
@@ -319,6 +320,7 @@ struct EntryDetail: View {
             switch s {
             case .off: Text("사용 안 함").font(Theme.font(13)).foregroundStyle(.tertiary)
             case .pending: Pill(text: "보낼 예정", icon: "clock", color: .gray)
+            case .sending: Pill(text: "보내는 중", icon: "arrow.up.circle", color: Theme.blue)
             case .done where received: Pill(text: "컴퓨터가 받음", icon: "checkmark", color: Theme.mint)
             case .done where name.hasPrefix("iCloud"): Pill(text: "iCloud에 올림 · 맥 대기", icon: "icloud", color: Theme.blue)
             case .done where name.hasPrefix("컴퓨터") && current.relaySentAt != nil: Pill(text: "보냄 · 컴퓨터 대기", icon: "paperplane", color: Theme.blue)

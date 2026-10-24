@@ -9,7 +9,7 @@ settings:
     DEVELOPMENT_TEAM: 967DUR6926
     CODE_SIGN_STYLE: Automatic
     MARKETING_VERSION: "1.1.0"
-    CURRENT_PROJECT_VERSION: "13"
+    CURRENT_PROJECT_VERSION: "14"
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "1,2"
 targets:
@@ -46,7 +46,8 @@ targets:
         UIApplicationSupportsIndirectInputEvents: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
-        UIBackgroundModes: [audio]
+        UIBackgroundModes: [audio, fetch]
+        BGTaskSchedulerPermittedIdentifiers: [kr.sseudam.app.refresh]
         NSMicrophoneUsageDescription: 수업 중 학생 관찰 내용을 녹음하기 위해 마이크를 사용합니다.
         NSSpeechRecognitionUsageDescription: 녹음한 관찰 내용을 아이폰 안에서 글자로 바꾸기 위해 받아쓰기를 사용합니다. 소리는 기기 밖으로 나가지 않습니다.
         NSFaceIDUsageDescription: 앱 잠금을 켜면 학생 기록을 열 때 Face ID로 본인을 확인합니다.

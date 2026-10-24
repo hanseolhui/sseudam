@@ -208,6 +208,10 @@ Apps Script 요청은 앱이 자동 생성한 토큰으로 보호(스크립트 �
 - 컴퓨터는 녹음을 받으면 폰마다 받은 이름(`rec-<ms>-<id8>.bin`)을 `relay_acks` 에 적고 `phone/ack-<기기>.bin`(암호화)으로 올림. 같은 이름이 다시 오면 담지 않고 지우기만 함.
 - 폰은 보낸 뒤 이 목록을 읽어 '컴퓨터가 받음'으로 바꿈. 보낸 지 10일이 지나도 안 받아 갔으면 저절로 다시 보내고(중계 서버 14일 삭제 대비), 기록에서 '다시 보내기'도 됨. 받음 확인이 없던 예전 버전에서 보낸 것은 다시 보내지 않음.
 
+**아이폰 백그라운드 전송**
+- QR 연동 녹음은 `BackgroundSend`(URLSession background, `kr.sseudam.app.upload`)로 올림: 암호화한 내용을 Caches/relay-out 에 쓰고 업로드 작업을 iOS에 맡김 → 앱을 닫거나 화면이 꺼져도 끝까지 감. 상태 `sending` → 끝나면 `Store.relayFinished`(앱이 꺼져 있으면 iOS가 AppDelegate 로 깨움).
+- `BGAppRefreshTask`(`kr.sseudam.app.refresh`)로 틈틈이 `syncAll`(못 보낸 것 · 받음 확인) + 학생 기록 맞추기. 녹음을 끝내자마자 화면을 꺼도 고칠 시간 20초 동안은 백그라운드 작업으로 깨어 있다가 전송을 맡김.
+
 **열 때 할 일**
 1. 포트원 정기결제(빌링키) 채널 심사 → 카드 등록·1주 체험·자동 결제·해지·결제 실패 유예 붙이기 (2단계).
 2. Vercel 에 `ANTHROPIC_API_KEY`, `sseudam-plus` 브랜치를 main 에 합쳐 배포.
