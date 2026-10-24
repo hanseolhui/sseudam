@@ -11,6 +11,8 @@ val keyProps = Properties().apply {
     if (f.exists()) f.inputStream().use { load(it) }
 }
 
+val sseudamVersion: String = Regex("VERSION = \"([0-9.]+)\"").find(rootProject.file("../../app/version.py").readText())!!.groupValues[1]
+
 android {
     namespace = "kr.sseudam.app"
     compileSdk {
@@ -21,8 +23,9 @@ android {
         applicationId = "kr.sseudam.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.0.0"
+        // 버전은 컴퓨터 쓰담(app/version.py)과 같게 — GitHub 릴리스 태그와 비교해 자동 업데이트하므로
+        versionCode = sseudamVersion.split(".").map { it.toInt() }.let { (a, b, c) -> a * 10000 + b * 100 + c }
+        versionName = sseudamVersion
     }
 
     // play: 플레이 스토어용 (자체 업데이트·REQUEST_INSTALL_PACKAGES 없음) → bundlePlayRelease (.aab)
