@@ -147,6 +147,7 @@ def chat(settings, system, prompt, timeout=300, temperature=0.2):
     if not is_local_url(url):
         raise RuntimeError("내 맥 AI 주소는 이 맥(127.0.0.1 / localhost)만 쓸 수 있어요.")
     body = {"model": settings.get("local_ai_model"), "temperature": temperature, "stream": False,
+            "chat_template_kwargs": {"enable_thinking": False},   # Qwen3.5 등: 생각 과정 없이 바로 답 (빠르고 짧게)
             "messages": ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]}
     data = _http(url + "/chat/completions", body, timeout=timeout)
     if settings.get("local_ai_url") == BUILTIN:
@@ -225,14 +226,19 @@ IDLE_SEC = 10 * 60           # 10분 안 쓰면 꺼서 메모리 돌려주기
 LLM_DIR = os.environ.get("SSEUDAM_LLM_DIR") or os.path.join(db.SUPPORT_DIR, "models", "llm")
 
 LLM_MODELS = [
-    {"id": "qwen3-4b", "name": "가볍게", "model": "Qwen3 4B (알리바바, Apache 2.0)",
-     "file": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf", "size": 2497281120, "ram": 8,
-     "url": "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
-     "desc": "메모리 8GB 맥도 괜찮아요. 학생 나누기용으로 충분해요."},
+    {"id": "qwen35-4b", "name": "가볍게", "model": "Qwen3.5 4B (알리바바, Apache 2.0)",
+     "file": "Qwen3.5-4B-Q4_K_M.gguf", "size": 2740937888, "ram": 8,
+     "url": "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf",
+     "desc": "메모리 8GB 맥도 괜찮아요. 학생 나누기 테스트 18문장 중 16개 정답."},
     {"id": "gemma4-e4b", "name": "추천", "model": "Gemma 4 E4B (구글)",
      "file": "gemma-4-E4B-it-Q4_K_M.gguf", "size": 4977171584, "ram": 16,
      "url": "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf",
-     "desc": "메모리 16GB 이상 맥. 더 정확하고 세특 초안도 자연스러워요."},
+     "desc": "메모리 16GB 이상 맥. 학생 나누기 테스트 18문장 모두 정답, 세특 초안도 가장 자연스러워요."},
+    # 예전 버전(1.8.0)에서 받은 모델 — 받아 둔 맥에서만 보이고 계속 쓸 수 있음
+    {"id": "qwen3-4b", "name": "예전 모델", "model": "Qwen3 4B", "legacy": True,
+     "file": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf", "size": 2497281120, "ram": 8,
+     "url": "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+     "desc": "새 '가볍게' 모델이 더 정확해요. 바꾸려면 위에서 받고 이건 지워 주세요."},
 ]
 
 _llm_dl = {}
@@ -286,7 +292,8 @@ def llm_status():
         part = llm_path(m["id"]) + ".part"
         d["partial"] = os.path.getsize(part) if os.path.exists(part) else 0
         out.append(d)
-    rec = "gemma4-e4b" if ram >= 16 else "qwen3-4b"
+    out = [d for d in out if not d.get("legacy") or d["installed"] or d["partial"]]
+    rec = "gemma4-e4b" if ram >= 16 else "qwen35-4b"
     return {"models": out, "ram": ram, "recommended": rec, "engine": bool(llama_bin()),
             "running": bool(_srv["proc"] and _srv["proc"].poll() is None), "running_model": _srv["model"]}
 
