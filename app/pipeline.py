@@ -723,6 +723,9 @@ def draft_engine(settings):
     if settings.get("ai_choice") == "manual":
         return None              # 'AI 없이'를 골랐으면 늘 프롬프트 복사
     local = settings.get("draft_local", "1") == "1" and localai.local_configured(settings)
+    if local and settings.get("local_ai_url") == "builtin" and settings.get("local_ai_model") in localai.LIGHT_MODELS \
+            and settings.get("draft_light_ok") != "1":
+        local = False            # 가벼운 모델은 초안에서 말을 지어내기 쉬워서 기본은 프롬프트 복사
     if local and settings.get("ai_choice") in ("builtin", "external"):
         return "local"           # 쓰담 AI 모델을 골랐으면 키가 있어도 맥 안에서
     if ai_ready(settings):
@@ -857,7 +860,7 @@ def _expand_if_short(text, params, settings, gen):
     finally:
         conn.close()
     cur = db.neis_bytes(prompts.clean_draft(text, st))
-    if cur >= limit * 0.55:
+    if cur >= limit * 0.55 or len(notes) < 3:   # 기록이 적으면 짧은 게 맞음 (늘리면 지어내게 됨)
         return text
     notes_text = "\n".join("- " + prompts.strip_names(strip_class_words(n["content"]), st) for n in notes[:20])
     try:

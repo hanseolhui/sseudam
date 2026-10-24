@@ -313,6 +313,9 @@ def recommend():
     return dict(info, model="qwen35-4b", why=why)
 
 
+# 초안 쓰기엔 작은 모델 — 학생 나누기에만 쓰고, 초안은 기본으로 ChatGPT·Gemini(프롬프트 복사)
+LIGHT_MODELS = {"qwen35-4b", "qwen3-4b"}
+
 _llm_dl = {}
 _llm_lock = threading.Lock()
 _srv = {"proc": None, "model": None, "last": 0}

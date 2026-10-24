@@ -1013,7 +1013,8 @@ def _ai_state():
             "has_key": bool(s.get("gemini_api_key")), "gemini_model": s.get("gemini_model") or "",
             "apple": {"state": localai.apple_state(), "text": localai.APPLE_TEXT.get(localai.apple_state(), "")},
             "builtin": localai.llm_status(), "local_ai_url": s.get("local_ai_url") or "",
-            "local_ai_model": s.get("local_ai_model") or "", "draft_local": s.get("draft_local", "1")}
+            "local_ai_model": s.get("local_ai_model") or "", "draft_local": s.get("draft_local", "1"),
+            "draft_light_ok": s.get("draft_light_ok", "0"), "light": sorted(localai.LIGHT_MODELS)}
 
 
 @route("GET", "/api/ai/state")

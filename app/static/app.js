@@ -1630,7 +1630,10 @@ async function viewSettings(section) {
         const err = dd.status === 'error' && dd.error ? `<div class="small bad-text">${esc(dd.error)}</div>` : '';
         const warn = !m.fits ? '<div class="small" style="color:var(--amber)">이 컴퓨터 메모리로는 느리거나 안 될 수 있어요</div>' : '';
         return `<div class="llm-row${m.id === usingId && m.installed ? ' using' : ''}"><div><b>${esc(m.name)}</b>${tag} · ${esc(m.model)}<div class="small muted">${esc(m.desc)}</div>${warn}${err}</div><div class="llm-act">${act}</div></div>`;
-      }).join('') + `<label class="check" style="margin-top:10px"><input type="checkbox" id="draft_local" ${st.draft_local !== '0' ? 'checked' : ''}> 세특 초안도 이 모델로 쓰기</label>
+      }).join('') + ((st.light || []).includes(usingId)
+        ? `<label class="check" style="margin-top:10px"><input type="checkbox" id="draft_light" ${st.draft_light_ok === '1' ? 'checked' : ''}> 세특 초안도 이 가벼운 모델로 쓰기</label>
+           <p class="small" style="margin:4px 0 0;color:var(--amber)">가벼운 모델은 기록에 없는 내용을 지어낼 수 있어요. 끄면 초안은 <b>ChatGPT·Gemini로 쓰기</b>(프롬프트 복사)로 해요. 메모리 16GB 이상이면 '추천' 모델이 훨씬 정확해요.</p>`
+        : `<label class="check" style="margin-top:10px"><input type="checkbox" id="draft_local" ${st.draft_local !== '0' ? 'checked' : ''}> 세특 초안도 이 모델로 쓰기</label>`) + `
         <p class="small muted" style="margin:6px 0 0">모델은 이 컴퓨터에만 있고, 쓸 때만 켜졌다가 10분 쉬면 꺼져서 메모리를 돌려줘요.</p>`;
     } else if (choice === 'apple') {
       d = `<div class="spec">🍎 ${esc(st.apple.text)} <button class="sm" id="la-test-apple">시험해 보기</button> <span id="la-apple-r" class="small"></span>
@@ -1648,6 +1651,7 @@ async function viewSettings(section) {
     $$('.llm-use').forEach(x => x.onclick = async () => { await api('/api/localai/models/use', { id: x.dataset.id }); await api('/api/ai/choose', { choice: 'builtin' }); toast(modelName(x.dataset.id) + '(으)로 바꿨어요 ✓'); flashSaved(x); aiLoad(); updateModeBadge(); });
     $$('.llm-del').forEach(x => x.onclick = async () => { if (!confirmBox('받은 모델을 지울까요? 다시 쓰려면 또 받아야 해요.')) return; await api('/api/localai/models/delete', { id: x.dataset.id }); toast('지웠어요'); aiLoad(); updateModeBadge(); });
     if ($('#draft_local')) $('#draft_local').onchange = async e => { await api('/api/settings', { draft_local: e.target.checked ? '1' : '0' }); flashSaved(e.target); aiLoad(); };
+    if ($('#draft_light')) $('#draft_light').onchange = async e => { await api('/api/settings', { draft_light_ok: e.target.checked ? '1' : '0', draft_local: '1' }); flashSaved(e.target); toast(e.target.checked ? '초안도 가벼운 모델로 써요' : '초안은 ChatGPT·Gemini로 쓰기로 해요 ✓'); aiLoad(); };
     clearTimeout(aiTimer);
     if (dl && document.body.contains($('#ai-tiles'))) aiTimer = setTimeout(aiLoad, 1500);
     else if (b.models.some(m => (m.download || {}).status === 'done')) updateModeBadge();
