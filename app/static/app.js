@@ -367,7 +367,7 @@ async function viewDashboard() {
       <h2>쓰담에 오신 것을 환영합니다</h2>
       <p>수업 중 녹음한 학생 평가와 상담 기록을 학생별로 모아 세특 초안까지 만들어 주는 도구입니다.</p>
       <div class="steps">
-        <div class="card"><b>1</b><h3>설정</h3><p class="muted small">Gemini API 키를 넣거나, 키 없이 '수동 모드'를 선택합니다.</p><a href="#/settings">설정 열기 →</a></div>
+        <div class="card"><b>1</b><h3>AI 고르기</h3><p class="muted small">설정 → 🧠 AI에서 '쓰담 AI 모델'을 누르면 이 컴퓨터에 맞는 AI를 알아서 받아요.</p><a href="#/settings/ai-card">AI 고르기 →</a></div>
         <div class="card"><b>2</b><h3>학급·명단 등록</h3><p class="muted small">학급을 만들고 NEIS 명단의 '번호, 이름'을 복사해 붙여넣습니다.</p><a href="#/classes">학급 만들기 →</a></div>
         <div class="card"><b>3</b><h3>녹음 올리기</h3><p class="muted small">아이폰 음성메모를 iCloud '쓰담 녹음' 폴더에 저장하거나 끌어다 놓습니다.</p><a href="#/recordings">녹음함 →</a></div>
         <div class="card"><b>4</b><h3>세특 초안</h3><p class="muted small">학생별로 쌓인 관찰기록으로 초안을 만들고 구글시트로 보냅니다.</p><a href="#/drafts">세특 초안 →</a></div>
@@ -1355,21 +1355,23 @@ async function viewSettings(section) {
   view.innerHTML = `
     <div class="page-head"><div><h1>설정</h1><div class="muted">모든 데이터는 이 컴퓨터의 <a href="#" id="open-data">data 폴더</a>에만 저장돼요.</div></div></div>
     <div class="tabs settings-tabs" role="tablist" aria-label="설정 종류">
-      <button role="tab" data-stab="basic" id="stab-basic" aria-controls="settings-grid">기본</button>
-      <button role="tab" data-stab="adv" id="stab-adv" aria-controls="settings-grid">고급</button></div>
+      <button role="tab" data-stab="me" aria-controls="settings-grid">👩‍🏫 선생님</button>
+      <button role="tab" data-stab="ai" aria-controls="settings-grid">🧠 AI</button>
+      <button role="tab" data-stab="phone" aria-controls="settings-grid">📱 휴대폰</button>
+      <button role="tab" data-stab="data" aria-controls="settings-grid">💾 백업·업데이트</button></div>
     <div class="grid grid-2" id="settings-grid">
-      <div class="card" data-pane="basic">
+      <div class="card" data-pane="me" style="grid-column:1 / -1">
         <h2>👩‍🏫 선생님</h2>
         <label class="field"><span>선생님 이름 (대시보드 인사·휴대폰 앱에 표시)</span><input id="teacher_name" value="${esc(s.teacher_name)}" placeholder="예: 김쓰담"></label>
-        <p class="help">학교급·과목·글자 수 같은 작성 기준은 <b>고급</b> 탭에 있어요.</p>
+        <p class="help">휴대폰 앱과 대시보드 인사에 이 이름이 나와요.</p>
       </div>
-      <div class="card" data-pane="basic" id="trash-card">
+      <div class="card" data-pane="data" id="trash-card" style="order:9">
         <h2>🗑 휴지통</h2>
         <p class="muted small" style="margin-top:-4px">지운 학급·학생·녹음·관찰기록·초안은 30일 동안 휴지통에 있어요. 실수로 지워도 되살릴 수 있어요.</p>
         <a class="btn" href="#/trash">휴지통 열기</a>
       </div>
-      <div class="card" data-pane="adv">
-        <h2>작성 기준</h2>
+      <div class="card" data-pane="me" style="grid-column:1 / -1">
+        <h2>✍️ 작성 기준</h2>
         <div class="row">
           <label class="field"><span>학교급</span><select id="school_level">${['고등학교', '중학교', '초등학교'].map(x => `<option ${x === s.school_level ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
           <label class="field"><span>기본 과목</span><input id="teacher_subject" value="${esc(s.teacher_subject)}" placeholder="학급에 과목이 없을 때 사용"></label>
@@ -1384,20 +1386,20 @@ async function viewSettings(section) {
         <label class="field" style="margin-top:12px"><span>내 문체 예시 (예전에 쓴 세특 2~3개 붙여넣기)</span>
           <textarea id="style_examples" rows="6" placeholder="AI가 이 문체를 따라 씁니다. 학생 이름은 지우고 넣으세요.">${esc(s.style_examples)}</textarea></label>
       </div>
-      <div class="card" id="import" data-pane="adv" style="grid-column:1 / -1">
-        <div class="section-title"><h2>아이폰 기록 가져오기</h2>
+      <div class="card" id="import" data-pane="phone" style="grid-column:1 / -1;order:2">
+        <div class="section-title"><h2>📥 녹음 가져오기</h2>
           <label class="check"><input type="checkbox" id="auto_process" ${s.auto_process === '1' ? 'checked' : ''}> 들어오면 자동으로 처리 (받아쓰기 → 학생별 분리까지)</label></div>
         <p class="help" style="margin-top:-4px">한 수업에 여러 학생을 한 번에 녹음해도 됩니다. 파일을 학생별로 나누거나 이름을 붙일 필요가 없습니다 — 이름이 언급된 곳을 기준으로 자동으로 나눕니다. 학급은 아래 <b>시간표</b>로 녹음 시각에 맞춰 자동 지정됩니다.</p>
         <div id="src-box"><p class="muted">불러오는 중…</p></div>
       </div>
-      <div class="card" data-pane="adv" style="grid-column:1 / -1">
-        <div class="section-title"><h2>시간표 (녹음 시각 → 학급 자동 지정)</h2><span class="muted small">수업 시간 중이나 끝난 뒤 15분 안의 녹음·메모는 그 시간 학급으로 들어갑니다</span></div>
+      <div class="card" data-pane="phone" id="timetable-card" style="grid-column:1 / -1;order:3">
+        <div class="section-title"><h2>🗓 시간표 (녹음 시각 → 학급 자동 지정)</h2><span class="muted small">수업 시간 중이나 끝난 뒤 15분 안의 녹음·메모는 그 시간 학급으로 들어갑니다</span></div>
         <div class="split" style="grid-template-columns: 180px 1fr">
           <label class="field"><span>교시 시간 (한 줄에 하나)</span><textarea id="period_times" rows="9" style="font-variant-numeric:tabular-nums">${esc(s.period_times)}</textarea></label>
           <div id="tt-box" style="overflow:auto"></div>
         </div>
       </div>
-      <div class="card" style="grid-column:1 / -1" id="stt" data-pane="basic">
+      <div class="card" style="grid-column:1 / -1;order:2" id="stt" data-pane="ai">
         <div class="section-title"><h2>받아쓰기(음성 → 글자) 엔진</h2><span id="stt-active" class="small"></span></div>
         <div class="row" style="gap:18px;align-items:center">
           <label class="check shrink"><input type="radio" name="stt_engine" value="whisper" ${s.stt_engine !== 'gemini' ? 'checked' : ''}> <b>내 맥에서 (Whisper)</b> — 권장 · 녹음이 외부로 나가지 않음 · 무료</label>
@@ -1406,7 +1408,7 @@ async function viewSettings(section) {
         <p class="help"><b>Whisper</b>는 오픈AI가 공개한 음성 인식 모델을 이 맥에서 직접 돌립니다. 인터넷·API 키·비용이 없고 <b>녹음이 맥 밖으로 나가지 않아</b> 학생 개인정보에 가장 안전합니다. 처음 한 번 모델을 내려받으세요.</p>
         <div id="wh-box" style="margin-top:10px"><p class="muted">확인 중…</p></div>
       </div>
-      <div class="card" style="grid-column:1 / -1" id="ai-card" data-pane="basic">
+      <div class="card" style="grid-column:1 / -1;order:1" id="ai-card" data-pane="ai">
         <div class="section-title"><h2>🧠 AI</h2><span id="ai-now" class="small"></span></div>
         <p class="help" style="margin-top:-4px">학생별로 나누고 세특 초안을 쓰는 AI를 하나 골라요. <b>누르면 바로 바뀌어요.</b></p>
         <div class="ai-tiles" id="ai-tiles"></div>
@@ -1427,7 +1429,7 @@ async function viewSettings(section) {
           </div>
         </details>
       </div>
-      <div class="card" style="grid-column:1 / -1" id="google" data-pane="adv">
+      <div class="card" style="grid-column:1 / -1;order:2" id="google" data-pane="data">
         <div class="section-title"><h2>구글시트 자동 반영 · 구글 드라이브 백업</h2><span id="g-status" class="small"></span></div>
         <p class="help" style="margin-top:-4px">한 번 연결해 두면 <b>기록이 바뀔 때마다 5분 안에 구글시트에 자동 반영</b>되고, <b>하루 한 번 전체 기록이 구글 드라이브에 백업</b>됩니다. 직접 파일을 올리거나 덮어쓸 일이 없습니다. (시트는 보기용 사본 — 수정은 쓰담에서)</p>
         <div class="split">
@@ -1449,18 +1451,18 @@ async function viewSettings(section) {
           </div>
         </div>
       </div>
-      <div class="card" style="grid-column:1 / -1" id="phone" data-pane="basic">
+      <div class="card" style="grid-column:1 / -1;order:1" id="phone" data-pane="phone">
         <div class="section-title"><h2>📱 휴대폰 '쓰담' 앱 연결</h2><label class="check"><input type="checkbox" id="drive_inbox" ${s.drive_inbox === '1' ? 'checked' : ''}> 휴대폰 녹음 자동으로 가져오기</label></div>
         <div class="split">
           <div class="info-box"><b>아이폰</b> — App Store에서 <b>쓰담</b> 설치 → 녹음하면 <b>iCloud로 자동 연동</b> (같은 Apple ID면 설정 없음)${s.platform === 'win' ? '<br><span class="small muted">윈도우 PC는 iCloud for Windows가 설치돼 있어야 합니다. 없으면 아래 구글 연결을 쓰세요.</span>' : ''}
             <br><br><b>안드로이드(갤럭시) · 아이폰 공통</b> — Play 스토어/App Store에서 <b>쓰담</b> 설치 → 앱의 <b>컴퓨터 연결</b> → 오른쪽 QR 찍기 → 녹음이 <b>내 구글 드라이브</b>를 거쳐 이 컴퓨터로 자동 전송
-            <p class="small muted" style="margin:6px 0 0">QR에는 '녹음 올리기'만 가능한 전용 열쇠가 들어 있습니다. 휴대폰을 잃어버려도 기록을 볼 수는 없습니다. <b>고급 → 구글 연동</b>이 먼저 되어 있어야 합니다.</p></div>
+            <p class="small muted" style="margin:6px 0 0">QR에는 '녹음 올리기'만 가능한 전용 열쇠가 들어 있습니다. 휴대폰을 잃어버려도 기록을 볼 수는 없습니다. <b>💾 백업·업데이트 → 구글 연결</b>이 먼저 되어 있어야 해요.</p></div>
           <div style="text-align:center"><div id="qr-box" class="muted small">불러오는 중…</div>
             <button class="sm" id="phone-scan" style="margin-top:8px">휴대폰 녹음 지금 가져오기</button></div>
         </div>
         <div class="source" id="ts-box" style="margin-top:14px"></div>
       </div>
-      <div class="card" style="grid-column:1 / -1" id="backup-card" data-pane="basic">
+      <div class="card" style="grid-column:1 / -1;order:1" id="backup-card" data-pane="data">
         <div class="section-title"><h2>백업 · 복원 · 엑셀</h2>
           <span style="display:flex;gap:6px;flex-wrap:wrap"><button id="backup">지금 백업 (이 맥)</button><button id="xlsx-all" class="primary">전체 엑셀로 저장</button></span></div>
         <p class="help" style="margin-top:-4px">이 맥에는 매일 자동 백업(30일)됩니다. 구글 드라이브 백업까지 켜 두면 맥이 고장 나도 복원할 수 있습니다. 녹음 원본(오디오)은 용량 때문에 이 맥에만 보관되니, 타임머신 백업을 함께 쓰면 가장 안전합니다.</p>
@@ -1470,7 +1472,7 @@ async function viewSettings(section) {
             <input type="file" id="restore-file" accept=".zip,.db"></div>
         </div>
       </div>
-      <div class="card" data-pane="basic" style="grid-column:1 / -1" id="update-card">
+      <div class="card" data-pane="data" style="grid-column:1 / -1;order:3" id="update-card">
         <div class="section-title"><h2>✨ 프로그램 업데이트</h2>
           <label class="switch"><input type="checkbox" id="auto_update" ${s.auto_update !== '0' ? 'checked' : ''}> 자동으로 업데이트</label></div>
         <p class="muted small" style="margin-top:-4px">새 버전이 나오면 쉬는 틈에 알아서 바꿔요. 학생 기록은 그대로예요.</p>
@@ -1675,7 +1677,7 @@ async function viewSettings(section) {
   drawTT();
   $('#period_times').addEventListener('change', drawTT);
 
-  // 기본 / 고급 탭
+  // 카테고리 탭 (선생님 · AI · 휴대폰 · 백업·업데이트)
   const showTab = tab => {
     $$('[data-stab]').forEach(b => { const on = b.dataset.stab === tab; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
     $$('#settings-grid > [data-pane]').forEach(c => c.classList.toggle('hidden', c.dataset.pane !== tab));
@@ -1683,7 +1685,8 @@ async function viewSettings(section) {
   };
   $$('[data-stab]').forEach(b => b.onclick = () => showTab(b.dataset.stab));
   const target = section && $('#' + section);
-  showTab(target && target.dataset.pane ? target.dataset.pane : (store('local', 'sseudam.settingsTab') === 'adv' ? 'adv' : 'basic'));
+  const savedTab = store('local', 'sseudam.settingsTab');
+  showTab(target && target.dataset.pane ? target.dataset.pane : (['me', 'ai', 'phone', 'data'].includes(savedTab) ? savedTab : 'ai'));
   $('#auto_update').onchange = async e => { await api('/api/settings', { auto_update: e.target.checked ? '1' : '0' }); toast(e.target.checked ? '자동 업데이트를 켰어요' : '자동 업데이트를 껐어요'); };
   renderTextSync();
 
@@ -1711,7 +1714,7 @@ async function viewSettings(section) {
 async function renderPairing() {
   const box = $('#qr-box'); if (!box) return;
   const p = await api('/api/phone/pairing', undefined, { silent: true }).catch(() => null);
-  if (!p || !p.ready) { box.innerHTML = '<div class="warn" style="text-align:left">먼저 <b>고급 → 구글시트 자동 반영 · 드라이브 백업</b>을 연결하세요. 연결하면 여기에 QR이 나타나요.</div>'; return; }
+  if (!p || !p.ready) { box.innerHTML = '<div class="warn" style="text-align:left">먼저 <b>💾 백업·업데이트 → 구글시트·드라이브</b>를 연결하세요. 연결하면 여기에 QR이 나타나요.</div>'; return; }
   const qr = qrcode(0, 'M'); qr.addData(p.payload); qr.make();
   box.innerHTML = `<div style="background:#fff;display:inline-block;padding:10px;border-radius:10px">${qr.createSvgTag({ cellSize: 5, margin: 2 })}</div>
     <div class="small muted" style="margin-top:6px">휴대폰 '쓰담' 앱 → 컴퓨터 연결 → QR 찍기</div>`;
@@ -1934,7 +1937,7 @@ async function viewPrompts() {
     <div class="info-box" style="margin-bottom:16px"><b>가장 쉬운 방법</b>
       <ol><li>아래 <b>①</b>로 Gemini 'Gem'(또는 ChatGPT 'GPT')을 한 번만 만들어 둡니다.</li>
         <li>학생 화면에서 <b>관찰기록 복사</b> → Gem에 "세특 써줘"와 함께 붙여넣기 → 결과를 학생 화면 편집창에 붙여넣기.</li>
-        <li>쓰담을 <b>수동 모드</b>로 두면, 녹음·학생 화면의 AI 버튼을 누를 때 명단·기록이 이미 채워진 프롬프트가 자동으로 나옵니다.</li></ol>
+        <li>설정 → 🧠 AI에서 <b>AI 없이</b>를 고르면, 녹음·학생 화면의 AI 버튼을 누를 때 명단·기록이 이미 채워진 프롬프트가 자동으로 나와요.</li></ol>
       <p class="small muted" style="margin:6px 0 0">아래 문구의 <b>[대괄호]</b> 부분만 실제 내용으로 바꾸면 됩니다. 설정의 바이트 한도·추가 지침이 반영되어 있습니다.</p></div>
     ${d.templates.map((t, i) => `<div class="card">
       <div class="section-title"><h2>${esc(t.title)}</h2><button class="primary sm p-copy" data-i="${i}">프롬프트 복사</button></div>
@@ -1973,22 +1976,27 @@ function showOnboarding(s) {
         <div class="row" style="margin-top:8px"><label class="field"><span>담임 학급</span><input id="ob-home" placeholder="예: 2-3"></label><span></span></div></div>
       <div class="source"><label class="check"><input type="checkbox" id="ob-club-on"> <b>동아리</b> — 동아리활동 특기사항</label>
         <div class="row" style="margin-top:8px"><label class="field"><span>동아리 이름</span><input id="ob-club" placeholder="예: 로봇탐구반"></label><span></span></div></div>`,
-    3: () => `<h2>🎙 녹음을 글자로 바꾸는 방법</h2>
-      <p class="muted">녹음을 <b>이 컴퓨터 안에서</b> 글자로 바꾸는 Whisper 모델(550MB)을 받아 두면, 녹음이 외부로 나가지 않고 비용도 없습니다.</p>
-      <div id="ob-wh"></div>`,
-    4: () => `<h2>✨ 초안을 만드는 AI</h2>
-      <p class="muted">세특 초안 문장은 AI가 써 줍니다. 둘 중 편한 방법을 고르세요. 나중에 설정에서 바꿀 수 있습니다.</p>
-      <div class="source"><label class="check"><input type="radio" name="ob-ai" value="manual" checked> <b>지금 쓰는 Gemini·ChatGPT 웹에 복사·붙여넣기</b> (키 필요 없음)</label>
-        <p class="small muted">버튼을 누르면 학생 기록이 담긴 문구가 만들어지고, 웹 채팅에 붙여넣은 뒤 답을 다시 붙여넣습니다. '프롬프트 안내' 메뉴에 방법이 있습니다.</p></div>
-      <div class="source"><label class="check"><input type="radio" name="ob-ai" value="api"> <b>Gemini API 키로 자동</b> (무료 키, 학급 전체 한 번에 생성 가능)</label>
-        <p class="small muted"><a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a>에서 '키 만들기' → 복사해서 붙여넣기</p>
-        <input id="ob-key" type="password" placeholder="AIza로 시작하는 키 (선택)"></div>`,
+    3: () => `<h2>✨ 한 번에 준비할게요</h2>
+      <p class="muted">아래 버튼 하나면 끝이에요. 받는 동안 바로 쓰기 시작해도 되고, 다 받으면 알아서 켜져요.</p>
+      <div class="source" style="line-height:1.9">
+        ✓ <b>받아쓰기</b> — 녹음을 이 컴퓨터 안에서 글자로 (Whisper, 550MB)<br>
+        ✓ <b>학생 나누기·세특 초안 AI</b> — <span id="ob-ai-pick">이 컴퓨터에 맞는 모델 고르는 중…</span><br>
+        ✓ <b>자동 업데이트</b> — 새 버전이 나오면 쉬는 틈에 알아서
+      </div>
+      <details style="margin-top:10px"><summary class="small">Gemini API 키가 이미 있어요</summary>
+        <input id="ob-key" type="password" placeholder="AIza로 시작하는 키" style="margin-top:8px">
+        <p class="small muted">넣으면 학생 나누기·초안을 Gemini로 해요. 비워 두면 이 컴퓨터 안의 AI를 써요.</p></details>`,
   };
   const render = () => {
-    modal(`<div class="small muted" style="margin-bottom:6px">${st.step} / 4</div>${steps[st.step]()}
+    modal(`<div class="small muted" style="margin-bottom:6px">${st.step} / 3</div>${steps[st.step]()}
       <div class="modal-actions">${st.step > 1 ? '<button id="ob-back">이전</button>' : '<button id="ob-skip" class="ghost">건너뛰기</button>'}
-        <button class="primary" id="ob-next">${st.step === 4 ? '시작하기' : '다음'}</button></div>`, box => {
-      if (st.step === 3) whisperBanner($('#ob-wh', box)).then(() => { if (!$('#ob-wh', box).innerHTML) $('#ob-wh', box).innerHTML = '<p class="ok-text">✓ 받아쓰기 준비됨 (또는 이 컴퓨터는 Gemini 받아쓰기를 사용)</p>'; });
+        <button class="primary" id="ob-next">${st.step === 3 ? '✨ 한 번에 준비하기' : '다음'}</button></div>`, box => {
+      if (st.step === 3) api('/api/ai/state', undefined, { silent: true }).then(a => {
+        const mc = a.builtin.machine || {}, m = a.builtin.models.find(x => x.id === mc.model);
+        st.aiPick = m ? 'builtin' : (a.apple.state === 'ready' ? 'apple' : 'manual');
+        $('#ob-ai-pick', box).innerHTML = m ? `<b>${esc(m.model)}</b> (${(m.size / 1e9).toFixed(1)}GB · ${esc(mc.chip || '')}${mc.ram ? ' · ' + mc.ram + 'GB' : ''}에 추천)`
+          : st.aiPick === 'apple' ? '기기 안 AI (설치 없음)' : '이 컴퓨터는 이름 기준으로 나누고, 초안은 프롬프트 복사로 써요';
+      }).catch(() => { st.aiPick = 'manual'; });
       if ($('#ob-skip', box)) $('#ob-skip', box).onclick = async () => { await api('/api/settings', { onboarded: '1' }); closeModal(); };
       if ($('#ob-back', box)) $('#ob-back', box).onclick = () => { st.step--; render(); };
       $('#ob-next', box).onclick = async () => {
@@ -2008,16 +2016,21 @@ function showOnboarding(s) {
           if (!mk.length) return toast('학급을 하나 이상 입력하세요 (예: 2-3)', true);
           st.make = mk;
         }
-        if (st.step === 4) {
-          const ai = ($('input[name=ob-ai]:checked', box) || {}).value;
-          const key = $('#ob-key', box).value.trim();
-          const vals = { onboarded: '1', school_level: st.level, teacher_name: st.name || '', teacher_subject: st.subject || '',
-            mode: ai === 'api' && key ? 'api' : 'manual' };
+        if (st.step === 3) {
+          const key = ($('#ob-key', box).value || '').trim();
+          $('#ob-next', box).disabled = true; $('#ob-next', box).textContent = '준비하는 중…';
+          const vals = { onboarded: '1', school_level: st.level, teacher_name: st.name || '', teacher_subject: st.subject || '', auto_update: '1', auto_process: '1' };
           if (key) vals.gemini_api_key = key;
           await api('/api/settings', vals);
           for (const c of st.make) await api('/api/classes/save', Object.assign({ year: y, semester: sem }, c));
+          // 받아쓰기 모델 + AI를 한 번에 (실패해도 계속)
+          await api('/api/whisper/download', { id: 'turbo-q5' }, { silent: true }).catch(() => null);
+          let pick = key ? 'gemini' : (st.aiPick || 'manual');
+          for (const c of [pick, 'apple', 'manual']) {
+            try { await api('/api/ai/choose', { choice: c }, { silent: true }); pick = c; break; } catch (e) { /* 다음 후보 */ }
+          }
           closeModal(); updateModeBadge();
-          toast('준비됐습니다! 각 학급에 학생 명단을 붙여넣으세요.');
+          toast(pick === 'builtin' ? '준비 시작! 받아쓰기·AI 모델을 받는 동안 학생 명단을 붙여넣어 주세요 ✨' : '준비됐어요! 각 학급에 학생 명단을 붙여넣어 주세요 ✨');
           await loadClasses();
           location.hash = state.classes.length ? '#/class/' + state.classes[0].id : '#/classes';
           return;

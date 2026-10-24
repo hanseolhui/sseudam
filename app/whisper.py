@@ -179,6 +179,9 @@ def download(mid):
         cur = _downloads.get(mid)
         if cur and cur.get("status") == "downloading":
             return
+        if installed(mid) and binary():   # 이미 받아 둠 → 다시 받지 않음
+            _downloads[mid] = {"status": "done", "done": m["size"], "total": m["size"], "error": ""}
+            return
         _downloads[mid] = {"status": "downloading", "done": 0, "total": m["size"], "error": ""}
 
     def run():

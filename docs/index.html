@@ -1,48 +1,148 @@
 <!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>쓰담 — 말로 담고, 글로 씁니다</title>
-<meta name="description" content="수업·상담 중 말로 남긴 학생 관찰을 학생별로 정리하고, 학기말 생기부 초안을 만드는 교사용 프로그램">
+<meta name="description" content="수업 중 말로 남긴 학생 관찰을 학생별로 정리하고 세특·행동특성·창체 초안까지. 선생님을 위한 무료 프로그램 (맥·윈도우·아이폰·안드로이드)">
+<meta property="og:title" content="쓰담 — 말로 담고, 글로 씁니다">
+<meta property="og:description" content="말하면 학생별로 정리되고, 학기말 세특 초안까지. 완전 무료 · 회원가입 없음 · 기록은 내 컴퓨터에만.">
 <style>
-:root{--bg:#f5f6f8;--panel:#fff;--text:#1d2330;--muted:#6b7384;--accent:#2f6fde;--line:#e2e5ea}
-@media (prefers-color-scheme:dark){:root{--bg:#15181e;--panel:#1d2128;--text:#e6e9ef;--muted:#9aa3b2;--accent:#6b9cf5;--line:#323843}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.65 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
-main{max-width:920px;margin:0 auto;padding:56px 16px 80px}
-.hero h1{font-size:44px;margin:0;color:var(--accent);letter-spacing:-1px}.hero p.tag{font-size:20px;margin:4px 0 18px;font-weight:600}
-.hero p{color:var(--muted);max-width:640px}
-.btns{display:flex;gap:10px;flex-wrap:wrap;margin:24px 0}
-.btn{display:inline-block;padding:12px 20px;border-radius:10px;background:var(--accent);color:#fff;text-decoration:none;font-weight:600}
-.btn.ghost{background:var(--panel);color:var(--text);border:1px solid var(--line)}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:36px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}.card h3{margin:0 0 6px;font-size:17px}.card p{margin:0;color:var(--muted);font-size:15px}
-.bubbles{display:flex;flex-direction:column;gap:8px;margin:18px 0 6px;max-width:640px}.bubble{align-self:flex-start;background:var(--panel);border:1px solid var(--line);border-radius:18px 18px 18px 6px;padding:10px 14px;font-size:15px}.bubble.out{align-self:flex-end;background:var(--accent);color:#fff;border-color:transparent;border-radius:18px 18px 6px 18px;font-weight:600}
-.install{margin-top:8px;max-width:680px}.small{font-size:14px}.muted{color:var(--muted)}.cmd{display:flex;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:8px 0}.cmd code{flex:1;font-size:13px;overflow-x:auto;white-space:nowrap}.cmd button{border:0;background:var(--accent);color:#fff;border-radius:8px;padding:6px 12px;font-weight:600;cursor:pointer}
-footer{margin-top:48px;color:var(--muted);font-size:14px}a{color:var(--accent)}
+:root{--bg:#FBF8F4;--panel:#fff;--panel2:#F4EFE8;--text:#24212B;--muted:#6E6878;--accent:#4F6CF0;--accent2:#5B7CFA;--soft:#ECEFFE;--green:#1F8A60;--line:#EFE6DC}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#17151C;--panel:#221F29;--panel2:#2B2733;--text:#ECE9F2;--muted:#A49EB0;--accent:#8EA4FF;--accent2:#6A88FB;--soft:#2A2F4E;--green:#6FD8AE;--line:#36313F}}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.7 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;word-break:keep-all}
+main{max-width:980px;margin:0 auto;padding:40px 16px 80px}
+a{color:var(--accent)}
+.top{display:flex;align-items:center;gap:10px;font-weight:800;font-size:20px;color:var(--accent)}
+.top .free{margin-left:auto;font-size:13px;font-weight:700;color:var(--green);background:color-mix(in srgb,var(--green) 12%,transparent);padding:4px 10px;border-radius:999px}
+.hero{margin-top:40px}
+.hero h1{font-size:clamp(32px,6vw,52px);line-height:1.2;margin:0;letter-spacing:-1px}
+.hero h1 em{font-style:normal;color:var(--accent)}
+.hero p.lead{font-size:clamp(16px,2.4vw,19px);color:var(--muted);max-width:640px;margin:16px 0 0}
+.pills{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 0}
+.pill{font-size:14px;font-weight:600;padding:6px 12px;border-radius:999px;background:var(--panel);border:1px solid var(--line)}
+.cta{margin:28px 0 8px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:14px 22px;border-radius:14px;background:var(--accent2);color:#fff;text-decoration:none;font-weight:700;font-size:17px;box-shadow:0 6px 18px color-mix(in srgb,var(--accent2) 30%,transparent)}
+.btn.ghost{background:var(--panel);color:var(--text);border:1px solid var(--line);box-shadow:none;font-size:15px;padding:12px 18px}
+.cta .note{font-size:14px;color:var(--muted)}
+.bubbles{display:flex;flex-direction:column;gap:8px;margin:34px 0 0;max-width:620px}
+.bubble{align-self:flex-start;background:var(--panel);border:1px solid var(--line);border-radius:18px 18px 18px 6px;padding:10px 14px;font-size:15px}
+.bubble.out{align-self:flex-end;background:var(--accent2);color:#fff;border-color:transparent;border-radius:18px 18px 6px 18px;font-weight:600}
+h2{font-size:clamp(22px,3.4vw,28px);margin:64px 0 6px;letter-spacing:-.5px}
+h2+p.sub{color:var(--muted);margin:0 0 18px}
+.dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.dlc{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:6px}
+.dlc.me{border:2px solid var(--accent);background:var(--soft)}
+.dlc .ic{font-size:28px;line-height:1}.dlc b{font-size:18px}.dlc .s{font-size:14px;color:var(--muted);flex:1}
+.dlc a.go{margin-top:8px;text-align:center;padding:10px;border-radius:12px;background:var(--accent2);color:#fff;text-decoration:none;font-weight:700}
+.dlc a.go.alt{background:var(--panel2);color:var(--text)}
+.dlc .tag{align-self:flex-start;font-size:12px;font-weight:700;color:var(--accent)}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;counter-reset:s}
+.step{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px 18px 16px;position:relative}
+.step::before{counter-increment:s;content:counter(s);display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--accent2);color:#fff;font-weight:800;margin-bottom:8px}
+.step h3{margin:0 0 4px;font-size:18px}.step p{margin:0;color:var(--muted);font-size:15px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px}.card h3{margin:0 0 6px;font-size:17px}.card p{margin:0;color:var(--muted);font-size:15px}
+.tbl{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:18px;overflow:hidden;font-size:15px}
+.tbl th,.tbl td{padding:12px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.tbl th{background:var(--panel2);font-size:14px}
+.tbl tr:last-child td{border-bottom:0}
+.wrap{overflow-x:auto}
+details{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 16px;margin:8px 0}
+details summary{cursor:pointer;font-weight:700}details p{margin:8px 0 2px;color:var(--muted);font-size:15px}
+.cmd{display:flex;gap:8px;align-items:center;background:var(--panel2);border-radius:12px;padding:8px 10px;margin:8px 0}.cmd code{flex:1;font-size:13px;overflow-x:auto;white-space:nowrap}
+.cmd button{border:0;background:var(--accent2);color:#fff;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer}
+footer{margin-top:56px;color:var(--muted);font-size:14px;border-top:1px solid var(--line);padding-top:18px}
 </style></head><body><main>
+
+<div class="top">💬 쓰담 <span class="free">완전 무료</span></div>
+
 <section class="hero">
-<h1>쓰담</h1><p class="tag">말로 담고, 글로 씁니다</p>
-<p>수업하다 눈에 띈 순간, 휴대폰에 한마디만 남기세요. 학생별로 쏙쏙 정리되고 학기말엔 교과 세특·행동특성·창체 초안까지 도와주는 선생님용 프로그램이에요.</p>
+<h1>말하면 <em>학생별로</em> 담기고,<br>학기말엔 <em>세특 초안</em>까지.</h1>
+<p class="lead">수업하다 눈에 띈 순간, 휴대폰에 한마디만 남기세요. 쓰담이 학생별로 나눠 담고, 교과 세특·행동특성·창체 초안까지 도와드려요.</p>
+<div class="pills"><span class="pill">💸 무료</span><span class="pill">🙅 회원가입 없음</span><span class="pill">🔒 기록은 내 컴퓨터에만</span><span class="pill">🧠 AI도 컴퓨터 안에서</span></div>
+<div class="cta">
+  <a class="btn" id="main-dl" href="#download">⬇️ 내려받기</a>
+  <a class="btn ghost" href="#start">3단계로 시작하기</a>
+  <span class="note" id="main-note"></span>
+</div>
 <div class="bubbles">
-<div class="bubble">🎙 “2학년 3반 김민수! 친구 의견을 차곡차곡 모아서 멋지게 발표했어요 🌟”</div>
-<div class="bubble">🎙 “이서연은 실험 기록을 알록달록 꼼꼼하게 정리해 왔어요 💛 그 친구는 질문도 세 번이나 했어요”</div>
-<div class="bubble out">✨ 김민수 · 이서연 기록에 담았어요</div>
-</div>
-<div class="btns">
-<a class="btn" href="https://github.com/hanseolhui/sseudam/releases/latest/download/Sseudam.dmg">맥용 내려받기</a>
-<a class="btn ghost" href="https://github.com/hanseolhui/sseudam/blob/main/사용설명서.md">사용설명서</a>
-</div>
-<div class="install">
-<p class="small"><b>더 쉽게:</b> 터미널(⌘+스페이스 → '터미널')에 아래 한 줄을 붙여넣으면 응용 프로그램 폴더에 알아서 설치돼요. 업데이트도 같은 줄로!</p>
-<div class="cmd"><code id="cmd">curl -fsSL https://raw.githubusercontent.com/hanseolhui/sseudam/main/install.sh | bash</code><button onclick="navigator.clipboard.writeText(document.getElementById('cmd').textContent);this.textContent='복사됨 ✓'">복사</button></div>
-<p class="small muted">dmg로 받았다면 쓰담을 처음 열 때 “응용 프로그램 폴더로 옮길까요?”에서 <b>옮기기</b>만 누르면 돼요.</p>
+  <div class="bubble">🎙 “2학년 3반 김민수! 친구 의견을 차곡차곡 모아서 멋지게 발표했어요 🌟”</div>
+  <div class="bubble">🎙 “이서연은 실험 기록을 꼼꼼하게 정리해 왔어요 💛 그 친구는 질문도 세 번이나 했어요”</div>
+  <div class="bubble out">✨ 김민수 · 이서연 기록에 담았어요</div>
 </div>
 </section>
-<div class="grid">
-<div class="card"><h3>🎙 말하면 끝</h3><p>휴대폰 쓰담 앱에서 버튼 하나로 녹음하면 아이폰 안에서 바로 글자로 바뀌고, 학생별로 나뉘어 담겨요.</p></div>
-<div class="card"><h3>🔒 컴퓨터 안에서 받아쓰기</h3><p>음성 인식이 선생님 컴퓨터에서 동작해 녹음이 외부로 나가지 않습니다. 비용도 없습니다.</p></div>
-<div class="card"><h3>🧑‍🎓 학생별 자동 정리</h3><p>한 번에 여러 학생을 말해도 이름이 나온 곳마다 나눠요. “그 친구는…”처럼 이어 말해도 기기 안 AI가 알아서 붙이고, 잘못 나뉜 건 톡 눌러 바로잡아요.</p></div>
-<div class="card"><h3>📝 초안과 바이트 계산</h3><p>교과 세특·행동특성·자율·동아리·진로 영역별 초안, NEIS 바이트 계산, 기재 금지어 경고.</p></div>
-<div class="card"><h3>☁️ 자동 백업</h3><p>구글시트 자동 반영, 구글 드라이브 매일 백업, 엑셀 내보내기.</p></div>
-<div class="card"><h3>👩‍🏫 모든 선생님</h3><p>교과·담임·동아리 담당 선생님 모두. 지금 쓰는 Gemini·ChatGPT로도 쓸 수 있습니다.</p></div>
+
+<h2 id="download">내려받기</h2>
+<p class="sub">컴퓨터 하나, 휴대폰 하나면 돼요. 모두 무료예요.</p>
+<div class="dl">
+  <div class="dlc" data-os="mac"><span class="ic">🍎</span><b>맥</b><span class="s">M1 이상 맥 추천 · macOS 12 이상<br>애플 공증을 받은 정식 앱</span>
+    <a class="go" href="https://github.com/hanseolhui/sseudam/releases/latest/download/Sseudam.dmg">맥용 내려받기</a></div>
+  <div class="dlc" data-os="win"><span class="ic">🪟</span><b>윈도우</b><span class="s">윈도우 10·11 (64비트)<br>설치 파일 하나로 끝</span>
+    <a class="go" href="https://github.com/hanseolhui/sseudam/releases/latest/download/Sseudam-Setup.exe">윈도우용 내려받기</a></div>
+  <div class="dlc" data-os="ios"><span class="tag">베타</span><span class="ic">📱</span><b>아이폰</b><span class="s">먼저 App Store에서 <b>TestFlight</b>를 설치한 뒤 아래 버튼을 눌러요</span>
+    <a class="go" href="https://testflight.apple.com/join/kufGthN7">아이폰에 설치</a>
+    <a class="go alt" href="https://apps.apple.com/app/testflight/id899247664">TestFlight 받기</a></div>
+  <div class="dlc" data-os="android"><span class="tag">베타</span><span class="ic">🤖</span><b>안드로이드</b><span class="s">갤럭시 등 안드로이드 8 이상<br>설치할 때 ‘이 출처 허용’을 눌러요</span>
+    <a class="go" href="https://github.com/hanseolhui/sseudam/releases/latest/download/Sseudam-Android.apk">안드로이드용 내려받기</a></div>
 </div>
-<footer>쓰담 · <a href="privacy.html">개인정보 처리방침</a> · <a href="https://github.com/hanseolhui/sseudam">GitHub</a></footer>
-</main></body></html>
+
+<h2 id="start">3단계로 시작하기</h2>
+<p class="sub">설정은 한 번에 끝나요. 어려운 건 쓰담이 알아서 해요.</p>
+<div class="steps">
+  <div class="step"><h3>설치하고 열기</h3><p>맥은 처음 열 때 “응용 프로그램 폴더로 옮길까요?”에서 <b>옮기기</b>만 누르면 돼요.</p></div>
+  <div class="step"><h3>✨ 한 번에 준비하기</h3><p>수업하는 반(예: 2-1, 2-3)을 적고 <b>한 번에 준비하기</b>를 누르세요. 받아쓰기와 이 컴퓨터에 맞는 AI를 알아서 준비해요. 그다음 반마다 학생 명단을 붙여넣으면 끝.</p></div>
+  <div class="step"><h3>휴대폰으로 말하기</h3><p>쓰담 앱에서 녹음 버튼을 누르고 “김민수, 발표를 멋지게 했어요”처럼 말하세요. 컴퓨터에 학생별로 쏙쏙 들어와요.</p></div>
+</div>
+
+<h2>이런 걸 해 줘요</h2>
+<p class="sub">교과·담임·동아리 선생님 모두 쓸 수 있어요.</p>
+<div class="grid">
+  <div class="card"><h3>🎙 말하면 글자로</h3><p>녹음을 선생님 컴퓨터 안에서 글자로 바꿔요. 녹음이 밖으로 나가지 않고 비용도 없어요.</p></div>
+  <div class="card"><h3>🧑‍🎓 학생별로 알아서</h3><p>여러 학생을 한 번에 말해도 이름마다 나눠요. 반·번호 없이 이름만 말해도, “그 친구는…”처럼 이어 말해도 AI가 알아서 붙여요.</p></div>
+  <div class="card"><h3>📝 세특 초안 + 바이트</h3><p>교과 세특·행동특성·자율·동아리·진로 초안, NEIS 바이트 계산, 기재 금지어 경고까지.</p></div>
+  <div class="card"><h3>📌 일반 메모는 따로</h3><p>회의 메모처럼 학생 이야기가 아닌 녹음은 ‘일반 메모’로 따로 둬서 학생 기록이 섞이지 않아요.</p></div>
+  <div class="card"><h3>☁️ 자동 백업</h3><p>매일 자동 백업, 구글 드라이브 백업, 구글시트 자동 반영, 엑셀 내보내기.</p></div>
+  <div class="card"><h3>✨ 알아서 업데이트</h3><p>새 버전이 나오면 쉬는 틈에 알아서 바뀌어요. 기록은 그대로예요.</p></div>
+</div>
+
+<h2>내 컴퓨터에서 AI가 돌아갈까요?</h2>
+<p class="sub">쓰담이 사양을 보고 알맞은 AI를 골라 줘요. 인터넷으로 학생 기록을 보내지 않아요.</p>
+<div class="wrap"><table class="tbl">
+  <tr><th>컴퓨터</th><th>쓰담이 고르는 AI</th><th>참고</th></tr>
+  <tr><td>맥 (M1 이상) · 메모리 16GB 이상</td><td><b>추천 모델</b> (구글 Gemma 4, 5GB)</td><td>학생 나누기 시험에서 전부 정답, 세특 초안도 가장 자연스러워요</td></tr>
+  <tr><td>맥 (M1 이상) · 메모리 8GB</td><td><b>가벼운 모델</b> (Qwen3.5, 2.7GB)</td><td>다른 프로그램과 같이 써도 무리 없어요</td></tr>
+  <tr><td>윈도우 · 메모리 16GB 이상</td><td>추천 모델</td><td>그래픽 카드가 없는 노트북은 조금 느릴 수 있어요</td></tr>
+  <tr><td>윈도우 · 메모리 8GB</td><td>가벼운 모델</td><td></td></tr>
+  <tr><td>인텔 맥 · 메모리 8GB 미만</td><td>이름 기준 나누기</td><td>초안은 ChatGPT·Gemini에 붙여넣는 방식으로 써요</td></tr>
+</table></div>
+
+<h2>자주 묻는 질문</h2>
+<details><summary>정말 무료인가요?</summary><p>네, 지금 있는 기능은 모두 무료예요. 회원가입도 결제 정보도 필요 없어요.</p></details>
+<details><summary>학생 기록은 어디에 저장되나요?</summary><p>선생님 컴퓨터와 선생님 본인의 iCloud(아이폰)·구글 드라이브에만 저장돼요. 쓰담 서버로 보내지 않아요. 받아쓰기와 쓰담 AI 모델도 컴퓨터 안에서 동작해요. Gemini 키를 직접 넣은 경우에만 글이 구글로 가요.</p></details>
+<details><summary>윈도우에서 “Windows의 PC 보호” 창이 떠요</summary><p>새 프로그램이라 윈도우가 한 번 확인하는 창이에요. <b>추가 정보 → 실행</b>을 누르면 설치돼요.</p></details>
+<details><summary>안드로이드에서 설치가 막혀요</summary><p>내려받은 파일을 열 때 “출처를 알 수 없는 앱” 안내가 나오면 <b>설정 → 이 출처 허용</b>을 켜고 다시 열어 주세요.</p></details>
+<details><summary>아이폰 설치 버튼을 눌러도 안 돼요</summary><p>App Store에서 <b>TestFlight</b> 앱을 먼저 설치한 다음, 이 페이지의 ‘아이폰에 설치’를 다시 눌러 주세요.</p></details>
+<details><summary>휴대폰 녹음은 컴퓨터로 어떻게 넘어오나요?</summary><p>아이폰과 맥은 같은 Apple ID면 iCloud로 저절로 넘어와요. 다른 조합(안드로이드·윈도우)은 쓰담 설정 → 📱 휴대폰에서 연결해요.</p></details>
+<details><summary>맥에서 터미널로 설치·업데이트하고 싶어요</summary>
+  <p>터미널에 아래 한 줄을 붙여넣으면 응용 프로그램 폴더에 설치돼요.</p>
+  <div class="cmd"><code id="cmd">curl -fsSL https://raw.githubusercontent.com/hanseolhui/sseudam/main/install.sh | bash</code><button onclick="navigator.clipboard.writeText(document.getElementById('cmd').textContent);this.textContent='복사됨 ✓'">복사</button></div></details>
+
+<footer>쓰담 · 선생님을 위한 무료 프로그램 · <a href="privacy.html">개인정보 처리방침</a> · <a href="https://github.com/hanseolhui/sseudam/blob/main/사용설명서.md">사용설명서</a> · <a href="https://github.com/hanseolhui/sseudam/releases">모든 버전</a></footer>
+</main>
+<script>
+// 접속한 기기에 맞는 내려받기를 맨 앞에 크게
+(function () {
+  var ua = navigator.userAgent || '', os = 'mac';
+  if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) os = 'ios';
+  else if (/Android/.test(ua)) os = 'android';
+  else if (/Windows/.test(ua)) os = 'win';
+  var card = document.querySelector('.dlc[data-os="' + os + '"]');
+  if (!card) return;
+  card.classList.add('me');
+  card.parentNode.insertBefore(card, card.parentNode.firstChild);
+  var link = card.querySelector('a.go'), name = { mac: '맥', win: '윈도우', ios: '아이폰', android: '안드로이드' }[os];
+  var main = document.getElementById('main-dl');
+  main.href = link.href;
+  main.textContent = '⬇️ ' + name + '용 내려받기';
+  document.getElementById('main-note').innerHTML = '다른 기기는 <a href="#download">여기</a>';
+})();
+</script>
+</body></html>
