@@ -1391,7 +1391,7 @@ async function viewSettings(section) {
       </div>
       <div class="card" id="import" data-pane="adv" style="grid-column:1 / -1">
         <div class="section-title"><h2>아이폰 기록 가져오기</h2>
-          <label class="check"><input type="checkbox" id="auto_process" ${s.auto_process === '1' ? 'checked' : ''}> 들어오면 자동으로 처리 (API 모드: 전사→분리 / 키 없음: 이름 기준 분리)</label></div>
+          <label class="check"><input type="checkbox" id="auto_process" ${s.auto_process === '1' ? 'checked' : ''}> 들어오면 자동으로 처리 (받아쓰기 → 학생별 분리까지)</label></div>
         <p class="help" style="margin-top:-4px">한 수업에 여러 학생을 한 번에 녹음해도 됩니다. 파일을 학생별로 나누거나 이름을 붙일 필요가 없습니다 — 이름이 언급된 곳을 기준으로 자동으로 나눕니다. 학급은 아래 <b>시간표</b>로 녹음 시각에 맞춰 자동 지정됩니다.</p>
         <div id="src-box"><p class="muted">불러오는 중…</p></div>
       </div>
@@ -1410,6 +1410,31 @@ async function viewSettings(section) {
         </div>
         <p class="help"><b>Whisper</b>는 오픈AI가 공개한 음성 인식 모델을 이 맥에서 직접 돌립니다. 인터넷·API 키·비용이 없고 <b>녹음이 맥 밖으로 나가지 않아</b> 학생 개인정보에 가장 안전합니다. 처음 한 번 모델을 내려받으세요.</p>
         <div id="wh-box" style="margin-top:10px"><p class="muted">확인 중…</p></div>
+      </div>
+      <div class="card" style="grid-column:1 / -1" id="localai" data-pane="basic">
+        <div class="section-title"><h2>🧠 학생별로 나누는 AI</h2><span id="la-active" class="small"></span></div>
+        <p class="help" style="margin-top:-4px">이름이 나온 문장은 그대로 그 학생에게, "그 친구는…", "다만…"처럼 <b>이름 없이 이어지는 문장</b>만 AI가 골라요. 그 녹음에 이름이 나온 학생 중에서만 고르니 없는 학생이 생기지 않아요.</p>
+        <div class="seg-engines" style="display:grid;gap:6px;margin-top:6px">
+          ${[['auto', '<b>자동</b> (추천) — Gemini 키가 있으면 Gemini, 없으면 내 맥 AI'],
+             ['apple', '<b>기기 안 AI</b> (Apple) — 설치 없음 · 무료 · 녹음이 맥 밖으로 안 나감'],
+             ['local', '<b>내 맥 AI 앱</b> (Ollama · LM Studio) — 직접 받은 모델 · 맥 밖으로 안 나감'],
+             ['gemini', 'Gemini — API 키로 (구글 서버에서 처리)'],
+             ['rules', 'AI 없이 이름 나온 곳 기준으로만']].map(([v, t]) =>
+            `<label class="check"><input type="radio" name="seg_engine" value="${v}" ${(s.seg_engine || 'auto') === v ? 'checked' : ''}> ${t}</label>`).join('')}
+        </div>
+        <div class="split" style="margin-top:14px">
+          <div class="info-box"><b>기기 안 AI (Apple)</b>
+            <p id="la-apple" class="small" style="margin:6px 0">확인 중…</p>
+            <button class="sm" id="la-test-apple">시험해 보기</button> <span id="la-apple-r" class="small"></span>
+            <p class="small muted" style="margin:8px 0 0">macOS 26 이상 · Apple Intelligence가 켜진 맥(M1 이상)에서 돼요. 학생 나누기용이고, 세특 초안은 아래 AI 앱이나 Gemini로 써요.</p></div>
+          <div class="info-box"><b>내 맥 AI 앱 (Ollama · LM Studio)</b>
+            <div id="la-detect" class="small" style="margin:6px 0">찾는 중…</div>
+            <label class="field"><span>주소</span><input id="local_ai_url" value="${esc(s.local_ai_url || '')}" placeholder="http://127.0.0.1:11434/v1"></label>
+            <label class="field" style="margin-top:6px"><span>모델</span><input id="local_ai_model" value="${esc(s.local_ai_model || '')}" list="la-models" placeholder="예: qwen3:8b"><datalist id="la-models"></datalist></label>
+            <div class="row" style="margin-top:8px"><button class="sm shrink" id="la-test-local">시험해 보기</button><span id="la-local-r" class="small"></span></div>
+            <label class="check" style="margin-top:8px"><input type="checkbox" id="draft_local" ${s.draft_local !== '0' ? 'checked' : ''}> Gemini 키가 없으면 세특 초안도 이 AI로 쓰기</label>
+            <p class="small muted" style="margin:8px 0 0">추천 모델: M1 8GB → <b>qwen3:4b</b> · 16GB 이상 → <b>qwen3:8b</b>, <b>gemma3:12b</b>. Ollama는 <code>ollama pull qwen3:8b</code>로 받아요. 주소는 이 맥(localhost)만 쓸 수 있어요.</p></div>
+        </div>
       </div>
       <div class="card" style="grid-column:1 / -1" id="google" data-pane="adv">
         <div class="section-title"><h2>구글시트 자동 반영 · 구글 드라이브 백업</h2><span id="g-status" class="small"></span></div>
@@ -1481,6 +1506,9 @@ async function viewSettings(section) {
     update_check: $('#update_check').checked ? '1' : '0',
     drive_inbox: $('#drive_inbox').checked ? '1' : '0', teacher_name: $('#teacher_name').value.trim(),
     auto_update: $('#auto_update').checked ? '1' : '0',
+    seg_engine: ($('input[name=seg_engine]:checked') || {}).value || 'auto',
+    local_ai_url: $('#local_ai_url').value.trim(), local_ai_model: $('#local_ai_model').value.trim(),
+    draft_local: $('#draft_local').checked ? '1' : '0',
   });
   const save = async () => { await api('/api/settings', collect()); };
   $('#save').onclick = async () => { await save(); toast('설정을 저장했습니다'); updateModeBadge(); router(true); };
@@ -1497,6 +1525,37 @@ async function viewSettings(section) {
     if (!confirmBox('저장된 API 키를 삭제할까요?')) return;
     await api('/api/settings', { clear_key: true }); router(true); updateModeBadge();
   };
+  const engName = { gemini: 'Gemini', local: '내 맥 AI 앱', apple: '기기 안 AI', rules: '이름 기준' };
+  const laLoad = async () => {
+    let st;
+    try { st = await api('/api/localai/status', undefined, { silent: true }); } catch (e) { $('#la-apple').textContent = e.message; return; }
+    $('#la-apple').innerHTML = (st.apple.state === 'ready' ? '<span style="color:var(--green)">✓ </span>' : '') + esc(st.apple.text);
+    $('#la-test-apple').disabled = st.apple.state !== 'ready';
+    $('#la-active').innerHTML = `지금 쓰는 것: <b>${engName[st.seg_engine] || st.seg_engine}</b>`;
+    const run = st.detected.filter(d => d.running);
+    $('#la-detect').innerHTML = run.length
+      ? run.map(d => `<div>✓ <b>${esc(d.name)}</b> 켜져 있음 · 모델 ${d.models.length}개 <button class="sm la-use" data-url="${esc(d.url)}" data-model="${esc(d.models[0] || '')}">이걸로 연결</button></div>`).join('')
+      : '<span class="muted">켜진 Ollama · LM Studio가 없어요. 앱을 켜면 여기에 나와요.</span>';
+    const models = [...new Set([...(st.local.models || []), ...run.flatMap(d => d.models)])];
+    $('#la-models').innerHTML = models.map(m => `<option value="${esc(m)}">`).join('');
+    $$('.la-use').forEach(b => b.onclick = () => {
+      $('#local_ai_url').value = b.dataset.url;
+      if (b.dataset.model && !$('#local_ai_model').value) $('#local_ai_model').value = b.dataset.model;
+      const r = document.querySelector('input[name=seg_engine][value=local]'); if (r && (s.seg_engine || 'auto') !== 'auto') r.checked = true;
+      toast('주소를 넣었어요. 모델을 고르고 시험해 본 뒤 설정 저장을 눌러 주세요.');
+    });
+  };
+  const laTest = async (engine, out) => {
+    out.textContent = '시험하는 중…';
+    try {
+      const r = await api('/api/localai/test', { engine, local_ai_url: $('#local_ai_url').value.trim(), local_ai_model: $('#local_ai_model').value.trim() }, { silent: true });
+      const good = r.correct === r.total;
+      out.innerHTML = `<span style="color:var(${good ? '--green' : '--orange, #d97706'})">${good ? '✓ ' : ''}${r.total}문장 중 ${r.correct}개 맞음 · ${r.seconds}초</span>${good ? '' : ' — 더 큰 모델을 쓰면 정확해져요'}`;
+    } catch (e) { out.innerHTML = `<span style="color:var(--red)">${esc(e.message)}</span>`; }
+  };
+  $('#la-test-apple').onclick = () => laTest('apple', $('#la-apple-r'));
+  $('#la-test-local').onclick = () => laTest('local', $('#la-local-r'));
+  laLoad();
   $('#copy-gs').onclick = async () => { const t = await (await fetch('/google_apps_script.gs')).text(); copyText(t); };
   $('#backup').onclick = async () => { await api('/api/backup', {}); toast('백업했습니다'); renderBackups(); };
   $('#xlsx-all').onclick = () => exportXlsx(null);
@@ -1898,8 +1957,11 @@ async function updateModeBadge() {
   const s = await api('/api/settings', undefined, { silent: true }).catch(() => null);
   if (!s) return;
   state.settings = s;
-  $('#mode-badge').innerHTML = s.mode === 'manual' ? '● 수동 모드' : (s.has_key ? '<span style="color:var(--green)">●</span> API 모드 · ' + esc(s.gemini_model)
-    : '<span style="color:var(--amber)">●</span> API 키 없음 — <a href="#/settings">설정</a>');
+  const dot = c => `<span style="color:var(--${c})">●</span> `;
+  $('#mode-badge').innerHTML = s.active_seg === 'gemini' ? dot('green') + 'API 모드 · ' + esc(s.gemini_model)
+    : s.active_seg === 'apple' ? dot('green') + '기기 안 AI'
+    : s.active_seg === 'local' ? dot('green') + '내 맥 AI · ' + esc(s.local_ai_model || '')
+    : s.mode === 'manual' ? '● 수동 모드' : dot('amber') + 'AI 없음 — <a href="#/settings">설정</a>';
 }
 
 async function updatePending() {

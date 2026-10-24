@@ -428,8 +428,12 @@ def segment_after_transcript(rid, settings=None):
             return
     finally:
         conn.close()
-    if ai_ready(settings):
+    eng = seg_engine(settings)
+    if eng == "gemini":
         enqueue("segment", {"recording_id": rid}, "학생별 분리 #%d" % rid)
+    elif eng in ("apple", "local"):
+        enqueue("segment_local", {"recording_id": rid, "engine": eng},
+                "%s 학생별 분리 #%d" % ("기기 안 AI" if eng == "apple" else "내 맥 AI", rid))
     else:
         try:
             rule_segment(rid)
@@ -439,70 +443,77 @@ def segment_after_transcript(rid, settings=None):
 
 # ───────────────────────── 규칙 기반 분리 (AI 없이) ─────────────────────────
 
+def _name_hits(conn, rid):
+    """전사문에서 학생 이름(성 뺀 이름·별칭·한 글자 틀린 이름·N번)이 나온 자리를 찾는다.
+    돌려주는 값: (녹음, 정리된 글, [(시작, 끝, 학생)…] 위치순)"""
+    r = _recording(conn, rid)
+    if not r["class_id"]:
+        cid = guess_class(conn, (r["title"] or "") + " " + (r["transcript"] or "")[:300])
+        if cid:
+            conn.execute("UPDATE recordings SET class_id=? WHERE id=?", (cid, rid))
+            r["class_id"] = cid
+    students = _students(conn, r["class_id"]) or _term_students(conn)
+    if not students:
+        raise ValueError("학생 명단이 있어야 분리할 수 있습니다. 학급을 만들고 명단을 넣어 주세요.")
+    text = re.sub(r"\[\d{1,2}:\d{2}(?::\d{2})?\]", " ", r["transcript"] or "")
+    text = re.sub(r"(교사|선생님|학생)\s*:", " ", text)
+    # 학생별 검색어 (긴 것 우선)
+    keys = []
+    for s in students:
+        names = {s["name"]} | set(_aliases(s))
+        if len(s["name"]) >= 3:
+            names.add(s["name"][1:])
+        for n in names:
+            if len(n) >= 2:
+                keys.append((n, s))
+    # 같은 반의 담임·교과 명단에 같은 학생이 두 번 있으면 녹음 종류(수업→교과, 상담→담임)에 맞는 쪽 하나만
+    prefer = _preferrer(r["kind"], (r["title"] or "") + " " + text[:300])
+    by_key = {}
+    for n, s in keys:
+        by_key.setdefault(n, []).append(s)
+    keys = []
+    for n, cands in by_key.items():
+        pick = _one(cands, prefer)
+        if pick:
+            keys.append((n, pick))
+        else:  # 다른 반에 같은 이름 → 말투상 가장 맞는 반으로 담되 어느 반인지는 선생님이 확인
+            keys.append((n, sorted(cands, key=prefer)[0]))
+    keys.sort(key=lambda x: -len(x[0]))
+    hits = []
+    for n, s in keys:
+        for m in re.finditer(re.escape(n), text):
+            if any(h[0] <= m.start() < h[1] for h in hits):
+                continue
+            hits.append((m.start(), m.end(), s))
+    # 받아쓰기가 이름을 한 글자 틀리게 적은 경우 ("박지운" → 박지훈): 성이 같은 3글자 이름 하나에만 가까우면
+    full = {}
+    for n, s in keys:
+        if len(n) == 3 and n == s["name"]:
+            full[n] = s
+    for m in re.finditer(r"[가-힣]{3,6}", text):
+        if any(h[0] <= m.start() < h[1] for h in hits):
+            continue
+        core = m.group(0)[:3]
+        if core in full:
+            continue
+        near = [s for n, s in full.items() if n[0] == core[0] and _lev(n, core) == 1]
+        if len(near) == 1:
+            hits.append((m.start(), m.start() + 3, near[0]))
+    for m in re.finditer(r"(?:^|[\s.,])(\d{1,2})\s*번(?=[\s,.]|$)", text):
+        num = int(m.group(1))
+        st = [s for s in students if s["number"] == num]
+        pos = m.start(1)
+        if st and not any(h[0] <= pos < h[1] for h in hits):
+            hits.append((pos, m.end(), st[0]))
+    hits.sort(key=lambda h: h[0])
+    return r, text, hits
+
+
 def rule_segment(rid):
     """전사문에서 학생 이름이 언급된 지점을 기준으로 내용을 나눈다."""
     conn = db.connect()
     try:
-        r = _recording(conn, rid)
-        if not r["class_id"]:
-            cid = guess_class(conn, (r["title"] or "") + " " + (r["transcript"] or "")[:300])
-            if cid:
-                conn.execute("UPDATE recordings SET class_id=? WHERE id=?", (cid, rid))
-                r["class_id"] = cid
-        students = _students(conn, r["class_id"]) or _term_students(conn)
-        if not students:
-            raise ValueError("학생 명단이 있어야 분리할 수 있습니다. 학급을 만들고 명단을 넣어 주세요.")
-        text = re.sub(r"\[\d{1,2}:\d{2}(?::\d{2})?\]", " ", r["transcript"] or "")
-        text = re.sub(r"(교사|선생님|학생)\s*:", " ", text)
-        # 학생별 검색어 (긴 것 우선)
-        keys = []
-        for s in students:
-            names = {s["name"]} | set(_aliases(s))
-            if len(s["name"]) >= 3:
-                names.add(s["name"][1:])
-            for n in names:
-                if len(n) >= 2:
-                    keys.append((n, s))
-        # 같은 반의 담임·교과 명단에 같은 학생이 두 번 있으면 녹음 종류(수업→교과, 상담→담임)에 맞는 쪽 하나만
-        prefer = _preferrer(r["kind"], (r["title"] or "") + " " + text[:300])
-        by_key = {}
-        for n, s in keys:
-            by_key.setdefault(n, []).append(s)
-        keys = []
-        for n, cands in by_key.items():
-            pick = _one(cands, prefer)
-            if pick:
-                keys.append((n, pick))
-            else:  # 다른 반에 같은 이름 → 말투상 가장 맞는 반으로 담되 어느 반인지는 선생님이 확인
-                keys.append((n, sorted(cands, key=prefer)[0]))
-        keys.sort(key=lambda x: -len(x[0]))
-        hits = []
-        for n, s in keys:
-            for m in re.finditer(re.escape(n), text):
-                if any(h[0] <= m.start() < h[1] for h in hits):
-                    continue
-                hits.append((m.start(), m.end(), s))
-        # 받아쓰기가 이름을 한 글자 틀리게 적은 경우 ("박지운" → 박지훈): 성이 같은 3글자 이름 하나에만 가까우면
-        full = {}
-        for n, s in keys:
-            if len(n) == 3 and n == s["name"]:
-                full[n] = s
-        for m in re.finditer(r"[가-힣]{3,6}", text):
-            if any(h[0] <= m.start() < h[1] for h in hits):
-                continue
-            core = m.group(0)[:3]
-            if core in full:
-                continue
-            near = [s for n, s in full.items() if n[0] == core[0] and _lev(n, core) == 1]
-            if len(near) == 1:
-                hits.append((m.start(), m.start() + 3, near[0]))
-        for m in re.finditer(r"(?:^|[\s.,])(\d{1,2})\s*번(?=[\s,.]|$)", text):
-            num = int(m.group(1))
-            st = [s for s in students if s["number"] == num]
-            pos = m.start(1)
-            if st and not any(h[0] <= pos < h[1] for h in hits):
-                hits.append((pos, m.end(), st[0]))
-        hits.sort(key=lambda h: h[0])
+        r, text, hits = _name_hits(conn, rid)
         # 각 언급이 포함된 문장의 시작점부터 다음 언급 문장 직전까지를 그 학생 몫으로 본다
         starts = []
         for start, _end, _s in hits:
@@ -534,6 +545,124 @@ def rule_segment(rid):
         return {"ok": True, "matched": count, "unmatched": 0}
     finally:
         conn.close()
+
+
+def _sentences(text):
+    """(시작, 끝) 문장 구간들 — 마침표·물음표·느낌표·줄바꿈 기준."""
+    out, a = [], 0
+    for m in re.finditer(r"[.?!。\n]+", text):
+        if text[a:m.end()].strip():
+            out.append((a, m.end()))
+        a = m.end()
+    if text[a:].strip():
+        out.append((a, len(text)))
+    return out
+
+
+def local_segment(rid, engine, settings=None):
+    """내 맥 AI(기기 안 AI · Ollama · LM Studio)로 학생별 분리.
+    이름이 나온 문장은 규칙으로 정하고, 이름 없이 이어지는 문장만 AI가 '이 녹음에 이름이 나온 학생' 중에서 고른다."""
+    import localai
+    settings = settings or db.get_settings()
+    conn = db.connect()
+    try:
+        _set_rec(conn, rid, status="분리중", error="")
+        r, text, hits = _name_hits(conn, rid)
+        if not hits:
+            conn.close()
+            return rule_segment(rid)
+        spans = _sentences(text)
+        people, idx = [], {}
+        for _a, _b, st in hits:
+            if st["id"] not in idx:
+                idx[st["id"]] = len(people) + 1
+                people.append(st)
+        in_sent = []   # 문장마다 이름이 나온 학생 번호들
+        for a, b in spans:
+            in_sent.append(sorted({idx[st["id"]] for h0, _h1, st in hits if a <= h0 < b}))
+        known = {i: ks[0] for i, ks in enumerate(in_sent) if len(ks) == 1}
+        sentences = [re.sub(r"\s+", " ", text[a:b]).strip() for a, b in spans]
+        try:
+            owner = localai.owners(engine, settings, sentences, [p["name"] for p in people], known)
+        except Exception as e:  # noqa — AI가 안 되면 이름 기준으로
+            print("[local_segment] AI 실패, 이름 기준으로 나눔:", e)
+            conn.close()
+            return rule_segment(rid)
+        final = []
+        for i, ks in enumerate(in_sent):
+            if len(ks) == 1:
+                final.append(ks[0])                                  # 이름이 하나 나온 문장은 그 학생
+            elif ks:
+                final.append(owner[i] if owner[i] in ks else ks[0])  # 여러 명이면 AI가 고른 쪽(그중에서)
+            else:
+                final.append(owner[i])                               # 이름 없는 문장은 AI (0 = 반 전체·모름)
+        date = (r["recorded_at"] or "")[:10] or datetime.date.today().isoformat()
+        conn.execute("DELETE FROM notes WHERE recording_id=?", (rid,))
+        conn.execute("DELETE FROM unmatched WHERE recording_id=?", (rid,))
+        groups, leftover = [], []
+        for i, who in enumerate(final):
+            if who <= 0:
+                leftover.append(sentences[i])
+                continue
+            if groups and groups[-1][0] == who:
+                groups[-1][1].append(sentences[i])
+            else:
+                groups.append([who, [sentences[i]]])
+        count = 0
+        for who, sents in groups:
+            chunk = " ".join(sents).strip()
+            if len(chunk) < 6:
+                continue
+            conn.execute("INSERT INTO notes(student_id, recording_id, date, kind, category, content, evidence) "
+                         "VALUES (?,?,?,?,?,?,?)",
+                         (people[who - 1]["id"], rid, date, r["kind"], "기타", chunk[:1200], ""))
+            count += 1
+        rest = " ".join(leftover).strip()
+        unmatched = 0
+        if len(rest) >= 10:
+            conn.execute("INSERT INTO unmatched(recording_id, name_heard, content, evidence, category) VALUES (?,?,?,?,?)",
+                         (rid, "반 전체·이름 없음", rest[:1200], "", "기타"))
+            unmatched = 1
+        conn.execute("UPDATE recordings SET status='확인필요', error='' WHERE id=?", (rid,))
+        conn.commit()
+        return {"ok": True, "matched": count, "unmatched": unmatched}
+    finally:
+        try:
+            conn.close()
+        except Exception:  # noqa
+            pass
+
+
+def seg_engine(settings):
+    """학생별 분리 엔진: gemini | local(Ollama·LM Studio) | apple(기기 안 AI) | rules(이름 기준).
+    자동이면 Gemini 키 → 내 맥 AI 앱 → 기기 안 AI → 이름 기준 순."""
+    import localai
+    choice = settings.get("seg_engine") or "auto"
+    if choice == "gemini":
+        return "gemini" if ai_ready(settings) else "rules"
+    if choice == "local":
+        return "local" if localai.local_configured(settings) else "rules"
+    if choice == "apple":
+        return "apple" if localai.apple_ready() else "rules"
+    if choice == "rules":
+        return "rules"
+    if ai_ready(settings):
+        return "gemini"
+    if localai.local_configured(settings):
+        return "local"
+    if localai.apple_ready():
+        return "apple"
+    return "rules"
+
+
+def draft_engine(settings):
+    """세특 초안 엔진: Gemini 키가 있으면 Gemini, 없으면 내 맥 AI 앱(설정한 경우). 기기 안 AI는 초안엔 작아서 안 씀."""
+    import localai
+    if ai_ready(settings):
+        return "gemini"
+    if settings.get("draft_local", "1") == "1" and localai.local_configured(settings):
+        return "local"
+    return None
 
 
 def _sentence_start(text, pos):
@@ -593,6 +722,12 @@ def _run_api(op, params, job_id=None):
     settings = db.get_settings()
     if op == "transcribe" and use_whisper(settings):
         return _run_whisper(params, job_id)
+    if op == "segment_local":
+        return local_segment(params["recording_id"], params.get("engine") or "apple", settings)
+    if op in ("draft", "shorten") and draft_engine(settings) == "local":
+        import localai
+        p = build_prompt(op, params)
+        return apply(op, params, localai.generate("local", settings, p.get("system"), p["prompt"]))
     key = (settings.get("gemini_api_key") or "").strip()
     if not key:
         raise ValueError("Gemini API 키가 없습니다. 설정에서 입력하거나 '수동 모드'를 사용하세요.")

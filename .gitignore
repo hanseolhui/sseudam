@@ -15,3 +15,5 @@ mobile/android/app/build/
 mobile/android/local.properties
 *.keystore
 *.jks
+.claude/settings.local.json
+macos/bin/sseudam-ai

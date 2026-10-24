@@ -161,3 +161,10 @@ Apps Script 요청은 앱이 자동 생성한 토큰으로 보호(스크립트 �
 
 - 폰 화면은 `AIRouter.engine(for:)`만 부른다. 플러스 → 내 키 → 기기 안 AI 순으로 쓸 수 있는 엔진을 고르고, 없으면 그 기능을 숨긴다 (`mobile/ios/Sseudam/AIEngine.swift`).
 - 밖으로 나가는 엔진(내 키·플러스)에는 학생 이름을 'OO'로 가려서 보낸다. 서버는 결과를 보관하지 않고, 사용자별·하루 상한을 둔다 (`수익모델_시뮬레이션.md` 참고).
+
+### 9-1. 내 맥 AI (2026-10-24)
+- 학생별 분리 엔진 `seg_engine`: auto(기본) | gemini | local | apple | rules. auto = Gemini 키 → 내 맥 AI 앱 → 기기 안 AI → 이름 기준.
+- **기기 안 AI**: `macos/sseudam_ai.swift` → 앱 안 `Resources/bin/sseudam-ai` (Foundation Models, macOS 26+, Apple Intelligence). 파이썬 `app/localai.py` 가 `status`/`owners`/`generate` 로 호출.
+- **내 맥 AI 앱**: Ollama(`127.0.0.1:11434/v1`)·LM Studio(`127.0.0.1:1234/v1`) OpenAI 호환. 주소는 localhost만 허용.
+- 분리 방식(`pipeline.local_segment`): 이름이 나온 문장은 규칙, 이름 없는 문장만 AI가 '그 녹음에 이름이 나온 학생' 중에서 고름(아이폰 LocalAI와 동일). 30문장씩 나눠 처리, 실패하면 rule_segment.
+- 세특 초안: Gemini 키가 없고 `draft_local=1`이면 내 맥 AI 앱으로(기기 안 AI는 초안엔 안 씀).

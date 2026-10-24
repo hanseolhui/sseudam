@@ -13,12 +13,15 @@ rm -rf "$BUILD" "$DIST"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources
 swiftc -O -target arm64-apple-macos12.0 macos/SseudamApp.swift -o "$BUILD/app-arm64"
 swiftc -O -target x86_64-apple-macos12.0 macos/SseudamApp.swift -o "$BUILD/app-x86_64"
 lipo -create "$BUILD/app-arm64" "$BUILD/app-x86_64" -output "$APP/Contents/MacOS/Sseudam"
+# 기기 안 AI 도우미 (애플 Foundation Models — Apple Silicon 전용, macOS 26 미만에선 '사용 불가'로만 답함)
+swiftc -O -target arm64-apple-macos12.0 -Xlinker -weak_framework -Xlinker FoundationModels macos/sseudam_ai.swift -o "$BUILD/sseudam-ai"
 
 # 2) 서버 코드 · 실행 스크립트 · Whisper
 rsync -a --exclude '__pycache__' --exclude '*.pyc' app "$APP/Contents/Resources/"
 cp macos/start_server.sh "$APP/Contents/Resources/start_server.sh"
 cp macos/bin/whisper-cli macos/bin/WHISPER_CPP_LICENSE macos/bin/WHISPER_CPP_VERSION "$APP/Contents/Resources/bin/"
-chmod +x "$APP/Contents/Resources/start_server.sh" "$APP/Contents/Resources/bin/whisper-cli"
+cp "$BUILD/sseudam-ai" "$APP/Contents/Resources/bin/sseudam-ai"
+chmod +x "$APP/Contents/Resources/start_server.sh" "$APP/Contents/Resources/bin/whisper-cli" "$APP/Contents/Resources/bin/sseudam-ai"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -63,6 +66,7 @@ else
   SIGN=(codesign --force --sign -)
 fi
 "${SIGN[@]}" "$APP/Contents/Resources/bin/whisper-cli"
+"${SIGN[@]}" "$APP/Contents/Resources/bin/sseudam-ai"
 "${SIGN[@]}" "$APP"
 codesign --verify --strict "$APP"
 

@@ -43,6 +43,11 @@ DEFAULT_SETTINGS = {
     "update_check": "1",
     # 받아쓰기 엔진: whisper(기본, 내 맥 안에서만) | gemini(외부 전송)
     "stt_engine": "whisper",
+    # 학생별 분리 엔진: auto | gemini | local(Ollama·LM Studio) | apple(기기 안 AI) | rules(이름 기준)
+    "seg_engine": "auto",
+    "local_ai_url": "",             # 예: http://127.0.0.1:11434/v1 (Ollama), http://127.0.0.1:1234/v1 (LM Studio)
+    "local_ai_model": "",
+    "draft_local": "1",             # Gemini 키가 없으면 세특 초안도 내 맥 AI 앱으로
     "whisper_model": "",
     # 구글시트 자동 동기화 + 구글 드라이브 백업
     "sheets_auto": "1",

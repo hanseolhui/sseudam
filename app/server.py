@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import db  # noqa: E402
 import gemini  # noqa: E402
+import localai  # noqa: E402
 import pipeline  # noqa: E402
 import platform_util  # noqa: E402
 import prompts  # noqa: E402
@@ -736,7 +737,22 @@ def ai_run(h, q, b):
             raise ApiError("NEED_WHISPER_MODEL")
         jid = pipeline.enqueue(op, params, "내 맥에서 받아쓰기 %s" % b.get("label", ""))
         return {"ok": True, "job_id": jid}
-    if settings.get("mode") == "manual" or b.get("manual"):
+    if b.get("manual"):
+        p = pipeline.build_prompt(op, params)
+        return {"manual": True, "prompt": p["prompt"], "has_audio": bool(p.get("audio_path"))}
+    # 내 맥 AI (기기 안 AI · Ollama · LM Studio) — 키 없이, 기록이 맥 밖으로 나가지 않음
+    if op == "segment" and pipeline.seg_engine(settings) in ("apple", "local"):
+        eng = pipeline.seg_engine(settings)
+        pipeline.build_prompt(op, params)  # 전사문 확인
+        jid = pipeline.enqueue("segment_local", dict(params, engine=eng),
+                               "%s 학생별 분리 %s" % ("기기 안 AI" if eng == "apple" else "내 맥 AI", b.get("label", "")))
+        return {"ok": True, "job_id": jid}
+    if op in ("draft", "shorten") and pipeline.draft_engine(settings) == "local":
+        pipeline.build_prompt(op, params)
+        labels = {"draft": "세특 초안", "shorten": "초안 줄이기"}
+        jid = pipeline.enqueue(op, params, "내 맥 AI %s %s" % (labels[op], b.get("label", "")))
+        return {"ok": True, "job_id": jid}
+    if settings.get("mode") == "manual":
         p = pipeline.build_prompt(op, params)
         return {"manual": True, "prompt": p["prompt"], "has_audio": bool(p.get("audio_path"))}
     if not settings.get("gemini_api_key"):
@@ -849,6 +865,7 @@ def _mask(k):
 @route("GET", "/api/settings")
 def settings_get(h, q, b):
     s = db.get_settings()
+    s["active_seg"] = pipeline.seg_engine(s)
     s["gemini_api_key_masked"] = _mask(s.get("gemini_api_key", ""))
     s["has_key"] = bool(s.get("gemini_api_key"))
     s.pop("gemini_api_key", None)
@@ -870,8 +887,42 @@ def settings_save(h, q, b):
         vals["gemini_api_key"] = ""
     if "gemini_api_key" in vals:
         vals["gemini_api_key"] = vals["gemini_api_key"].strip()
+    if (vals.get("local_ai_url") or "").strip() and not localai.is_local_url(vals["local_ai_url"]):
+        raise ApiError("내 맥 AI 주소는 이 맥(127.0.0.1 또는 localhost)만 넣을 수 있어요. 학생 기록이 밖으로 나가지 않게요.")
     db.set_settings(vals)
     return {"ok": True}
+
+
+@route("GET", "/api/localai/status")
+def localai_status(h, q, b):
+    s = db.get_settings()
+    out = localai.status(s)
+    out["seg_engine"] = pipeline.seg_engine(s)
+    out["draft_engine"] = pipeline.draft_engine(s)
+    return out
+
+
+@route("POST", "/api/localai/test")
+def localai_test(h, q, b):
+    """짧은 예시로 학생 고르기를 시험해 본다 (엔진: apple | local)."""
+    s = dict(db.get_settings())
+    for k in ("local_ai_url", "local_ai_model"):
+        if b.get(k):
+            s[k] = b[k]
+    eng = b.get("engine") or "apple"
+    if eng == "local" and not localai.is_local_url(s.get("local_ai_url")):
+        raise ApiError("내 맥 AI 주소는 127.0.0.1 또는 localhost만 쓸 수 있어요.")
+    import time as _t
+    t0 = _t.time()
+    sents = ["오늘 체육 시간이었어요.", "김민수는 줄넘기를 끝까지 해냈어요.", "그 친구는 친구들 줄도 세어 줬어요.",
+             "이서연은 질문을 많이 했어요.", "다만 마무리가 조금 아쉬웠어요.", "모두 열심히 참여했어요."]
+    try:
+        got = localai.owners(eng, s, sents, ["김민수", "이서연"], {1: 1, 3: 2})
+    except Exception as e:  # noqa
+        raise ApiError("시험 실패: %s" % e)
+    want = [0, 1, 1, 2, 2, 0]
+    return {"ok": True, "correct": sum(1 for a, b2 in zip(got, want) if a == b2), "total": len(want),
+            "seconds": round(_t.time() - t0, 1)}
 
 
 @route("POST", "/api/settings/test")
