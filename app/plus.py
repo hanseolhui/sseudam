@@ -100,15 +100,24 @@ def logout():
     db.set_settings({"plus_token": "", "plus_active": "0", "plus_status": ""})
 
 
-def generate(prompt, system=None, light=False):
-    """이름을 가리고 서버 AI로 → 답에서 이름 되돌리기."""
+def generate(prompt, system=None, deep=False, cache=False):
+    """이름을 가리고 서버 AI로 → 답에서 이름 되돌리기.
+    deep=False: 가벼운 AI(분리 · 기본 초안 · 다시 뽑기 · 줄이기, 사실상 무제한)
+    deep=True : 정성 초안(더 깊게 쓰는 AI, 요금제별 횟수) / cache: 같은 학생을 연달아 다시 뽑을 때 입력 재사용"""
     import namemask
     t = token()
     if not t:
         raise PlusError("쓰담 플러스에 로그인해 주세요 (설정 → AI).", logged_out=True)
     m = namemask.for_all_students()
-    d = _call("ai", timeout=310, token=t, tier="light" if light else "main",
+    d = _call("ai", timeout=310, token=t, tier="deep" if deep else "light", cache=bool(cache),
               prompt=m.mask(prompt), system=m.mask(system or ""))
+    if d.get("deepCap") is not None:     # 남은 정성 초안 횟수를 화면에 바로 보이게
+        try:
+            st = json.loads(db.get_settings().get("plus_status") or "{}")
+            st.setdefault("sub", {}).update(deepUsed=d.get("deepUsed", 0), deepCap=d.get("deepCap", 0), used=d.get("used"))
+            db.set_settings({"plus_status": json.dumps(st, ensure_ascii=False, default=str)})
+        except Exception:  # noqa
+            pass
     if d.get("refusal"):
         raise PlusError("AI가 이 요청에 답하지 않았어요")
     text = m.unmask(d.get("text") or "")

@@ -846,12 +846,14 @@ def _run_api(op, params, job_id=None):
         db.set_settings({cloudai.PROVIDERS[prov]["model"]: new_model})
 
     try:
+        # 쓰담 플러스: 정성 초안만 깊게 쓰는 AI, 나머지(분리 · 기본 초안 · 줄이기)는 가벼운 AI. 초안은 다시 뽑기 대비 캐시
+        deep = op == "draft" and bool(params.get("deep"))
         text = cloudai.generate(settings, p["prompt"], system=p.get("system"), json_mode=p.get("json", False),
                                 temperature=0.2 if op == "segment" else 0.6, on_model_change=on_model,
-                                light=op == "shorten")
+                                deep=deep, cache=op == "draft")
         if op == "draft":
             text = _expand_if_short(text, params, settings, lambda pr: cloudai.generate(
-                settings, pr, system=prompts.DRAFT_SYSTEM, temperature=0.6, on_model_change=on_model))
+                settings, pr, system=prompts.DRAFT_SYSTEM, temperature=0.6, on_model_change=on_model, deep=deep))
     except cloudai.CloudError as e:
         raise ValueError(str(e))
     return apply(op, params, text)

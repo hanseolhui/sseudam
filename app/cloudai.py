@@ -138,13 +138,13 @@ def list_models(prov, key):
 
 # ───────────────────────── 글 만들기 ─────────────────────────
 
-def generate(settings, prompt, system=None, json_mode=False, temperature=0.4, on_model_change=None, light=False):
+def generate(settings, prompt, system=None, json_mode=False, temperature=0.4, on_model_change=None, deep=False, cache=False):
     """고른 외부 AI로 글 만들기. 받아쓰기(파일 첨부)는 여기 말고 gemini.generate 직접."""
     prov, key, model = provider(settings), key_of(settings), model_of(settings)
     if prov == "plus":
         import plus
         try:
-            return plus.generate(prompt, system, light=light)
+            return plus.generate(prompt, system, deep=deep, cache=cache)
         except plus.PlusError as e:
             raise CloudError(str(e))
     if not key:

@@ -195,6 +195,16 @@ function kindBadge(kind) { return `<span class="badge ${kind === '상담' ? 'vio
 
 // ───────────────────────── AI 실행 (API / 수동) ─────────────────────────
 
+// 쓰담 플러스 정성 초안 횟수 (쓰담 플러스를 쓰는 중일 때만, 아니면 null)
+async function plusDeep() {
+  try {
+    const st = await api('/api/ai/state', undefined, { silent: true });
+    if (!st.plus_enabled || st.choice !== 'plus') return null;
+    const p = await api('/api/plus?refresh=0', undefined, { silent: true });
+    return p.loggedIn && p.sub && p.sub.active ? { deepUsed: p.sub.deepUsed || 0, deepCap: p.sub.deepCap || 0 } : null;
+  } catch (e) { return null; }
+}
+
 async function runAI(op, params, label, onDone, opts) {
   let res;
   try { res = await api('/api/ai/run', { op, params, label: label || '', manual: !!(opts && opts.manual) }, { silent: true }); }
@@ -1216,7 +1226,8 @@ async function viewStudent(id, areaParam) {
           <div class="section-title"><h2>${esc(area.full)}</h2>${current ? `<span class="badge ${current.status === '확정' ? 'green' : 'blue'}">${current.status}</span>` : ''}</div>
           <label class="field"><span>이번 초안에서 강조할 점 (선택)</span><input id="d-extra" placeholder="예: 탐구 보고서의 문제해결 과정, 진로(환경공학) 연계"></label>
           <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap"><button class="primary shrink" id="d-gen" ${notesInArea.length ? '' : 'disabled'}>✨ AI 초안 생성</button>
-            <button class="shrink" id="d-ext" ${notesInArea.length ? '' : 'disabled'} title="프롬프트를 복사해서 ChatGPT·Gemini 앱에서 쓰고, 답을 붙여넣어 저장">📋 ChatGPT·Gemini로 쓰기</button><span></span></div>
+            <button class="shrink hidden" id="d-deep" ${notesInArea.length ? '' : 'disabled'} title="쓰담 플러스: 더 깊게 쓰는 AI로 한 번 더">💜 정성 초안</button>
+            <button class="shrink" id="d-ext" ${notesInArea.length ? '' : 'disabled'} title="프롬프트를 복사해서 ChatGPT·Gemini 앱에서 쓰고, 답을 붙여넣어 저장">📋 ChatGPT·Gemini로 쓰기</button><span id="d-deep-left" class="small muted"></span></div>
           <textarea id="d-text" rows="12" style="margin-top:12px" placeholder="AI 초안이 여기에 표시됩니다. 직접 작성·수정해도 됩니다.">${esc(current ? current.content : '')}</textarea>
           <div class="row" style="margin-top:6px;align-items:center"><span class="counter" id="d-count"></span><span></span>
             <button class="shrink sm" id="d-short">AI로 줄이기</button><button class="shrink sm" id="d-copy">복사</button></div>
@@ -1259,6 +1270,15 @@ async function viewStudent(id, areaParam) {
     runAI('draft', { student_id: s.id, extra: $('#d-extra').value, area: area.id }, `${area.name} ${s.name}`, reload);
   };
   $('#d-ext').onclick = () => runAI('draft', { student_id: s.id, extra: $('#d-extra').value, area: area.id }, `${area.name} ${s.name}`, reload, { manual: true });
+  // 쓰담 플러스를 쓰는 중이면: 정성 초안 버튼 + 남은 횟수
+  plusDeep().then(p => {
+    if (!p || !$('#d-deep')) return;
+    const left = Math.max(0, p.deepCap - p.deepUsed);
+    $('#d-deep').classList.remove('hidden');
+    $('#d-deep-left').textContent = `정성 초안 ${left}회 남음`;
+    if (!left) $('#d-deep').disabled = true;
+    $('#d-deep').onclick = () => runAI('draft', { student_id: s.id, extra: $('#d-extra').value, area: area.id, deep: true }, `정성 초안 ${area.name} ${s.name}`, reload);
+  });
   $('#d-short').onclick = () => {
     if (!text.value.trim()) return toast('줄일 내용이 없습니다', true);
     delete text.dataset.dirty;
@@ -1674,7 +1694,7 @@ async function viewSettings(section) {
       } else if (plusOn) {
         const u = plusSt.sub;
         d = `<div class="spec">💜 <b>${esc(plusSt.email)}</b> · ${esc(u.planName)} · <b>${ymd(u.endsAt)}</b>까지 (${u.daysLeft}일 남음)
-          <div class="small muted" style="margin-top:4px">이번 기간 AI 사용 ${u.used}회 · 등록된 컴퓨터 ${plusSt.devices.length}/${plusSt.deviceLimit}대 (${plusSt.devices.map(x => esc(x.device_name)).join(', ')})${plusSt.offline ? ' · 지금은 서버 확인이 안 돼서 마지막 상태를 보여요' : ''}</div>
+          <div class="small muted" style="margin-top:4px">초안 · 분리 무제한 · 정성 초안 ${Math.max(0, (u.deepCap || 0) - (u.deepUsed || 0))}회 남음 · 등록된 컴퓨터 ${plusSt.devices.length}/${plusSt.deviceLimit}대 (${plusSt.devices.map(x => esc(x.device_name)).join(', ')})${plusSt.offline ? ' · 지금은 서버 확인이 안 돼서 마지막 상태를 보여요' : ''}</div>
           <div class="row" style="margin-top:8px">${choice !== 'plus' ? '<button class="sm primary shrink" id="plus-use">쓰담 플러스로 쓰기</button>' : ''}<a class="btn sm shrink" href="https://apps.seoriarts.com/sseudam/plus" target="_blank">구독·결제 관리 ↗</a><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`;
       } else {
         d = `<div class="spec">💜 <b>${esc(plusSt.email)}</b>로 로그인했어요. 지금은 구독 기간이 아니에요.
