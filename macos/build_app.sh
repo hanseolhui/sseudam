@@ -98,7 +98,9 @@ if [ -n "$SIGN_ID" ]; then
 fi
 
 # 6) 아이폰 단축어 (이 맥이 iCloud에 로그인돼 있어야 서명됨 — 실패해도 빌드는 계속)
-if python3 tools/build_shortcuts.py; then
+# 애플 서명 서버가 가끔 500 · 시간 초과를 내서 세 번까지 다시 시도
+ok_sc=0; for i in 1 2 3; do if python3 tools/build_shortcuts.py; then ok_sc=1; break; fi; sleep 5; done
+if [ "$ok_sc" = 1 ]; then
   # GitHub 첨부 파일 이름은 영문만 안전 → 한글 이름 단축어는 zip 안에 (아이폰은 파일 이름을 단축어 이름으로 씀)
   (cd "$DIST" && mkdir -p "쓰담 단축어" && mv "쓰담 녹음.shortcut" "쓰담 받아쓰기.shortcut" "쓰담 단축어/" \
      && ditto -c -k --norsrc --keepParent "쓰담 단축어" iPhone-Shortcuts.zip && rm -rf "쓰담 단축어")
