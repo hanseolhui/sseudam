@@ -38,9 +38,11 @@ class Masker:
         self.map = dict(uniq)
         for g, i in self.given.items():
             self.map.setdefault(g, i)
-        full = "|".join(re.escape(t) for t in sorted(uniq, key=len, reverse=True))
+        # 받아쓰기가 이름 사이에 띄어쓰기를 넣는 경우가 많아서("샘플 준이") 글자 사이 공백 하나는 허용
+        spaced = lambda t: r"\s?".join(re.escape(ch) for ch in t)
+        full = "|".join(spaced(t) for t in sorted(uniq, key=len, reverse=True))
         # 성 뺀 이름은 뒤에 조사·호칭이 오거나 글자가 끝날 때만 (지우개 · 하늘색 같은 낱말은 그대로)
-        given = "|".join(re.escape(g) for g in sorted(self.given, key=len, reverse=True) if g not in uniq)
+        given = "|".join(spaced(g) for g in sorted(self.given, key=len, reverse=True) if g not in uniq)
         parts = ([full] if full else []) + (["(?:%s)(?=%s|[^가-힣]|$)" % (given, POST)] if given else [])
         self.rx = re.compile("|".join(parts)) if parts else None
 
@@ -49,7 +51,7 @@ class Masker:
             return text
         # 원래 글에 '학생3' 같은 말이 있으면 되돌릴 때 헷갈리므로 살짝 바꿔 둠
         text = TOKEN.sub(lambda m: "학생 " + m.group(1), text)
-        return self.rx.sub(lambda m: "학생%d" % self.map[m.group(0)], text)
+        return self.rx.sub(lambda m: "학생%d" % self.map[re.sub(r"\s", "", m.group(0))], text)
 
     def unmask(self, text):
         if not text:
