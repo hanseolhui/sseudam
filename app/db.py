@@ -45,6 +45,7 @@ DEFAULT_SETTINGS = {
     "stt_engine": "whisper",
     # 학생별 분리 엔진: auto | gemini | local(Ollama·LM Studio) | apple(기기 안 AI) | rules(이름 기준)
     "seg_engine": "auto",
+    "ai_choice": "",                # 설정의 AI 고르기: builtin | apple | gemini | external | manual (비면 기존 설정으로 추정)
     "local_ai_url": "",             # 예: http://127.0.0.1:11434/v1 (Ollama), http://127.0.0.1:1234/v1 (LM Studio)
     "local_ai_model": "",
     "draft_local": "1",             # Gemini 키가 없으면 세특 초안도 내 맥 AI 앱으로

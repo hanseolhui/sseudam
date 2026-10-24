@@ -62,9 +62,11 @@ def segment(kind, class_label, students, transcript, date):
 7. 한 학생이 여러 번 언급되면 내용별로 여러 항목으로 나누어도 됨.
 8. 학급이 언급되면(예: '2학년 3반') class_hint에 적기.
 9. 수업 진행 발언, 출결 호명처럼 평가 내용이 없는 언급은 제외.
+10. 학생 관찰이 아닌 녹음(교사 회의, 개인 메모·할 일, 업무 통화, 수업 내용 설명만 있는 경우 등)이면
+    items와 unmatched를 비우고 "general": true 로 표시.
 
 [출력 형식 — 이 JSON만 출력]
-{"class_hint": "", "items": [{"number": 3, "name": "김민수", "category": "발표", "observation": "...", "evidence": "..."}], "unmatched": [{"name_heard": "...", "category": "기타", "observation": "...", "evidence": "..."}]}
+{"class_hint": "", "general": false, "items": [{"number": 3, "name": "김민수", "category": "발표", "observation": "...", "evidence": "..."}], "unmatched": [{"name_heard": "...", "category": "기타", "observation": "...", "evidence": "..."}]}
 
 [기록 정보] 날짜: %s / 유형: %s / 학급: %s
 
@@ -100,6 +102,33 @@ AREA_GUIDE = {
 }
 
 
+def strip_names(text, student):
+    """관찰기록 속 학생 이름(성 뺀 이름 포함)을 지워서 AI가 본문에 이름을 쓰지 않게."""
+    import re
+    name = (student or {}).get("name") or ""
+    t = text or ""
+    for n in sorted({name, name[1:] if len(name) >= 3 else ""} - {""}, key=len, reverse=True):
+        t = re.sub(re.escape(n) + r"(이가|이는|이도|이를|이랑|이|가|는|은|도|를|을|랑|와|과|의)?\s*", "", t)
+    return t.strip()
+
+
+def clean_draft(text, student=None):
+    """AI 초안에서 세특에 쓰면 안 되는 군더더기를 걸러낸다: 날짜·'오늘', '학생은', 학생 이름, 머리말."""
+    import re
+    t = (text or "").strip().strip('"').strip()
+    t = re.sub(r"^```\w*\s*|\s*```$", "", t).strip()
+    t = re.sub(r"^(세특\s*초안|초안|답변)\s*[:：]\s*", "", t)
+    # 날짜: 2026년 10월 24일 / 2026 년 10 월 24 일 / 10월 24일 / 2026-10-24 / 2026.10.24 (+ '에', '의')
+    t = re.sub(r"(\d{4}\s*년\s*)?\d{1,2}\s*월\s*\d{1,2}\s*일(\s*\([월화수목금토일]\))?\s*(에|의|에는)?\s*", "", t)
+    t = re.sub(r"\d{4}[-./]\d{1,2}[-./]\d{1,2}\s*(에|의)?\s*", "", t)
+    t = re.sub(r"(오늘|어제|금일|이번\s*시간)(의|에|은|는)?\s+", "", t)
+    if student:
+        t = strip_names(t, student)
+    t = re.sub(r"^(이\s*)?학생은\s*", "", t)
+    t = re.sub(r"\s{2,}", " ", t).replace(" .", ".").strip()
+    return t
+
+
 def draft(student, class_info, notes, settings, extra="", area="subject", context=None, target=None):
     import db
     limit = db.area_limit(area, settings)
@@ -111,11 +140,11 @@ def draft(student, class_info, notes, settings, extra="", area="subject", contex
     title = title_t % {"subject": subject, "club": (" (동아리: %s)" % class_info["subject"]) if class_info.get("subject") else ""}
     note_lines = []
     for n in notes:
-        tag = "[%s/%s%s]" % (n.get("date") or "날짜미상", n.get("kind") or "",
-                             ("/" + n["category"]) if n.get("category") else "")
-        line = "%s %s" % (tag, n["content"])
+        # 날짜는 넘기지 않음 — 작은 AI가 '2026년 10월 24일'처럼 본문에 옮겨 적는 걸 막기 위해 (세특엔 날짜를 쓰지 않음)
+        tag = "[%s%s]" % (n.get("kind") or "", ("/" + n["category"]) if n.get("category") else "")
+        line = "%s %s" % (tag, strip_names(n["content"], student))
         if n.get("evidence"):
-            line += "  (원문: %s)" % n["evidence"][:160]
+            line += "  (원문: %s)" % strip_names(n["evidence"][:160], student)
         note_lines.append("- " + line)
     style = (settings.get("style_examples") or "").strip()
     guidance = (settings.get("draft_guidance") or "").strip()
@@ -128,6 +157,7 @@ def draft(student, class_info, notes, settings, extra="", area="subject", contex
 [작성 원칙]
 - 아래 교사의 관찰기록에 있는 사실만 근거로 작성. 기록에 없는 활동·성과·역량을 지어내지 말 것.
 - 문장은 '~함', '~임', '~보임', '~돋보임' 등 명사형 종결. 학생 이름이나 '학생은'이라는 주어를 쓰지 말 것.
+- 날짜·요일·시각·'오늘'·'이번 시간' 같은 기록 시점, 다른 교사의 이름이나 '○○ 교사의 요청에 따라' 같은 말, 녹음·메모라는 말은 쓰지 말 것.
 - 막연한 칭찬어(성실함, 우수함)만 나열하지 말고 관찰된 근거와 함께 서술.
 - 상담 기록은 학업·진로·성장과 관련된 내용만 활용하고, 가정사·건강·교우 갈등 등 민감한 개인사는 쓰지 말 것.
 - 기재 금지: 교외 대회·수상, 공인어학시험 점수, 논문·학회, 특허, 도서 출간, 해외 활동, 부모의 직업·사회경제적 지위, 사교육, 특정 대학·기관·상호명.

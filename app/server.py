@@ -680,6 +680,29 @@ def recordings_delete(h, q, b):
     return {"ok": True, "trash_id": tid}
 
 
+@route("POST", "/api/recordings/mark_general")
+def recordings_mark_general(h, q, b):
+    """일반 메모로 표시(이 녹음에서 나온 학생 기록은 휴지통으로) / 학생 기록으로 되돌리기."""
+    rid = int(b["id"])
+    conn = db.connect()
+    try:
+        if b.get("general", True):
+            moved = 0
+            for n in db.rows(conn, "SELECT id FROM notes WHERE recording_id=?", (rid,)):
+                trash.move(conn, "note", n["id"])   # 30일 동안 휴지통에서 되살릴 수 있게
+                moved += 1
+            conn.execute("DELETE FROM unmatched WHERE recording_id=?", (rid,))
+            conn.execute("UPDATE recordings SET status='일반메모', error='' WHERE id=?", (rid,))
+            conn.commit()
+            return {"ok": True, "moved": moved}
+        conn.execute("UPDATE recordings SET status='보관됨', error='' WHERE id=?", (rid,))
+        conn.commit()
+    finally:
+        conn.close()
+    pipeline.segment_after_transcript(rid)   # 학생 기록으로 다시 나누기
+    return {"ok": True}
+
+
 @route("POST", "/api/recordings/rule_segment")
 def recordings_rule(h, q, b):
     return pipeline.rule_segment(int(b["id"]))
@@ -752,11 +775,10 @@ def ai_run(h, q, b):
         labels = {"draft": "세특 초안", "shorten": "초안 줄이기"}
         jid = pipeline.enqueue(op, params, "내 맥 AI %s %s" % (labels[op], b.get("label", "")))
         return {"ok": True, "job_id": jid}
-    if settings.get("mode") == "manual":
+    if settings.get("mode") == "manual" or not settings.get("gemini_api_key"):
+        # 쓸 AI가 없으면 오류 대신: 프롬프트를 복사해서 ChatGPT·Gemini 앱에 붙여넣기
         p = pipeline.build_prompt(op, params)
         return {"manual": True, "prompt": p["prompt"], "has_audio": bool(p.get("audio_path"))}
-    if not settings.get("gemini_api_key"):
-        raise ApiError("Gemini API 키가 없습니다. 설정에서 키를 입력하거나 '수동 모드'로 바꾸세요.")
     pipeline.build_prompt(op, params)  # 사전 검증(관찰기록 없음 등)
     labels = {"transcribe": "전사", "segment": "학생별 분리", "draft": "세특 초안", "shorten": "초안 줄이기"}
     jid = pipeline.enqueue(op, params, "%s %s" % (labels.get(op, op), b.get("label", "")))
@@ -899,6 +921,74 @@ def localai_status(h, q, b):
     out = localai.status(s)
     out["seg_engine"] = pipeline.seg_engine(s)
     out["draft_engine"] = pipeline.draft_engine(s)
+    return out
+
+
+def _ai_choice(s):
+    """지금 고른 AI: builtin(쓰담 AI 모델) | apple | gemini | external(Ollama·LM Studio) | manual(AI 없이)."""
+    c = s.get("ai_choice") or ""
+    if c:
+        return c
+    eng = s.get("seg_engine") or "auto"
+    if eng == "auto":
+        eng = pipeline.seg_engine(s)
+    if eng == "local":
+        return "builtin" if s.get("local_ai_url") == localai.BUILTIN else "external"
+    if eng in ("gemini", "apple"):
+        return eng
+    return "manual"
+
+
+def _ai_state():
+    s = db.get_settings()
+    choice = _ai_choice(s)
+    return {"choice": choice, "active_seg": pipeline.seg_engine(s), "draft": pipeline.draft_engine(s) or "manual",
+            "has_key": bool(s.get("gemini_api_key")), "gemini_model": s.get("gemini_model") or "",
+            "apple": {"state": localai.apple_state(), "text": localai.APPLE_TEXT.get(localai.apple_state(), "")},
+            "builtin": localai.llm_status(), "local_ai_url": s.get("local_ai_url") or "",
+            "local_ai_model": s.get("local_ai_model") or "", "draft_local": s.get("draft_local", "1")}
+
+
+@route("GET", "/api/ai/state")
+def ai_state(h, q, b):
+    return _ai_state()
+
+
+@route("POST", "/api/ai/choose")
+def ai_choose(h, q, b):
+    """AI 하나 고르면 학생 분리·세특 초안 설정을 한 번에 맞춘다 (바로 저장)."""
+    c = b.get("choice")
+    s = db.get_settings()
+    vals = {"ai_choice": c, "mode": "api"}
+    started = None
+    if c == "builtin":
+        st = localai.llm_status()
+        installed = [m["id"] for m in st["models"] if m["installed"]]
+        mid = st["recommended"] if st["recommended"] in installed else (installed[0] if installed else st["recommended"])
+        if not mid:
+            raise ApiError(st["machine"]["why"])
+        vals.update(seg_engine="local", local_ai_url=localai.BUILTIN, local_ai_model=mid)
+        if mid not in installed:
+            if not st["engine"]:
+                raise ApiError("쓰담을 최신 버전으로 업데이트하면 쓸 수 있어요.")
+            localai.llm_download(mid)   # 이 컴퓨터에 맞는 모델을 바로 받기 시작
+            started = mid
+    elif c == "apple":
+        vals["seg_engine"] = "apple"
+    elif c == "gemini":
+        vals["seg_engine"] = "gemini"
+    elif c == "external":
+        url = (b.get("url") or "").strip()
+        if not localai.is_local_url(url) or url == localai.BUILTIN:
+            raise ApiError("내 맥 AI 주소는 127.0.0.1 또는 localhost만 쓸 수 있어요.")
+        vals.update(seg_engine="local", local_ai_url=url, local_ai_model=(b.get("model") or "").strip())
+    elif c == "manual":
+        vals.update(seg_engine="rules", mode="manual")
+    else:
+        raise ApiError("알 수 없는 선택")
+    db.set_settings(vals)
+    out = _ai_state()
+    out["started"] = started
     return out
 
 

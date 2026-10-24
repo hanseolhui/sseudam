@@ -209,21 +209,24 @@ def apply_segment(rid, text):
                               it.get("category", "")))
                 unmatched += 1
         status = "확인필요" if unmatched else "완료"
+        if data.get("general") or (not matched and not unmatched):
+            status = "일반메모"   # AI가 학생 관찰이 아니라고 본 녹음
         if not class_id and len(found_classes) == 1:   # 모두 한 반 학생이면 녹음에 그 반을 지정
             conn.execute("UPDATE recordings SET class_id=? WHERE id=?", (found_classes.pop(), rid))
         conn.execute("UPDATE recordings SET status=?, error='' WHERE id=?", (status, rid))
         conn.commit()
-        return {"ok": True, "matched": matched, "unmatched": unmatched}
+        return {"ok": True, "matched": matched, "unmatched": unmatched, "general": status == "일반메모"}
     finally:
         conn.close()
 
 
 def apply_draft(student_id, text, area="subject"):
-    text = (text or "").strip().strip('"').strip()
-    text = re.sub(r"^```\w*\s*|\s*```$", "", text).strip()
-    if not text:
-        raise ValueError("초안이 비어 있습니다.")
     conn = db.connect()
+    st = db.row(conn, "SELECT * FROM students WHERE id=?", (student_id,))
+    text = prompts.clean_draft(text, st)   # 날짜·'학생은'·학생 이름 같은 군더더기 걸러내기
+    if not text:
+        conn.close()
+        raise ValueError("초안이 비어 있습니다.")
     conn.execute("INSERT INTO drafts(student_id, content, bytes, area) VALUES (?,?,?,?)",
                  (student_id, text, db.neis_bytes(text), area))
     conn.commit()
@@ -514,6 +517,12 @@ def rule_segment(rid):
     conn = db.connect()
     try:
         r, text, hits = _name_hits(conn, rid)
+        if not hits:   # 학생 이름이 하나도 없음 → 회의·개인 메모 같은 일반 녹음: 학생 기록에 넣지 않음
+            conn.execute("DELETE FROM notes WHERE recording_id=?", (rid,))
+            conn.execute("DELETE FROM unmatched WHERE recording_id=?", (rid,))
+            conn.execute("UPDATE recordings SET status='일반메모', error='' WHERE id=?", (rid,))
+            conn.commit()
+            return {"ok": True, "matched": 0, "unmatched": 0, "general": True}
         # 각 언급이 포함된 문장의 시작점부터 다음 언급 문장 직전까지를 그 학생 몫으로 본다
         starts = []
         for start, _end, _s in hits:
@@ -658,9 +667,12 @@ def seg_engine(settings):
 def draft_engine(settings):
     """세특 초안 엔진: Gemini 키가 있으면 Gemini, 없으면 내 맥 AI 앱(설정한 경우). 기기 안 AI는 초안엔 작아서 안 씀."""
     import localai
+    local = settings.get("draft_local", "1") == "1" and localai.local_configured(settings)
+    if local and settings.get("ai_choice") in ("builtin", "external"):
+        return "local"           # 쓰담 AI 모델을 골랐으면 키가 있어도 맥 안에서
     if ai_ready(settings):
         return "gemini"
-    if settings.get("draft_local", "1") == "1" and localai.local_configured(settings):
+    if local:
         return "local"
     return None
 
@@ -787,7 +799,9 @@ def _worker():
             status, msg = "완료", ""
             try:
                 res = _run_api(job["op"], params, job["id"])
-                if isinstance(res, dict) and "matched" in res:
+                if isinstance(res, dict) and res.get("general"):
+                    msg = "학생 이야기가 없어 일반 메모로 표시"
+                elif isinstance(res, dict) and "matched" in res:
                     msg = "배정 %d건, 미배정 %d건" % (res["matched"], res["unmatched"])
             except Exception as e:  # noqa
                 status, msg = "실패", str(e)

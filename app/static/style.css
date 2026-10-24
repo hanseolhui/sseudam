@@ -490,3 +490,34 @@ audio { width: 100%; margin: 8px 0; }
 .back-btn span { font-size: 26px; line-height: 1; }
 .back-btn:hover { box-shadow: var(--shadow); transform: translateX(-2px); }
 .back-btn:active { transform: scale(.97); }
+
+/* ── 🧠 AI 카드: 고르면 바로 바뀌는 칸 ── */
+.ai-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 10px; }
+.ai-tile { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; text-align: left;
+  padding: 14px 14px 12px; border: 2px solid var(--line); border-radius: 16px; background: var(--panel-2, var(--panel));
+  cursor: pointer; transition: border-color .15s, background .15s, transform .15s; min-height: 118px; }
+.ai-tile:hover { border-color: var(--accent-fill); transform: translateY(-1px); }
+.ai-tile.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.ai-tile.off { opacity: .5; cursor: not-allowed; }
+.ai-tile-icon { font-size: 22px; line-height: 1; margin-bottom: 4px; }
+.ai-tile-check { position: absolute; top: 10px; right: 12px; font-size: 12px; font-weight: 700; color: var(--accent); }
+.ai-tile-status { margin-top: auto; padding-top: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ai-tile.pop { animation: aipop .35s ease; }
+@keyframes aipop { 0% { transform: scale(1); } 40% { transform: scale(1.04); } 100% { transform: scale(1); } }
+.ai-detail { margin-top: 14px; }
+.ai-detail .spec { padding: 10px 12px; border-radius: 12px; background: var(--bg-2, var(--panel)); margin-bottom: 8px; }
+.bar { display: inline-block; width: 70px; height: 6px; border-radius: 6px; background: var(--line); overflow: hidden; vertical-align: middle; }
+.bar.wide { width: 130px; }
+.bar i { display: block; height: 100%; background: var(--accent-fill); border-radius: 6px; transition: width .4s; }
+.llm-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.llm-row.using { background: linear-gradient(90deg, var(--green-soft, transparent), transparent); border-radius: 10px; padding-left: 8px; }
+.llm-act { flex-shrink: 0; text-align: right; }
+.pill.rec { background: var(--green); color: #fff; margin-left: 4px; }
+/* 자동 저장 표시 */
+.save-chip { padding: 8px 16px; border-radius: 999px; background: var(--panel-2, var(--panel)); color: var(--muted, #888); font-size: 13px; border: 1px solid var(--line); transition: all .2s; }
+.save-chip.on { background: var(--green); color: #fff; border-color: var(--green); }
+.card.saved-flash { animation: savedflash 1.2s ease; }
+@keyframes savedflash { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 55%, transparent); } 30% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 35%, transparent); } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (max-width: 640px) { .llm-row { flex-direction: column; align-items: flex-start; } .llm-act { text-align: left; } }
+.badge.gray { background: var(--panel-2, #eee); color: var(--muted, #777); }
+.general-memo { padding: 12px 14px; border-radius: 12px; background: var(--panel-2, var(--bg-2)); border: 1px dashed var(--line-strong, var(--line)); margin-bottom: 10px; }
