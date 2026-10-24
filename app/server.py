@@ -26,6 +26,7 @@ import prompts  # noqa: E402
 import sheets  # noqa: E402
 import sync_text  # noqa: E402
 import telemetry  # noqa: E402
+import relay  # noqa: E402
 import trash  # noqa: E402
 import update  # noqa: E402
 import version  # noqa: E402
@@ -976,6 +977,36 @@ def settings_save(h, q, b):
     return {"ok": True}
 
 
+@route("GET", "/api/relay")
+def relay_get(h, q, b):
+    out = relay.status()
+    if out["paired"]:
+        out.update(relay.pair_info())
+    return out
+
+
+@route("POST", "/api/relay/pair")
+def relay_pair(h, q, b):
+    """QR 만들기 (new=true 면 새 열쇠로 — 예전에 연결한 폰은 끊김)."""
+    return dict(relay.status(), **relay.pair_info(new=bool(b.get("new"))), paired=True)
+
+
+@route("POST", "/api/relay/unpair")
+def relay_unpair(h, q, b):
+    relay.unpair()
+    return {"ok": True}
+
+
+@route("POST", "/api/relay/poll")
+def relay_poll(h, q, b):
+    try:
+        r = relay.poll_once()
+        sync_text.sync_once()
+        return r
+    except Exception as e:  # noqa
+        raise ApiError("연결 서버에 닿지 못했어요: %s" % e)
+
+
 @route("GET", "/api/telemetry/preview")
 def telemetry_preview(h, q, b):
     """설정 화면: 실제로 무엇을 보내는지 그대로 보여 주기."""
@@ -1638,6 +1669,7 @@ def main():
     sheets.start()
     sync_text.start()
     telemetry.start()
+    relay.start()
     if update.start_auto():
         print("자동 업데이트 확인 켜짐")
     url = "http://%s:%d" % (HOST, PORT)

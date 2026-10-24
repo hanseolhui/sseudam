@@ -47,6 +47,12 @@ DEFAULT_SETTINGS = {
     "seg_engine": "auto",
     # 사용 정보 보내기 (문제 해결·업데이트 지원): 익명 사양은 기본 켬, 이름·학교·이메일은 선생님이 켤 때만
     "telemetry": "1",
+    # QR 연동 (휴대폰 ↔ 컴퓨터, 종단 암호화): 채널·열쇠는 이 컴퓨터와 연결한 폰만 앎
+    "relay_channel": "",
+    "relay_key": "",
+    "relay_url": "",
+    "relay_devices": "",
+    "relay_doc_sig": "",
     "install_id": "",
     "last_ping": "",
     "share_info": "0",

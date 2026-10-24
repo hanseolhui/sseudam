@@ -1,0 +1,8 @@
+{
+  // 쓰담 중계: 휴대폰 ↔ 컴퓨터(맥·윈도우) 녹음·기록 전달. 종단 암호화된 덩어리만 잠깐 맡아 둠 — 여기선 내용을 볼 수 없음.
+  "name": "sseudam-relay",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-01",
+  "r2_buckets": [{ "binding": "BOX", "bucket_name": "sseudam-relay" }],
+  "observability": { "enabled": true }
+}

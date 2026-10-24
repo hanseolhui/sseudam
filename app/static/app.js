@@ -1503,8 +1503,21 @@ async function viewSettings(section) {
           </div>
         </div>
       </div>
+      <div class="card" style="grid-column:1 / -1;order:0" id="qr-link" data-pane="phone">
+        <div class="section-title"><h2>📱 휴대폰 연결 — QR 한 번</h2><span id="rl-state" class="small"></span></div>
+        <p class="help" style="margin-top:-4px">아이폰·안드로이드 어떤 폰이든, 맥·윈도우 어떤 컴퓨터든 이어져요. 휴대폰 쓰담 앱 → <b>컴퓨터 연결</b> → 아래 QR을 찍으면 끝. 녹음과 학생 기록이 저절로 오가요.</p>
+        <div class="split">
+          <div style="text-align:center"><div id="rl-qr" class="muted small">불러오는 중…</div></div>
+          <div>
+            <div class="info-box small"><b>🔒 안전하게</b><br>녹음과 기록은 이 컴퓨터와 연결한 폰만 아는 열쇠로 <b>암호화</b>돼서 건너가요. 중간 서버는 내용을 볼 수 없고, 받자마자 지워져요.</div>
+            <div id="rl-devs" class="small" style="margin-top:10px"></div>
+            <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap"><button class="sm" id="rl-poll">지금 받기</button><button class="sm ghost" id="rl-new">새 QR 만들기</button><button class="sm ghost danger" id="rl-off">연결 끊기</button></div>
+            <p class="small muted" style="margin:8px 0 0">아이폰과 맥이 같은 Apple ID면 QR 없이도 iCloud로 이어져요. 둘 다 써도 괜찮아요.</p>
+          </div>
+        </div>
+      </div>
       <div class="card" style="grid-column:1 / -1;order:1" id="phone" data-pane="phone">
-        <div class="section-title"><h2>📱 휴대폰 '쓰담' 앱 연결</h2><label class="check"><input type="checkbox" id="drive_inbox" ${s.drive_inbox === '1' ? 'checked' : ''}> 휴대폰 녹음 자동으로 가져오기</label></div>
+        <div class="section-title"><h2>구글 드라이브로 연결 (예전 방식)</h2><label class="check"><input type="checkbox" id="drive_inbox" ${s.drive_inbox === '1' ? 'checked' : ''}> 휴대폰 녹음 자동으로 가져오기</label></div>
         <div class="split">
           <div class="info-box"><b>아이폰</b> — App Store에서 <b>쓰담</b> 설치 → 녹음하면 <b>iCloud로 자동 연동</b> (같은 Apple ID면 설정 없음)${s.platform === 'win' ? '<br><span class="small muted">윈도우 PC는 iCloud for Windows가 설치돼 있어야 합니다. 없으면 아래 구글 연결을 쓰세요.</span>' : ''}
             <br><br><b>안드로이드(갤럭시) · 아이폰 공통</b> — Play 스토어/App Store에서 <b>쓰담</b> 설치 → 앱의 <b>컴퓨터 연결</b> → 오른쪽 QR 찍기 → 녹음이 <b>내 구글 드라이브</b>를 거쳐 이 컴퓨터로 자동 전송
@@ -1696,6 +1709,27 @@ async function viewSettings(section) {
   };
   $('#ai-ext').addEventListener('toggle', () => { if ($('#ai-ext').open) extLoad(); });
   aiLoad();
+  // 📱 QR 연동
+  const rlDraw = async (r) => {
+    r = r || await api('/api/relay', undefined, { silent: true }).catch(() => null);
+    if (!r) return;
+    if (!r.paired) {
+      $('#rl-qr').innerHTML = '<button class="primary" id="rl-make">QR 만들기</button>';
+      $('#rl-make').onclick = async () => { rlDraw(await api('/api/relay/pair', {})); };
+      $('#rl-state').textContent = ''; $('#rl-devs').textContent = '';
+      ['rl-poll', 'rl-new', 'rl-off'].forEach(id => $('#' + id).classList.add('hidden'));
+      return;
+    }
+    ['rl-poll', 'rl-new', 'rl-off'].forEach(id => $('#' + id).classList.remove('hidden'));
+    const qr = qrcode(0, 'M'); qr.addData(r.qr); qr.make();
+    $('#rl-qr').innerHTML = `<div style="background:#fff;display:inline-block;padding:10px;border-radius:12px">${qr.createSvgTag({ cellSize: 4, margin: 2 })}</div><div class="small muted" style="margin-top:6px">휴대폰 쓰담 → 컴퓨터 연결 → QR 찍기</div>`;
+    $('#rl-state').innerHTML = r.devices.length ? '<span class="ok-text">✓ 연결됨</span>' : '<span class="muted">휴대폰이 찍기를 기다리는 중</span>';
+    $('#rl-devs').innerHTML = r.devices.length ? '연결된 휴대폰: <b>' + r.devices.map(esc).join(', ') + '</b>' + (r.last ? ` · 마지막 확인 ${new Date(r.last * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : '') : '';
+  };
+  $('#rl-poll').onclick = async () => { const r = await api('/api/relay/poll', {}); toast(r.received ? `휴대폰에서 ${r.received}개를 받았어요 ✓` : '새로 온 건 없어요'); rlDraw(); };
+  $('#rl-new').onclick = async () => { if (!confirmBox('새 QR을 만들면 지금 연결된 휴대폰은 끊겨요. 다시 찍어야 해요. 계속할까요?')) return; rlDraw(await api('/api/relay/pair', { new: true })); toast('새 QR을 만들었어요'); };
+  $('#rl-off').onclick = async () => { if (!confirmBox('휴대폰 연결을 끊을까요?')) return; await api('/api/relay/unpair', {}); toast('연결을 끊었어요'); rlDraw(); };
+  rlDraw();
   $('#tm-preview').onclick = async () => {
     const out = $('#tm-out'); out.classList.toggle('hidden');
     if (!out.classList.contains('hidden')) out.textContent = JSON.stringify(await api('/api/telemetry/preview'), null, 2);

@@ -312,8 +312,10 @@ def write_doc(folder, device_id, doc):
 
 
 def sync_once():
+    import relay
     folder = sync_dir()
-    if not folder:
+    rfolder = relay.inbox_dir() if db.get_settings().get("text_sync", "1") == "1" else None   # QR 연동한 폰이 보낸 기록
+    if not folder and not rfolder:
         _status.update(state="꺼짐" if db.get_settings().get("text_sync", "1") != "1" else "iCloud 쓰담 폴더 없음")
         return {"ok": False, "message": _status["state"]}
     with _lock:
@@ -323,11 +325,18 @@ def sync_once():
             did = _device(conn)
             ensure_uids(conn)
             mine = stamp(conn, local_records(conn))
-            docs = read_remote(folder, did)
+            docs = (read_remote(folder, did) if folder else []) + (read_remote(rfolder, did) if rfolder else [])
             changed = apply_remote(conn, mine, merge_remote(docs))
             mine = stamp(conn, local_records(conn))  # 받은 기록 반영 후 (지워져 따라 사라진 것 포함)
             conn.commit()
-            write_doc(folder, did, build_doc(did, mine))
+            doc = build_doc(did, mine)
+            if folder:
+                write_doc(folder, did, doc)
+            if rfolder:
+                try:
+                    relay.push_doc(doc)     # QR 연동한 폰에도 (암호화해서)
+                except Exception as e:  # noqa
+                    print("[QR 연동] 기록 올리기 실패:", e)
             _status.update(state="정상", last=time.time(), error="",
                            devices=[(d.get("device") or {}).get("name", "") for d in docs])
             return {"ok": True, "received": changed}
