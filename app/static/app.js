@@ -261,7 +261,7 @@ function showManual(op, params, res, onDone) {
 // ───────────────────────── 작업 진행 표시 ─────────────────────────
 
 let AI_GEN = 0, AI_TIMER = null;   // 설정 → AI 화면 갱신 (화면을 다시 열 때마다 새 번호)
-let showPlus = false, plusEmail = '';   // 화면을 다시 그려도(알림·작업 끝남) 쓰담 플러스 칸과 입력한 메일이 남게
+let showPlus = false, plusEmail = '', plusCodeSent = false;   // 화면을 다시 그려도(알림·작업 끝남) 쓰담 플러스 칸과 입력한 메일이 남게
 let pollTimer;
 async function pollJobs(force) {
   clearTimeout(pollTimer);
@@ -319,7 +319,7 @@ document.addEventListener('input', e => { if (e.target.matches && e.target.match
 function refreshCurrent() {
   // 사용자가 입력 중이면 화면을 새로 그리지 않음
   const ae = document.activeElement;
-  if (ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT') && view.contains(ae) && (ae.dataset.dirty || ae.type === 'email')) { refreshPending = true; return; }
+  if (ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT') && view.contains(ae) && (ae.dataset.dirty || ae.type === 'email' || ae.closest('#ai-detail'))) { refreshPending = true; return; }
   if (!$('#modal').classList.contains('hidden')) { refreshPending = true; return; }
   router(true);
 }
@@ -985,9 +985,9 @@ async function viewClass(id) {
       if (!text.trim()) { box.classList.add('hidden'); $('#bulk-preview').textContent = ''; return; }
       const { plan } = await api('/api/students/bulk_preview', { class_id: c.id, text }, { silent: true }).catch(() => ({ plan: [] }));
       const n = k => plan.filter(p => p.action === k).length;
-      $('#bulk-preview').textContent = plan.length ? `추가 ${n('add')}명` + (n('update') ? ` · 이름 바꿈 ${n('update')}명` : '') + (n('skip') ? ` · 이미 있음 ${n('skip')}명` : '') : '읽을 수 있는 이름이 없어요';
+      $('#bulk-preview').textContent = plan.length ? `추가 ${n('add')}명` + (n('update') ? ` · 이름 바꿈 ${n('update')}명` : '') + (n('renumber') ? ` · 번호 바꿈 ${n('renumber')}명` : '') + (n('skip') ? ` · 이미 있음 ${n('skip')}명` : '') : '읽을 수 있는 이름이 없어요';
       box.innerHTML = plan.map(p => `<div class="bp ${p.action}"><b>${p.number ?? ''}</b><span>${esc(p.name)}</span><small>${
-        p.action === 'skip' ? '이미 있음' : p.action === 'update' ? esc(p.old) + ' → 바꿈' : ''}</small></div>`).join('');
+        p.action === 'skip' ? '이미 있음' : p.action === 'update' ? esc(p.old) + ' → 바꿈' : p.action === 'renumber' ? p.old + '번 → 번호 바꿈' : ''}</small></div>`).join('');
       box.classList.toggle('hidden', !plan.length);
     }, 250);
   };
@@ -1760,7 +1760,7 @@ async function viewSettings(section) {
         d = `<div class="spec">💜 <b>쓰담 플러스</b> — 녹음만 하면 받아쓰기 → 학생별 분리 → 세특 초안까지 앱이 한 번에 해요. API 키도 모델 설치도 필요 없어요.
           <div class="small muted" style="margin-top:4px">학생 이름은 이 컴퓨터에서 '학생1'처럼 가린 뒤 보내요. 서리아트 서버는 내용을 저장하지 않아요.</div>
           <div class="row" style="margin-top:10px"><input id="plus-email" type="email" placeholder="이메일 주소" value="${esc(plusEmail)}" style="max-width:260px"><button class="sm primary shrink" id="plus-send">인증번호 받기</button></div>
-          <div class="row hidden" id="plus-code-row" style="margin-top:8px"><input id="plus-code" inputmode="numeric" placeholder="메일로 온 인증번호" style="max-width:180px"><button class="sm primary shrink" id="plus-login">로그인</button></div>
+          <div class="row${plusCodeSent ? '' : ' hidden'}" id="plus-code-row" style="margin-top:8px"><input id="plus-code" inputmode="numeric" placeholder="메일로 온 인증번호" style="max-width:180px"><button class="sm primary shrink" id="plus-login">로그인</button></div>
           <div id="plus-r" class="small" style="margin-top:6px">${plusSt.error ? esc(plusSt.error) : ''}</div></div>`;
       } else if (plusOn) {
         const u = plusSt.sub;
@@ -1815,17 +1815,26 @@ async function viewSettings(section) {
     if ($('#plus-email')) $('#plus-email').oninput = e => { plusEmail = e.target.value.trim(); };
     if ($('#plus-send')) $('#plus-send').onclick = async () => {
       plusEmail = $('#plus-email').value.trim();
-      $('#plus-r').textContent = '보내는 중…';
-      try { await api('/api/plus/start', { email: plusEmail }, { silent: true }); $('#plus-r').textContent = '메일을 보냈어요. 15분 안에 인증번호를 넣어 주세요.'; $('#plus-code-row').classList.remove('hidden'); $('#plus-code').focus(); }
-      catch (e) { $('#plus-r').innerHTML = `<span class="bad-text">${esc(e.message)}</span>`; }
+      // 기다리는 사이 화면이 다시 그려질 수 있어서 결과를 쓸 때마다 칸을 새로 찾음
+      const say = h => { const el = $('#plus-r'); if (el) el.innerHTML = h; };
+      say('보내는 중…');
+      try {
+        await api('/api/plus/start', { email: plusEmail }, { silent: true });
+        plusCodeSent = true;
+        say('메일을 보냈어요. 15분 안에 인증번호를 넣어 주세요.');
+        const row = $('#plus-code-row'); if (row) row.classList.remove('hidden');
+        if ($('#plus-code')) $('#plus-code').focus();
+      } catch (e) { say(`<span class="bad-text">${esc(e.message)}</span>`); }
     };
     if ($('#plus-login')) $('#plus-login').onclick = async () => {
-      $('#plus-r').textContent = '확인 중…';
+      const say = h => { const el = $('#plus-r'); if (el) el.innerHTML = h; };
+      say('확인 중…');
       try {
-        const r = await api('/api/plus/verify', { email: plusEmail, code: $('#plus-code').value }, { silent: true });
+        const r = await api('/api/plus/verify', { email: plusEmail, code: ($('#plus-code') || {}).value || '' }, { silent: true });
+        plusCodeSent = false;
         toast(r.sub && r.sub.active ? '쓰담 플러스로 바꿨어요 ✓ 이제 녹음만 하면 돼요' : '로그인했어요 ✓');
         flashSaved($('#ai-tiles')); aiLoad(); updateModeBadge();
-      } catch (e) { $('#plus-r').innerHTML = `<span class="bad-text">${esc(e.message)}</span>`; }
+      } catch (e) { say(`<span class="bad-text">${esc(e.message)}</span>`); }
     };
     if ($('#plus-use')) $('#plus-use').onclick = () => aiChoose('plus', $('.ai-tile[data-choice=plus]'));
     if ($('#plus-refresh')) $('#plus-refresh').onclick = () => { plusFresh = false; aiLoad(); };
@@ -2400,6 +2409,8 @@ document.addEventListener('focusout', () => {
   if (refreshPending && $('#modal').classList.contains('hidden')) {
     setTimeout(() => {
       const ae = document.activeElement;
+      // 설정 → AI 칸(쓰담 플러스 로그인 등) 안에서 옮겨 다니는 중이면 새로 그리지 않음
+      if (ae && ae.closest && ae.closest('#ai-detail, #ai-tiles')) return;
       if (!ae || !(ae.dataset && ae.dataset.dirty)) { refreshPending = false; router(true); }
     }, 200);
   }

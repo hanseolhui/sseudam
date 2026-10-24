@@ -28,23 +28,31 @@ final class BackgroundSend: NSObject, URLSessionTaskDelegate {
         return d
     }
 
+    /// 파일 이름은 전송마다 새로 — 같은 기록을 다시 보내도 앞 전송이 끝나며 뒤 전송의 파일을 지우지 않게.
+    /// taskDescription = "<기록 id>|<파일 이름>"
     func enqueue(_ request: URLRequest, body: Data, entry id: UUID) throws {
-        let f = Self.outbox.appendingPathComponent(id.uuidString + ".bin")
+        let name = "\(id.uuidString)-\(UUID().uuidString.prefix(8)).bin"
+        let f = Self.outbox.appendingPathComponent(name)
         try body.write(to: f, options: .atomic)
         let t = session.uploadTask(with: request, fromFile: f)
-        t.taskDescription = id.uuidString
+        t.taskDescription = "\(id.uuidString)|\(name)"
         t.resume()
+    }
+
+    private static func parse(_ desc: String?) -> (UUID, String)? {
+        guard let parts = desc?.split(separator: "|", maxSplits: 1), let id = UUID(uuidString: String(parts[0])) else { return nil }
+        return (id, parts.count > 1 ? String(parts[1]) : parts[0] + ".bin")
     }
 
     /// 지금 iOS가 올리고 있는 기록들
     func inFlight() async -> Set<UUID> {
-        Set(await session.allTasks.compactMap { $0.taskDescription.flatMap(UUID.init(uuidString:)) })
+        Set(await session.allTasks.compactMap { Self.parse($0.taskDescription)?.0 })
     }
 
     // MARK: URLSessionTaskDelegate
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard let s = task.taskDescription, let id = UUID(uuidString: s) else { return }
-        try? FileManager.default.removeItem(at: Self.outbox.appendingPathComponent(s + ".bin"))
+        guard let (id, file) = Self.parse(task.taskDescription) else { return }
+        try? FileManager.default.removeItem(at: Self.outbox.appendingPathComponent(file))
         let code = (task.response as? HTTPURLResponse)?.statusCode ?? 0
         let ok = error == nil && (200..<300).contains(code)
         let message = ok ? "" : (error?.localizedDescription ?? "연결 서버 오류 (\(code))")

@@ -327,6 +327,10 @@ def sync_once():
             mine = stamp(conn, local_records(conn))
             docs = (read_remote(folder, did) if folder else []) + (read_remote(rfolder, did) if rfolder else [])
             changed = apply_remote(conn, mine, merge_remote(docs))
+            # 폰이 나눈(또는 글을 고쳐 다시 나눈) 학생 기록을 같은 녹음에 이어 줌 — 녹음 화면에서 보이게
+            conn.execute("""UPDATE notes SET recording_id=(SELECT r.id FROM recordings r WHERE r.original_name=notes.source
+                            ORDER BY r.id LIMIT 1) WHERE recording_id IS NULL AND source IS NOT NULL AND source != ''
+                            AND EXISTS (SELECT 1 FROM recordings r WHERE r.original_name=notes.source)""")
             mine = stamp(conn, local_records(conn))  # 받은 기록 반영 후 (지워져 따라 사라진 것 포함)
             conn.commit()
             doc = build_doc(did, mine)

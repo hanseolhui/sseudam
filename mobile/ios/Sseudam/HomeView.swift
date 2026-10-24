@@ -500,10 +500,11 @@ struct TranscriptPreview: View {
                     .background(Theme.bg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 Text(focused ? "다 고치면 키보드를 내려 주세요 · 학생별로 다시 나눠요" : "잘못 들린 이름은 눌러서 고칠 수 있어요")
                     .font(Theme.font(11)).foregroundStyle(Theme.soft)
+                ResplitAsk(entry: e)
             }
             .onAppear { text = e.transcript }
             .onChange(of: e.transcript) { t in if !focused { text = t } }
-            .onChange(of: focused) { f in if !f && text != e.transcript { store.edit(e, transcript: text) } }
+            .onChange(of: focused) { f in if !f && !text.isEmpty && text != e.transcript { store.edit(e, transcript: text) } }
             .onDisappear { if text != e.transcript && !text.isEmpty { store.edit(e, transcript: text) } }
         case .done:
             Text("말소리를 찾지 못했어요").font(Theme.font(12)).foregroundStyle(Theme.soft)
@@ -511,6 +512,28 @@ struct TranscriptPreview: View {
             Text(e.sttNote.isEmpty ? "컴퓨터에서 글자로 바꿔요" : e.sttNote).font(Theme.font(12)).foregroundStyle(Theme.soft)
         case .none:
             EmptyView()
+        }
+    }
+}
+
+/// 받아쓴 글을 고쳤는데, 나눈 뒤 손본 학생 기록이 있을 때: 다시 나눌지 묻기
+struct ResplitAsk: View {
+    @EnvironmentObject var store: Store
+    var entry: Entry
+    var body: some View {
+        if entry.resplitPending {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("고친 글로 학생별로 다시 나눌까요? 나눈 뒤 옮기거나 고친 기록은 새로 나눈 것으로 바뀌어요.")
+                    .font(Theme.font(12)).foregroundStyle(Theme.ink)
+                HStack(spacing: 8) {
+                    Button("다시 나누기") { store.resplitAudio(entry.id) }.font(Theme.font(13, .bold))
+                        .padding(.horizontal, 12).padding(.vertical, 6).background(Theme.blue, in: Capsule()).foregroundStyle(.white)
+                    Button("그대로 두기") { store.change(entry.id) { $0.resplitPending = false } }.font(Theme.font(13, .semibold))
+                        .padding(.horizontal, 12).padding(.vertical, 6).background(Theme.bg, in: Capsule())
+                }
+            }
+            .padding(10)
+            .background(Theme.butter.opacity(0.15), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
     }
 }

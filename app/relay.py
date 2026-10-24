@@ -262,8 +262,19 @@ def poll_once():
         except ValueError:
             acks = {}
         acked = set()
+        # 학생 기록(doc)을 먼저 받아 합침 → 폰에서 방금 만든 반·학생도 녹음의 이름표와 이어짐
+        items.sort(key=lambda it: 0 if it["name"].startswith("doc-") else 1)
+        merged = False
         for it in items:
             name = it["name"]
+            if not merged and not name.startswith("doc-"):
+                merged = True
+                if any(x["name"].startswith("doc-") for x in items):
+                    try:
+                        import sync_text
+                        sync_text.sync_once()
+                    except Exception as e:  # noqa
+                        print("[QR 연동] 기록 합치기 실패:", e)
             try:
                 meta, body = open_(c[1], _req("GET", "/pc/" + name, c, timeout=180))
             except Exception as e:  # noqa — 열쇠가 다르거나 깨진 것은 지운다
@@ -274,10 +285,25 @@ def poll_once():
                 devices.add(str(meta["device_name"])[:40])
             if meta.get("type") == "rec":
                 dev = _dev(meta)
+                rid = None
                 if name not in acks.get(dev, []):   # 폰이 다시 보낸 같은 녹음은 한 번만 담음
-                    _import_recording(meta, body)
+                    rid = _import_recording(meta, body, auto=False)
+                    # 담자마자 '받음'을 저장 — 아래 지우기·자동 정리가 실패해도 다음에 또 담지 않게
                     acks[dev] = (acks.get(dev, []) + [name])[-ACK_KEEP:]
+                    db.set_settings({"relay_acks": json.dumps(acks)})
                 acked.add(dev)
+                try:
+                    _req("DELETE", "/pc/" + name, c)
+                except Exception as e:  # noqa — 다음 번에 받으면 이미 받은 것으로 보고 지우기만 함
+                    print("[QR 연동] 지우기 실패:", name, e)
+                if rid:
+                    try:
+                        import pipeline
+                        pipeline.auto_process(rid)
+                    except Exception as e:  # noqa — 녹음은 담겼고, 녹음함에서 다시 정리할 수 있음
+                        print("[QR 연동] 자동 정리 실패:", rid, e)
+                got += 1
+                continue
             elif meta.get("type") == "doc":
                 dev = _dev(meta)
                 with open(os.path.join(inbox_dir(), "relay-%s.json" % dev), "wb") as f:
@@ -304,7 +330,7 @@ def _dev(meta):
     return "".join(ch for ch in str(meta.get("device") or "phone") if ch.isascii() and (ch.isalnum() or ch in "-_"))[:40] or "phone"
 
 
-def _import_recording(meta, audio):
+def _import_recording(meta, audio, auto=None):
     import watcher
     ext = meta.get("ext") or ".m4a"
     if not ext.startswith(".") or len(ext) > 6:
@@ -314,8 +340,8 @@ def _import_recording(meta, audio):
         f.write(audio)
     try:
         name = meta.get("name") or ("휴대폰 녹음" + ext)
-        watcher.create_recording(
-            class_id=_phone_class(meta), kind=meta.get("kind"), title=meta.get("title") or os.path.splitext(name)[0],
+        return watcher.create_recording(
+            auto=auto, class_id=_phone_class(meta), kind=meta.get("kind"), title=meta.get("title") or os.path.splitext(name)[0],
             recorded_at=meta.get("recorded_at"), audio_src=tmp if audio else None,
             transcript=meta.get("transcript") or "", original_name=name, copy=True,
             phone_meta=phone_meta_json(meta))

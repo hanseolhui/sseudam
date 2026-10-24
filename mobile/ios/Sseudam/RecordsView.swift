@@ -190,7 +190,7 @@ struct EntryDetail: View {
     @State private var transcript = ""
 
     var current: Entry { store.items.first(where: { $0.id == entry.id }) ?? entry }
-    var sent: Bool { current.icloud == .done || current.google == .done }
+    var sent: Bool { current.sendingOrSent }
 
     var body: some View {
         ScrollView {
@@ -301,6 +301,7 @@ struct EntryDetail: View {
                     .background(Theme.butter.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 TextField("받아쓴 글", text: $transcript, axis: .vertical).font(Theme.font(16)).lineLimit(3...20)
+                ResplitAsk(entry: current)
                 Text(sent ? "잘못 들린 이름은 여기서 고치면 학생별 기록을 다시 나눠서 컴퓨터에도 반영돼요." : "잘못 들린 이름이나 낱말은 여기서 고쳐요. 보낼 때 함께 가요.")
                     .font(Theme.font(12)).foregroundStyle(Theme.soft)
             case .done:

@@ -48,6 +48,13 @@ struct Entry: Codable, Identifiable, Equatable {
     var relaySentAt: Date? = nil
     /// 받아쓴 글의 [초, 글 안 위치(0~1)] — 글을 고친 뒤 이름표대로 다시 나눌 때 씀
     var segs: [[Double]] = []
+    /// 백그라운드 전송에 맡긴 때 (막 맡긴 것을 '전송 목록에 없음'으로 잘못 보지 않게)
+    var relayQueuedAt: Date? = nil
+    /// 학생별로 나눈 때 (그 뒤 선생님이 손본 기록이 있으면 다시 나누기 전에 묻기)
+    var splitAt: Double? = nil
+    /// 받아쓴 글을 고쳤는데 손본 기록이 있어 다시 나누기를 기다리는 중
+    var resplitPending: Bool = false
+    var sendingOrSent: Bool { sent || relay == .sending }
 
     var isAudio: Bool { type == "audio" }
     var editableUntil: Date { (savedAt ?? createdAt).addingTimeInterval(Store.grace) }
@@ -94,6 +101,9 @@ struct Entry: Codable, Identifiable, Equatable {
         period = try c.decodeIfPresent(Int.self, forKey: .period)
         relaySentAt = try c.decodeIfPresent(Date.self, forKey: .relaySentAt)
         segs = try c.decodeIfPresent([[Double]].self, forKey: .segs) ?? []
+        relayQueuedAt = try c.decodeIfPresent(Date.self, forKey: .relayQueuedAt)
+        splitAt = try c.decodeIfPresent(Double.self, forKey: .splitAt)
+        resplitPending = try c.decodeIfPresent(Bool.self, forKey: .resplitPending) ?? false
     }
 }
 
@@ -259,6 +269,7 @@ final class Store: ObservableObject {
                         let r = DataStore.shared.splitByMarkers(text: t, segs: segs, markers: now.markers, date: now.createdAt,
                                                                 kind: now.kind, source: now.fileName, hint: now.memo)
                         now.splitNames = r.names; now.splitLeftover = r.leftover; now.splitUnsure = r.unsure
+                        now.splitAt = Date().timeIntervalSince1970
                         update(now)
                     } else {
                         splitToStudents(now, text: now.transcript, force: resplit)
@@ -310,6 +321,8 @@ final class Store: ObservableObject {
         cur.splitNames = r.names
         cur.splitLeftover = r.leftover
         cur.splitUnsure = r.unsure
+        cur.splitAt = Date().timeIntervalSince1970
+        cur.resplitPending = false
         update(cur)
         // 지원 기기면 기기 안 AI로 이름 없는 문장까지 정리 (밖으로 나가는 것 없음)
         if data.localAIActive && !r.names.isEmpty {
@@ -319,6 +332,7 @@ final class Store: ObservableObject {
                       var now = items.first(where: { $0.id == id }) else { return }
                 now.splitNames = ai.names; now.splitLeftover = ai.leftover; now.splitUnsure = ai.unsure
                 now.aiRefined = true
+                now.splitAt = Date().timeIntervalSince1970   // AI가 다듬은 것은 '선생님이 손본 것'으로 보지 않음
                 update(now)
             }
         }
@@ -356,13 +370,14 @@ final class Store: ObservableObject {
                 Task { _ = await Transcriber.embed(t, into: file) }
             }
         }
-        defer { if retranscribed { resplitAudio(e.id) } }
+        // 다시 나누면 그 녹음의 학생 기록을 새로 만듦 — 나눈 뒤 선생님이 옮기거나 고친 기록이 있으면 묻고 나서
+        defer { if retranscribed { if notesTouched(e.id) { change(e.id) { $0.resplitPending = true } } else { resplitAudio(e.id) } } }
         if let k = kind { cur.kind = k; lastKind = k }
         if let m = memo { cur.memo = m }
         var resplit = false
         if let t = text, !cur.isAudio, t != cur.text { cur.text = t; try? t.data(using: .utf8)?.write(to: url(cur)); resplit = true }
         defer { if resplit, let now = items.first(where: { $0.id == e.id }) { splitToStudents(now, text: now.text, force: true) } }
-        let notSent = cur.icloud != .done && cur.google != .done
+        let notSent = !cur.sendingOrSent   // 보냈거나 보내는 중이면 파일 이름을 바꾸지 않음 (학생 기록의 출처가 끊기지 않게)
         if notSent {
             let ext = cur.isAudio ? "m4a" : "txt"
             let name = baseName(date: cur.createdAt, kind: cur.kind, memo: cur.memo, suffix: cur.isAudio ? "" : "메모")
@@ -375,10 +390,21 @@ final class Store: ObservableObject {
         update(cur)
     }
 
+    /// 나눈 뒤 선생님이 손본(옮기기·고치기·확인) 학생 기록이 있는지
+    func notesTouched(_ id: UUID) -> Bool {
+        guard let cur = items.first(where: { $0.id == id }) else { return false }
+        let notes = DataStore.shared.notes(forSource: cur.fileName)
+        guard !notes.isEmpty else { return false }
+        guard let at = cur.splitAt else { return true }   // 언제 나눴는지 모르는 예전 기록은 물어봄
+        return notes.contains { $0.updated_at > at + 2 }
+    }
+
     /// 받아쓴 글을 고친 뒤 학생별로 다시 나눔: 이름표를 눌렀으면 그 시점대로, 아니면 이름 기준
     func resplitAudio(_ id: UUID) {
         let data = DataStore.shared
         guard var cur = items.first(where: { $0.id == id }), cur.isAudio, !cur.transcript.isEmpty, data.hasRoster else { return }
+        cur.resplitPending = false
+        cur.splitAt = Date().timeIntervalSince1970
         if cur.markers.contains(where: { $0.student != nil }) {
             let len = Double((cur.transcript as NSString).length)
             // 받아쓸 때의 위치(비율)를 고친 글 길이에 맞춤 · 예전 기록은 녹음 길이로 어림
@@ -398,6 +424,12 @@ final class Store: ObservableObject {
         try? FileManager.default.removeItem(at: url(e))
         items.removeAll { $0.id == e.id }
         save()
+    }
+
+    /// 최신 기록에서 일부 칸만 바꿔 저장
+    func change(_ id: UUID, _ f: (inout Entry) -> Void) {
+        guard let i = items.firstIndex(where: { $0.id == id }) else { return }
+        f(&items[i]); save()
     }
 
     func update(_ e: Entry) {
@@ -426,40 +458,40 @@ final class Store: ObservableObject {
         defer { syncing = false }
         icloudAvailable = FileManager.default.ubiquityIdentityToken != nil
         // 올리는 중으로 남아 있는데 iOS 전송 목록에 없으면(앱 재설치·전송 취소 등) 다시 보낼 차례로
+        // (막 맡긴 것은 끝난 결과가 아직 안 적혔을 수 있어서 2분 지난 것만)
         let flying = await BackgroundSend.shared.inFlight()
-        for i in items.indices where items[i].relay == .sending && !flying.contains(items[i].id) { items[i].relay = .pending }
+        for i in items.indices where items[i].relay == .sending && !flying.contains(items[i].id)
+            && Date().timeIntervalSince(items[i].relayQueuedAt ?? .distantPast) > 120 { items[i].relay = .pending }
         let now = Date()
         for e in items {
             if !force && now < e.editableUntil { continue }  // 고칠 시간
             // 받아쓰는 중이면 끝날 때까지 기다림 (10분 넘게 걸리면 소리만 먼저 보냄)
             if e.stt == .working && now.timeIntervalSince(e.savedAt ?? e.createdAt) < 600 { continue }
-            var cur = e
-            if useICloud && icloudAvailable && [.pending, .failed, .off].contains(cur.icloud) {
-                do { try await Sync.copyToICloud(url(cur)); cur.icloud = .done }
-                catch { cur.icloud = .failed; cur.lastError = "iCloud: \(error.localizedDescription)" }
-                update(cur)
+            let id = e.id
+            // 기다리는 사이 다른 곳(전송 끝남 등)에서 바뀐 걸 덮어쓰지 않게 매번 최신 기록을 다시 읽고 그 칸만 바꿈
+            if useICloud && icloudAvailable && [.pending, .failed, .off].contains(e.icloud) {
+                do { try await Sync.copyToICloud(url(e)); change(id) { $0.icloud = .done } }
+                catch { change(id) { $0.icloud = .failed; $0.lastError = "iCloud: \(error.localizedDescription)" } }
             }
-            if Relay.paired && [.pending, .failed, .off].contains(cur.relay) {
+            if Relay.paired, let cur = items.first(where: { $0.id == id }), [.pending, .failed, .off].contains(cur.relay) {
                 // iOS 백그라운드 전송에 맡김 — 앱을 닫거나 화면이 꺼져도 끝까지 올라감 (끝나면 relayFinished)
                 do {
                     let (req, body) = try await Relay.prepareUpload(file: url(cur), entry: cur, deviceId: DataStore.shared.deviceId)
-                    try BackgroundSend.shared.enqueue(req, body: body, entry: cur.id)
-                    cur.relay = .sending; cur.lastError = ""
+                    try BackgroundSend.shared.enqueue(req, body: body, entry: id)
+                    change(id) { $0.relay = .sending; $0.relayQueuedAt = Date(); $0.lastError = "" }
                 } catch {
-                    cur.relay = .failed; cur.lastError = "연결: \(error.localizedDescription)"
+                    change(id) { $0.relay = .failed; $0.lastError = "연결: \(error.localizedDescription)" }
                 }
-                update(cur)
             }
-            if googlePaired && [.pending, .failed, .off].contains(cur.google) {
+            if googlePaired, let cur = items.first(where: { $0.id == id }), [.pending, .failed, .off].contains(cur.google) {
                 let bg = UIApplication.shared.beginBackgroundTask(withName: "upload")
                 do {
                     try await Sync.uploadToGoogle(file: url(cur), entry: cur, url: googleURL, token: googleToken)
-                    cur.google = .done; cur.lastError = ""
+                    change(id) { $0.google = .done; $0.lastError = "" }
                 } catch {
-                    cur.google = .failed; cur.lastError = "구글: \(error.localizedDescription)"
+                    change(id) { $0.google = .failed; $0.lastError = "구글: \(error.localizedDescription)" }
                 }
                 UIApplication.shared.endBackgroundTask(bg)
-                update(cur)
             }
         }
         await checkReceived()

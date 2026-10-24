@@ -460,6 +460,13 @@ def roster_plan(conn, cid, text):
                 nxt += 1
             num = nxt
             taken.add(num)
+        elif name in names:
+            cur = next(r for r in rows if r["name"] == name)
+            if cur["number"] != num and num not in by_no:   # 같은 학생, 번호만 바뀜 (전학 등으로 번호가 밀린 명단)
+                plan.append({"number": num, "name": name, "action": "renumber", "id": cur["id"], "old": cur["number"]})
+            else:   # 그 번호에 다른 학생이 있으면 같은 이름을 하나 더 만들지 않음
+                plan.append({"number": cur["number"], "name": name, "action": "skip"})
+            continue
         ex = by_no.get(num)
         if ex and ex["name"] == name:
             plan.append({"number": num, "name": name, "action": "skip"})
@@ -491,6 +498,9 @@ def students_bulk(h, q, b):
     for p in plan:
         if p["action"] == "update":
             conn.execute("UPDATE students SET name=? WHERE id=?", (p["name"], p["id"]))
+            updated += 1
+        elif p["action"] == "renumber":
+            conn.execute("UPDATE students SET number=? WHERE id=?", (p["number"], p["id"]))
             updated += 1
         elif p["action"] == "add":
             conn.execute("INSERT INTO students(class_id, number, name) VALUES (?,?,?)", (cid, p["number"], p["name"]))

@@ -548,4 +548,4 @@ audio { width: 100%; margin: 8px 0; }
 .bulk-plan .bp b { color: var(--blue); min-width: 26px; text-align: right; }
 .bulk-plan .bp small { color: var(--muted); font-size: 11px; }
 .bulk-plan .bp.skip { opacity: .5; }
-.bulk-plan .bp.update small { color: var(--amber); }
+.bulk-plan .bp.update small, .bulk-plan .bp.renumber small { color: var(--amber); }
