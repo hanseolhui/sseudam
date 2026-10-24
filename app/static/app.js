@@ -1675,11 +1675,11 @@ async function viewSettings(section) {
         const u = plusSt.sub;
         d = `<div class="spec">💜 <b>${esc(plusSt.email)}</b> · ${esc(u.planName)} · <b>${ymd(u.endsAt)}</b>까지 (${u.daysLeft}일 남음)
           <div class="small muted" style="margin-top:4px">이번 기간 AI 사용 ${u.used}회 · 등록된 컴퓨터 ${plusSt.devices.length}/${plusSt.deviceLimit}대 (${plusSt.devices.map(x => esc(x.device_name)).join(', ')})${plusSt.offline ? ' · 지금은 서버 확인이 안 돼서 마지막 상태를 보여요' : ''}</div>
-          <div class="row" style="margin-top:8px">${choice !== 'plus' ? '<button class="sm primary shrink" id="plus-use">쓰담 플러스로 쓰기</button>' : ''}<button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`;
+          <div class="row" style="margin-top:8px">${choice !== 'plus' ? '<button class="sm primary shrink" id="plus-use">쓰담 플러스로 쓰기</button>' : ''}<a class="btn sm shrink" href="https://apps.seoriarts.com/sseudam/plus" target="_blank">구독·결제 관리 ↗</a><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`;
       } else {
         d = `<div class="spec">💜 <b>${esc(plusSt.email)}</b>로 로그인했어요. 지금은 구독 기간이 아니에요.
-          <div class="small muted" style="margin-top:4px">정식 결제(월 · 반년 · 1년, 카드 등록 시 2주 체험)는 곧 열려요. 그동안은 쓰담 AI 모델이나 프롬프트 복사로 쓰실 수 있어요.</div>
-          <div class="row" style="margin-top:8px"><button class="sm shrink" id="plus-refresh">구독 다시 확인</button><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`;
+          <div class="small muted" style="margin-top:4px">월 9,900원 · 반년 29,000원 · 1년 49,000원. 카드를 등록하면 처음 2주는 체험이에요(계정당 한 번).</div>
+          <div class="row" style="margin-top:8px"><a class="btn sm primary shrink" href="https://apps.seoriarts.com/sseudam/plus" target="_blank">구독 시작하기 ↗</a><button class="sm shrink" id="plus-refresh">구독 다시 확인</button><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`;
       }
     } else if (choice === 'builtin') {
       const spec = `<div class="spec">💻 <b>${isMac ? '이 맥' : '이 컴퓨터'}</b>: ${esc(mc.chip || '')}${mc.ram ? ' · 메모리 ' + mc.ram + 'GB' : ''}<div class="small">${mc.model ? '→ <b>' + esc((b.models.find(m => m.id === mc.model) || {}).name) + '</b> 모델 추천 · ' : ''}${esc(mc.why || '')}</div></div>`;
