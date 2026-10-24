@@ -588,6 +588,15 @@ final class DataStore: ObservableObject {
         let doc = makeDoc()
         let ok = await Task.detached(priority: .utility) { DataStore.writeOwn(doc) }.value
         if ok { lastSync = Date() }
+        // QR 연동: 컴퓨터(맥·윈도우)와 암호화해서 주고받기
+        if Relay.paired, let mine = try? JSONEncoder().encode(doc) {
+            if let theirs = try? await Relay.syncDocs(myDoc: mine, deviceId: own),
+               let pc = try? JSONDecoder().decode(SyncDoc.self, from: theirs), pc.format == "sseudam-sync" {
+                if mergeIn([pc]) { saveLocal() }
+                if !otherDevices.contains(pc.device.name) { otherDevices.append(pc.device.name) }
+                lastSync = Date()
+            }
+        }
     }
 
     /// 기록마다 updated_at이 더 큰 쪽을 남긴다. 바뀐 게 있으면 true.

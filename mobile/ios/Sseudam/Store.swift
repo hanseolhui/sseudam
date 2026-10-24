@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import UIKit
 
@@ -18,6 +19,8 @@ struct Entry: Codable, Identifiable, Equatable {
     var text: String = ""
     var icloud: SyncState = .off
     var google: SyncState = .off
+    /// QR 연동(암호화 중계)으로 컴퓨터에 보냈는지
+    var relay: SyncState = .off
     var lastError: String = ""
     /// 저장한 시각 (녹음 시작 시각과 다름) — 보내기 전 고칠 시간 계산용
     var savedAt: Date? = nil
@@ -46,7 +49,7 @@ struct Entry: Codable, Identifiable, Equatable {
         if !transcript.isEmpty { return transcript }
         return "녹음 \(timeString(duration))"
     }
-    var sent: Bool { icloud == .done || google == .done }
+    var sent: Bool { icloud == .done || google == .done || relay == .done }
 
     init(type: String, fileName: String, createdAt: Date, duration: Double = 0, kind: String = "수업", memo: String = "", text: String = "") {
         self.type = type; self.fileName = fileName; self.createdAt = createdAt
@@ -66,6 +69,7 @@ struct Entry: Codable, Identifiable, Equatable {
         text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
         icloud = try c.decodeIfPresent(SyncState.self, forKey: .icloud) ?? .off
         google = try c.decodeIfPresent(SyncState.self, forKey: .google) ?? .off
+        relay = try c.decodeIfPresent(SyncState.self, forKey: .relay) ?? .off
         lastError = try c.decodeIfPresent(String.self, forKey: .lastError) ?? ""
         savedAt = try c.decodeIfPresent(Date.self, forKey: .savedAt)
         transcript = try c.decodeIfPresent(String.self, forKey: .transcript) ?? ""
@@ -191,6 +195,7 @@ final class Store: ObservableObject {
         e.savedAt = Date()
         e.icloud = useICloud && icloudAvailable ? .pending : .off
         e.google = googlePaired ? .pending : .off
+        e.relay = Relay.paired ? .pending : .off
         items.insert(e, at: 0)
         save()
         justSaved = e.id
@@ -385,6 +390,17 @@ final class Store: ObservableObject {
                 catch { cur.icloud = .failed; cur.lastError = "iCloud: \(error.localizedDescription)" }
                 update(cur)
             }
+            if Relay.paired && [.pending, .failed, .off].contains(cur.relay) {
+                let bg = UIApplication.shared.beginBackgroundTask(withName: "relay")
+                do {
+                    try await Relay.upload(file: url(cur), entry: cur, deviceId: DataStore.shared.deviceId)
+                    cur.relay = .done; cur.lastError = ""; computerSeen = true
+                } catch {
+                    cur.relay = .failed; cur.lastError = "연결: \(error.localizedDescription)"
+                }
+                UIApplication.shared.endBackgroundTask(bg)
+                update(cur)
+            }
             if googlePaired && [.pending, .failed, .off].contains(cur.google) {
                 let bg = UIApplication.shared.beginBackgroundTask(withName: "upload")
                 do {
@@ -429,6 +445,41 @@ final class Store: ObservableObject {
         save()
         objectWillChange.send()
         Task { await syncAll(force: true) }
+    }
+
+    /// QR 연동 (컴퓨터 쓰담의 새 QR) — 맥·윈도우 어떤 컴퓨터든
+    func pairRelay(_ p: Relay.Pairing) {
+        Relay.pair(p)
+        if !p.name.isEmpty { defaults.set(p.name, forKey: "teacherName") }
+        for i in items.indices where items[i].relay == .off { items[i].relay = .pending }
+        save()
+        objectWillChange.send()
+        Task { await syncAll(force: true); await DataStore.shared.syncNow() }
+    }
+
+    func unpairRelay() {
+        Task { await Relay.disconnectRemote(); Relay.unpair() }
+        for i in items.indices where items[i].relay != .done { items[i].relay = .off }
+        save()
+        objectWillChange.send()
+    }
+
+    /// 다른 앱(음성 메모 등)에서 '공유 → 쓰담'으로 받은 녹음
+    @discardableResult
+    func addShared(_ src: URL) -> Entry? {
+        let access = src.startAccessingSecurityScopedResource()
+        defer { if access { src.stopAccessingSecurityScopedResource() } }
+        let ext = src.pathExtension.isEmpty ? "m4a" : src.pathExtension.lowercased()
+        let base = (src.lastPathComponent as NSString).deletingPathExtension
+        let fileName = uniqueFile(String(base.prefix(40)).isEmpty ? "공유받은 녹음" : String(base.prefix(40)), ext)
+        let dest = Store.folder.appendingPathComponent(fileName)
+        do { try FileManager.default.copyItem(at: src, to: dest) } catch { return nil }
+        let dur = (try? AVAudioPlayer(contentsOf: dest).duration) ?? 0
+        var e = Entry(type: "audio", fileName: fileName, createdAt: Date(), duration: dur, kind: lastKind, memo: String(base.prefix(40)))
+        if transcribeOnPhone { e.stt = .working }
+        let saved = newEntry(e)
+        if transcribeOnPhone { transcribe(saved) }
+        return saved
     }
 
     func unpair() {

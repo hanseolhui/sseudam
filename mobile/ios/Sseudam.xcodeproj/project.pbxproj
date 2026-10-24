@@ -28,6 +28,7 @@
 		A280D61CF927D06ACA06062E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AEA1284C4F15C899D71C7C32 /* Assets.xcassets */; };
 		B0708AF70260D3F3D0F6CBAC /* RecordsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2BAE67B406D313F4E1BFD09 /* RecordsView.swift */; };
 		B084C193C0C3E8C806AFD167 /* SseudamWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39C21F7A16DF46704C202742 /* SseudamWidgets.swift */; };
+		B1B2166CC48631C7D8CF7D59 /* Relay.swift in Sources */ = {isa = PBXBuildFile; fileRef = C57348737277454D799DAD7A /* Relay.swift */; };
 		B91B47E9A997FDA09ADB9978 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 91CE084E05DB0FFCDE406623 /* Assets.xcassets */; };
 		C9CE4490995BCD332C540171 /* OpenRecordIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9EB58E1007EDBA6224B5847 /* OpenRecordIntent.swift */; };
 		D0202EB2EF401B5854A64FAF /* Sync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AFF827D0C38F5B88128BEAA /* Sync.swift */; };
@@ -107,6 +108,7 @@
 		BB3F662A6402A5CB85D66D87 /* LocalAI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalAI.swift; sourceTree = "<group>"; };
 		BF3EDFF11AF5873026BEA3FD /* SseudamWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = SseudamWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		C2BAE67B406D313F4E1BFD09 /* RecordsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordsView.swift; sourceTree = "<group>"; };
+		C57348737277454D799DAD7A /* Relay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Relay.swift; sourceTree = "<group>"; };
 		CE147E1357C039411699FAD9 /* ConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectView.swift; sourceTree = "<group>"; };
 		E99527ED634E25B9619D48CD /* SseudamWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SseudamWatchApp.swift; sourceTree = "<group>"; };
 		E9EB58E1007EDBA6224B5847 /* OpenRecordIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenRecordIntent.swift; sourceTree = "<group>"; };
@@ -175,6 +177,7 @@
 				A1234B6D27099EB65742E6EE /* QuickTools.swift */,
 				F955F5BA710F49B8D0B2DCF0 /* Recorder.swift */,
 				C2BAE67B406D313F4E1BFD09 /* RecordsView.swift */,
+				C57348737277454D799DAD7A /* Relay.swift */,
 				8A3943703E4149A7920EC8DB /* Splitter.swift */,
 				EBF057AE1C9754955DF8AE06 /* Sseudam.entitlements */,
 				3A6FF75DAAEF58C8169B93BA /* Store.swift */,
@@ -346,6 +349,7 @@
 				78324E7584CD06AC0BDB62CC /* QuickTools.swift in Sources */,
 				52261A6115B359EC32412053 /* Recorder.swift in Sources */,
 				B0708AF70260D3F3D0F6CBAC /* RecordsView.swift in Sources */,
+				B1B2166CC48631C7D8CF7D59 /* Relay.swift in Sources */,
 				9265876BF8B55B69C3C77300 /* Splitter.swift in Sources */,
 				64EC77FCADC55903F401479E /* Store.swift in Sources */,
 				3397DEE58ED436C15D1945DC /* StudentsView.swift in Sources */,
@@ -436,7 +440,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 11;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 967DUR6926;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -496,7 +500,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 11;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 967DUR6926;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

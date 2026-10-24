@@ -13,8 +13,9 @@ struct ConnectView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    qrCard
                     computerPicker
-                    if store.autoSend && !store.computerSeen { waitingCard }
+                    if store.autoSend && !store.computerSeen && !Relay.paired { waitingCard }
                     if store.computer == "mac" { macCards } else { windowsCards }
                     sttCard
                     aiCard
@@ -37,6 +38,34 @@ struct ConnectView: View {
         }
     }
 
+    /// QR 한 번으로 컴퓨터(맥·윈도우)와 연결 — 녹음·학생 기록이 암호화돼서 오감
+    var qrCard: some View {
+        methodCard(icon: "qrcode.viewfinder", color: Theme.blue, title: "컴퓨터와 QR로 연결", badge: "추천 · 맥·윈도우 모두",
+                   text: "컴퓨터 쓰담 → 설정 → 📱 휴대폰에 나오는 QR을 찍으면 끝이에요. 녹음·한 줄 메모·학생 기록이 저절로 오가요. 이 아이폰과 그 컴퓨터만 아는 열쇠로 암호화돼서, 중간 서버는 내용을 볼 수 없어요.") {
+            if Relay.paired {
+                HStack {
+                    Pill(text: Relay.pcName.isEmpty ? "연결됨 🔒" : "\(Relay.pcName) 연결됨 🔒", icon: "checkmark", color: Theme.mint)
+                    Spacer()
+                    Button("지금 맞추기") { Task { await store.syncAll(force: true); await DataStore.shared.syncNow(); testResult = "✓ 컴퓨터와 맞췄어요" } }
+                        .font(Theme.font(14, .semibold))
+                    Button("끊기", role: .destructive) { store.unpairRelay(); testResult = "" }.font(Theme.font(14, .semibold))
+                }
+            } else {
+                Button { scanning = true } label: {
+                    Label("QR 찍어서 연결", systemImage: "qrcode.viewfinder").font(Theme.font(16, .bold))
+                        .frame(maxWidth: .infinity).padding(.vertical, 12)
+                        .background(Theme.brand, in: Capsule()).foregroundStyle(.white)
+                }.buttonStyle(Squishy())
+                Button("QR이 안 찍히면 코드 붙여넣기") { showManual = true }.font(Theme.font(13))
+            }
+            Text("🎙 음성 메모 앱으로 녹음했다면: 음성 메모에서 녹음 → 공유(⋯) → ‘쓰담’을 고르면 쓰담에 담기고 컴퓨터로 가요.")
+                .font(Theme.font(12)).foregroundStyle(Theme.ink).fixedSize(horizontal: false, vertical: true)
+            if !testResult.isEmpty && Relay.paired {
+                Text(testResult).font(Theme.font(13)).foregroundStyle(testResult.hasPrefix("✓") ? Theme.mint : Theme.coral)
+            }
+        }
+    }
+
     var computerPicker: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("기록을 정리할 컴퓨터는?").font(Theme.font(17, .bold))
@@ -56,7 +85,7 @@ struct ConnectView: View {
                 .foregroundStyle(Theme.ink)
             Text("기록은 \(store.useICloud && store.icloudAvailable ? "iCloud" : "휴대폰")에 안전하게 쌓여 있어요. \(store.computer == "mac" ? "맥" : "컴퓨터")에 쓰담을 설치하고 켜면 쌓인 기록을 한꺼번에 가져가고, 기록함에 ‘컴퓨터가 받음’이 표시돼요.")
                 .font(Theme.font(14)).foregroundStyle(Theme.soft).fixedSize(horizontal: false, vertical: true)
-            Link(destination: URL(string: "https://hanseolhui.github.io/sseudam/")!) {
+            Link(destination: URL(string: "https://apps.seoriarts.com/sseudam")!) {
                 Label("컴퓨터용 쓰담 받기", systemImage: "arrow.down.circle.fill").font(Theme.font(15, .bold))
                     .frame(maxWidth: .infinity).padding(.vertical, 11)
                     .background(Theme.butter, in: Capsule()).foregroundStyle(.white)
@@ -152,7 +181,7 @@ struct ConnectView: View {
     }
 
     func googleCard(primary: Bool) -> some View {
-        methodCard(icon: "qrcode.viewfinder", color: Theme.mint, title: "구글 드라이브로 자동 보내기",
+        methodCard(icon: "externaldrive.fill", color: Theme.mint, title: "구글 드라이브로 보내기 (예전 방식)",
                    badge: primary ? "추천" : "다른 컴퓨터도 쓸 때",
                    text: "컴퓨터 쓰담의 ‘설정 → 휴대폰 연결’에 나오는 QR을 한 번 찍으면 돼요. 기록은 선생님 구글 드라이브를 거쳐 컴퓨터로 가요.") {
             if store.googlePaired {
@@ -215,7 +244,7 @@ struct ConnectView: View {
 
     var linksCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Link(destination: URL(string: "https://hanseolhui.github.io/sseudam/")!) {
+            Link(destination: URL(string: "https://apps.seoriarts.com/sseudam")!) {
                 Label("컴퓨터용 쓰담 받기·사용법", systemImage: "desktopcomputer")
             }
             Link(destination: URL(string: "https://hanseolhui.github.io/sseudam/privacy.html")!) {
@@ -232,6 +261,11 @@ struct ConnectView: View {
     }
 
     func handle(_ code: String) {
+        if let p = Relay.parse(code) {   // 새 QR 연동 (암호화)
+            store.pairRelay(p)
+            testResult = "✓ 연결됐어요! 녹음과 학생 기록이 컴퓨터와 오가요"
+            return
+        }
         if let p = Sync.parsePairing(code) {
             store.pair(url: p.url, token: p.token, name: p.name)
             Task { await test() }

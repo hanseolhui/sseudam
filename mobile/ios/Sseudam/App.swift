@@ -32,6 +32,15 @@ struct SseudamApp: App {
                     nav.startRecordingRequest += 1
                     return
                 }
+                if url.isFileURL {   // 음성 메모 등에서 '공유 → 쓰담'
+                    if store.addShared(url) != nil { nav.tab = .home }
+                    return
+                }
+                if let p = Relay.parse(url.absoluteString) {
+                    store.pairRelay(p)
+                    nav.tab = .connect
+                    return
+                }
                 if let p = Sync.parsePairing(url.absoluteString) {
                     store.pair(url: p.url, token: p.token, name: p.name)
                     nav.tab = .connect
