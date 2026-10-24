@@ -110,6 +110,8 @@ def _base(url):
 
 
 def is_local_url(url):
+    if (url or "").strip() == BUILTIN:
+        return True
     return bool(re.match(r"^https?://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(/|$)", (url or "").strip()))
 
 
@@ -132,16 +134,23 @@ def detect():
 
 
 def local_configured(settings):
+    if settings.get("local_ai_url") == BUILTIN:
+        return builtin_ready(settings)
     return bool((settings.get("local_ai_url") or "").strip() and (settings.get("local_ai_model") or "").strip())
 
 
 def chat(settings, system, prompt, timeout=300, temperature=0.2):
-    url = _base(settings.get("local_ai_url"))
+    if settings.get("local_ai_url") == BUILTIN:
+        url = ensure_builtin(settings.get("local_ai_model"))
+    else:
+        url = _base(settings.get("local_ai_url"))
     if not is_local_url(url):
         raise RuntimeError("내 맥 AI 주소는 이 맥(127.0.0.1 / localhost)만 쓸 수 있어요.")
     body = {"model": settings.get("local_ai_model"), "temperature": temperature, "stream": False,
             "messages": ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]}
     data = _http(url + "/chat/completions", body, timeout=timeout)
+    if settings.get("local_ai_url") == BUILTIN:
+        _srv["last"] = time.time()
     text = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
     return re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()  # Qwen3 등 생각 과정 제거
 
@@ -193,10 +202,229 @@ def status(settings):
     st = apple_state(fresh=True)
     local = {"url": settings.get("local_ai_url") or "", "model": settings.get("local_ai_model") or "",
              "reachable": False, "models": []}
-    if local["url"]:
+    if local["url"] == BUILTIN:
+        local["reachable"] = builtin_ready(settings)
+        local["models"] = [m["id"] for m in LLM_MODELS if llm_installed(m["id"])]
+    elif local["url"]:
         try:
             local["models"] = list_models(local["url"])
             local["reachable"] = True
         except Exception:  # noqa
             pass
-    return {"apple": {"state": st, "text": APPLE_TEXT.get(st, "")}, "local": local, "detected": detect()}
+    return {"apple": {"state": st, "text": APPLE_TEXT.get(st, "")}, "local": local, "detected": detect(),
+            "builtin": llm_status()}
+
+
+# ───────────────────────── 쓰담 내장 AI (앱 안 llama.cpp + 내려받은 모델) ─────────────────────────
+# Ollama·LM Studio를 모르는 선생님도: 설정에서 모델 '받기' 한 번 → 쓰담이 알아서 켜고 끈다.
+import threading  # noqa: E402
+
+BUILTIN = "builtin"          # local_ai_url 값이 이것이면 쓰담 내장 AI
+BUILTIN_PORT = int(os.environ.get("SSEUDAM_LLM_PORT", "8781"))
+IDLE_SEC = 10 * 60           # 10분 안 쓰면 꺼서 메모리 돌려주기
+LLM_DIR = os.environ.get("SSEUDAM_LLM_DIR") or os.path.join(db.SUPPORT_DIR, "models", "llm")
+
+LLM_MODELS = [
+    {"id": "qwen3-4b", "name": "가볍게", "model": "Qwen3 4B (알리바바, Apache 2.0)",
+     "file": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf", "size": 2497281120, "ram": 8,
+     "url": "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+     "desc": "메모리 8GB 맥도 괜찮아요. 학생 나누기용으로 충분해요."},
+    {"id": "gemma4-e4b", "name": "추천", "model": "Gemma 4 E4B (구글)",
+     "file": "gemma-4-E4B-it-Q4_K_M.gguf", "size": 4977171584, "ram": 16,
+     "url": "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf",
+     "desc": "메모리 16GB 이상 맥. 더 정확하고 세특 초안도 자연스러워요."},
+]
+
+_llm_dl = {}
+_llm_lock = threading.Lock()
+_srv = {"proc": None, "model": None, "last": 0}
+_srv_lock = threading.Lock()
+
+
+def mac_ram_gb():
+    try:
+        return round(int(subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True).stdout) / 2**30)
+    except Exception:  # noqa
+        return 0
+
+
+def llama_bin():
+    name = "llama-server"
+    for c in (os.path.join(os.environ.get("SETEUK_BIN", ""), name), os.path.join(db.SUPPORT_DIR, "bin", name),
+              os.path.join(db.BASE_DIR, "macos", "bin", name)):
+        if c and os.path.isfile(c) and os.access(c, os.X_OK):
+            return c
+    return None
+
+
+def _llm(mid):
+    return next((m for m in LLM_MODELS if m["id"] == mid), None)
+
+
+def llm_path(mid):
+    m = _llm(mid)
+    return os.path.join(LLM_DIR, m["file"]) if m else None
+
+
+def llm_installed(mid):
+    p, m = llm_path(mid), _llm(mid)
+    return bool(p and os.path.exists(p) and os.path.getsize(p) == m["size"])
+
+
+def builtin_ready(settings):
+    return settings.get("local_ai_url") == BUILTIN and llm_installed(settings.get("local_ai_model")) and bool(llama_bin())
+
+
+def llm_status():
+    ram = mac_ram_gb()
+    out = []
+    for m in LLM_MODELS:
+        d = dict(m)
+        d["installed"] = llm_installed(m["id"])
+        d["download"] = _llm_dl.get(m["id"])
+        d["fits"] = not ram or ram >= m["ram"]
+        part = llm_path(m["id"]) + ".part"
+        d["partial"] = os.path.getsize(part) if os.path.exists(part) else 0
+        out.append(d)
+    rec = "gemma4-e4b" if ram >= 16 else "qwen3-4b"
+    return {"models": out, "ram": ram, "recommended": rec, "engine": bool(llama_bin()),
+            "running": bool(_srv["proc"] and _srv["proc"].poll() is None), "running_model": _srv["model"]}
+
+
+def llm_download(mid):
+    """이어받기 지원 (5GB라 중간에 끊겨도 처음부터 다시 받지 않게)."""
+    m = _llm(mid)
+    if not m:
+        raise ValueError("알 수 없는 모델")
+    with _llm_lock:
+        cur = _llm_dl.get(mid)
+        if cur and cur.get("status") == "downloading":
+            return
+        _llm_dl[mid] = {"status": "downloading", "done": 0, "total": m["size"], "error": ""}
+
+    def run():
+        import gemini
+        dest = llm_path(mid)
+        part = dest + ".part"
+        try:
+            os.makedirs(LLM_DIR, exist_ok=True)
+            have = os.path.getsize(part) if os.path.exists(part) else 0
+            headers = {"User-Agent": "sseudam"}
+            if have:
+                headers["Range"] = "bytes=%d-" % have
+            req = urllib.request.Request(m["url"], headers=headers)
+            with urllib.request.urlopen(req, timeout=60, context=gemini._CTX) as resp:
+                if have and resp.status != 206:   # 서버가 이어받기를 안 받아 주면 처음부터
+                    have = 0
+                with open(part, "ab" if have else "wb") as f:
+                    done = have
+                    _llm_dl[mid]["done"] = done
+                    while True:
+                        chunk = resp.read(1 << 20)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        done += len(chunk)
+                        _llm_dl[mid]["done"] = done
+                        if _llm_dl[mid].get("cancel"):
+                            raise InterruptedError("멈춤 — 다시 누르면 이어서 받아요")
+            if os.path.getsize(part) != m["size"]:
+                raise IOError("받은 파일 크기가 맞지 않아요. 다시 눌러 이어받아 주세요.")
+            os.rename(part, dest)
+            _llm_dl[mid]["status"] = "done"
+            s = db.get_settings()
+            if not (s.get("local_ai_url") or "").strip() or s.get("local_ai_url") == BUILTIN:
+                db.set_settings({"local_ai_url": BUILTIN, "local_ai_model": mid})   # 받자마자 바로 쓰게
+        except Exception as e:  # noqa
+            _llm_dl[mid].update(status="error", error=str(e))
+    threading.Thread(target=run, daemon=True, name="llm-dl").start()
+
+
+def llm_cancel(mid):
+    if mid in _llm_dl:
+        _llm_dl[mid]["cancel"] = True
+
+
+def llm_delete(mid):
+    stop_builtin()
+    for p in (llm_path(mid), (llm_path(mid) or "") + ".part"):
+        if p and os.path.exists(p):
+            os.remove(p)
+    _llm_dl.pop(mid, None)
+    s = db.get_settings()
+    if s.get("local_ai_url") == BUILTIN and s.get("local_ai_model") == mid:
+        db.set_settings({"local_ai_url": "", "local_ai_model": ""})
+
+
+def stop_builtin():
+    with _srv_lock:
+        p = _srv["proc"]
+        if p and p.poll() is None:
+            p.terminate()
+            try:
+                p.wait(10)
+            except subprocess.TimeoutExpired:
+                p.kill()
+        _srv.update(proc=None, model=None)
+
+
+def ensure_builtin(mid):
+    """내장 AI 서버를 (필요하면) 켜고 주소를 돌려준다."""
+    url = "http://127.0.0.1:%d/v1" % BUILTIN_PORT
+    with _srv_lock:
+        p = _srv["proc"]
+        if p and p.poll() is None and _srv["model"] == mid:
+            _srv["last"] = time.time()
+            return url
+    stop_builtin()
+    _kill_stale()
+    exe = llama_bin()
+    if not exe:
+        raise RuntimeError("쓰담 내장 AI 엔진이 없어요. 쓰담을 최신 버전으로 업데이트해 주세요.")
+    if not llm_installed(mid):
+        raise RuntimeError("AI 모델을 먼저 받아 주세요 (설정 → 학생별로 나누는 AI).")
+    log = open(os.path.join(db.DATA_DIR, "llm.log"), "ab")
+    proc = subprocess.Popen([exe, "-m", llm_path(mid), "--host", "127.0.0.1", "--port", str(BUILTIN_PORT),
+                             "-c", "8192", "-ngl", "99", "--jinja", "--no-webui"],
+                            stdout=log, stderr=log, stdin=subprocess.DEVNULL)
+    with _srv_lock:
+        _srv.update(proc=proc, model=mid, last=time.time())
+    for _ in range(240):   # 모델 올리는 데 최대 2분
+        if proc.poll() is not None:
+            raise RuntimeError("내장 AI가 켜지지 않았어요 (data/llm.log 참고). 메모리가 부족하면 '가볍게' 모델을 써 보세요.")
+        try:
+            _http("http://127.0.0.1:%d/health" % BUILTIN_PORT, timeout=2)
+            return url
+        except Exception:  # noqa
+            time.sleep(0.5)
+    stop_builtin()
+    raise RuntimeError("내장 AI가 너무 오래 걸려요. 다시 시도해 주세요.")
+
+
+def _kill_stale():
+    """쓰담이 갑자기 꺼져서 남은 예전 내장 AI(같은 포트의 llama-server)를 정리."""
+    try:
+        pids = subprocess.run(["lsof", "-tiTCP:%d" % BUILTIN_PORT, "-sTCP:LISTEN"], capture_output=True, text=True).stdout.split()
+        for pid in pids:
+            cmd = subprocess.run(["ps", "-p", pid, "-o", "comm="], capture_output=True, text=True).stdout.strip()
+            if cmd.endswith("llama-server"):
+                os.kill(int(pid), 15)
+        if pids:
+            time.sleep(1)
+    except Exception:  # noqa
+        pass
+
+
+import atexit  # noqa: E402
+atexit.register(stop_builtin)
+
+
+def _idle_reaper():
+    while True:
+        time.sleep(30)
+        p = _srv["proc"]
+        if p and p.poll() is None and time.time() - _srv["last"] > IDLE_SEC:
+            stop_builtin()
+
+
+threading.Thread(target=_idle_reaper, daemon=True, name="llm-idle").start()

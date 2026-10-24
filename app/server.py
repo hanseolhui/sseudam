@@ -902,6 +902,42 @@ def localai_status(h, q, b):
     return out
 
 
+@route("GET", "/api/localai/models")
+def localai_models(h, q, b):
+    return localai.llm_status()
+
+
+@route("POST", "/api/localai/models/download")
+def localai_models_download(h, q, b):
+    if not localai.llama_bin():
+        raise ApiError("쓰담 내장 AI 엔진이 없어요. 쓰담을 최신 버전으로 업데이트해 주세요.")
+    localai.llm_download(b["id"])
+    return {"ok": True}
+
+
+@route("POST", "/api/localai/models/cancel")
+def localai_models_cancel(h, q, b):
+    localai.llm_cancel(b["id"])
+    return {"ok": True}
+
+
+@route("POST", "/api/localai/models/delete")
+def localai_models_delete(h, q, b):
+    localai.llm_delete(b["id"])
+    return {"ok": True}
+
+
+@route("POST", "/api/localai/models/use")
+def localai_models_use(h, q, b):
+    if not localai.llm_installed(b["id"]):
+        raise ApiError("먼저 받아 주세요.")
+    vals = {"local_ai_url": localai.BUILTIN, "local_ai_model": b["id"]}
+    if db.get_settings().get("seg_engine") in ("rules",):
+        vals["seg_engine"] = "auto"
+    db.set_settings(vals)
+    return {"ok": True}
+
+
 @route("POST", "/api/localai/test")
 def localai_test(h, q, b):
     """짧은 예시로 학생 고르기를 시험해 본다 (엔진: apple | local)."""
@@ -1262,6 +1298,7 @@ def update_apply(h, q, b):
 
 @route("POST", "/api/shutdown")
 def shutdown(h, q, b):
+    localai.stop_builtin()
     threading.Timer(0.5, lambda: os._exit(0)).start()
     return {"ok": True}
 
@@ -1434,6 +1471,8 @@ def main():
             webbrowser.open("http://%s:%d" % (HOST, PORT))
         return
     httpd.daemon_threads = True
+    import signal
+    signal.signal(signal.SIGTERM, lambda *_: (localai.stop_builtin(), os._exit(0)))  # 앱 종료 시 내장 AI도 함께 끄기
     ensure_token()
     ensure_upload_token()
     pipeline.start_worker()

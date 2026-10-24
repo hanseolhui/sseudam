@@ -168,3 +168,6 @@ Apps Script 요청은 앱이 자동 생성한 토큰으로 보호(스크립트 �
 - **내 맥 AI 앱**: Ollama(`127.0.0.1:11434/v1`)·LM Studio(`127.0.0.1:1234/v1`) OpenAI 호환. 주소는 localhost만 허용.
 - 분리 방식(`pipeline.local_segment`): 이름이 나온 문장은 규칙, 이름 없는 문장만 AI가 '그 녹음에 이름이 나온 학생' 중에서 고름(아이폰 LocalAI와 동일). 30문장씩 나눠 처리, 실패하면 rule_segment.
 - 세특 초안: Gemini 키가 없고 `draft_local=1`이면 내 맥 AI 앱으로(기기 안 AI는 초안엔 안 씀).
+- **쓰담 AI 모델 (내장)**: 앱 안 `Resources/bin/llama-server`(llama.cpp 정적 빌드, Metal 내장, OpenSSL 없음 — `macos/bin/LLAMA_CPP_VERSION`). 설정에서 모델 받기(이어받기 지원) → `~/Library/Application Support/쓰담/models/llm/`. `local_ai_url = "builtin"`이면 쓸 때만 127.0.0.1:8781에 켜고 10분 쉬면 끔(앱 종료·SIGTERM 때도 끔, 다음 시작 때 남은 프로세스 정리).
+  - 가볍게: Qwen3 4B Instruct 2507 Q4_K_M 2.5GB (8GB 맥) · 추천: Gemma 4 E4B Q4_K_M 5.0GB (16GB+, 분리 8/8 정답·초안 자연스러움)
+- 앱 셸 버전 5(`SHELL_REQUIRED`): 새 도우미·엔진은 코드 zip이 아니라 앱 전체 교체로만 들어가므로, 자동 업데이트가 코드 → 새 앱 순서로 설치.

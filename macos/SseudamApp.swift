@@ -111,7 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         env["SETEUK_NO_BROWSER"] = "1"
         env["SETEUK_BIN"] = (Bundle.main.resourcePath ?? "") + "/bin"
         env["SETEUK_PORT"] = String(kPort)
-        env["SETEUK_SHELL"] = "4"
+        env["SETEUK_SHELL"] = "5"
         env["SETEUK_APP_PATH"] = Bundle.main.bundlePath
         p.environment = env
         p.terminationHandler = { [weak self] proc in

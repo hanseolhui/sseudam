@@ -21,6 +21,8 @@ rsync -a --exclude '__pycache__' --exclude '*.pyc' app "$APP/Contents/Resources/
 cp macos/start_server.sh "$APP/Contents/Resources/start_server.sh"
 cp macos/bin/whisper-cli macos/bin/WHISPER_CPP_LICENSE macos/bin/WHISPER_CPP_VERSION "$APP/Contents/Resources/bin/"
 cp "$BUILD/sseudam-ai" "$APP/Contents/Resources/bin/sseudam-ai"
+cp macos/bin/llama-server macos/bin/LLAMA_CPP_LICENSE macos/bin/LLAMA_CPP_VERSION "$APP/Contents/Resources/bin/"   # 쓰담 AI 모델 엔진
+chmod +x "$APP/Contents/Resources/bin/llama-server"
 chmod +x "$APP/Contents/Resources/start_server.sh" "$APP/Contents/Resources/bin/whisper-cli" "$APP/Contents/Resources/bin/sseudam-ai"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -67,6 +69,7 @@ else
 fi
 "${SIGN[@]}" "$APP/Contents/Resources/bin/whisper-cli"
 "${SIGN[@]}" "$APP/Contents/Resources/bin/sseudam-ai"
+"${SIGN[@]}" "$APP/Contents/Resources/bin/llama-server"
 "${SIGN[@]}" "$APP"
 codesign --verify --strict "$APP"
 
