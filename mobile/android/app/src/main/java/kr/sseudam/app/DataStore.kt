@@ -74,6 +74,19 @@ object DataStore {
     }
 
     /** 명단 붙여넣기: 줄마다 "번호 이름" 또는 "이름". 이미 있는 이름은 건너뜀. 넣은 수 반환 */
+    /** 붙여넣은 명단이 몇 번 누구로 들어갈지 (번호가 없으면 이어서 매김). 세 번째 값 = 이 반에 이미 있음 */
+    fun previewRoster(text: String, c: SClass?): List<Triple<Int, String, Boolean>> {
+        val db = _db.value
+        var nextNo = (c?.let { db.studentsIn(it).mapNotNull { s -> s.number }.maxOrNull() } ?: 0) + 1
+        val seen = HashSet<String>()
+        return Roster.parse(text).mapNotNull { (number, name) ->
+            if (!seen.add(name)) return@mapNotNull null
+            val cur = c?.let { db.students.firstOrNull { s -> s.uid == Uids.studentUid(it.uid, name) && !s.deleted } }
+            if (cur != null) Triple(cur.number ?: 0, name, true)
+            else { val no = number ?: nextNo; nextNo = maxOf(nextNo, no + 1); Triple(no, name, false) }
+        }
+    }
+
     fun addStudents(text: String, c: SClass): Int {
         var added = 0
         mutate { db0 ->

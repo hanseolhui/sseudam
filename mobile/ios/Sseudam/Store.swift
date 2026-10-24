@@ -46,6 +46,8 @@ struct Entry: Codable, Identifiable, Equatable {
     var period: Int? = nil
     /// QR 연동으로 마지막으로 보낸 때 (컴퓨터가 오래 안 받아 가면 다시 보냄)
     var relaySentAt: Date? = nil
+    /// 받아쓴 글의 [초, 글 안 위치(0~1)] — 글을 고친 뒤 이름표대로 다시 나눌 때 씀
+    var segs: [[Double]] = []
 
     var isAudio: Bool { type == "audio" }
     var editableUntil: Date { (savedAt ?? createdAt).addingTimeInterval(Store.grace) }
@@ -91,6 +93,7 @@ struct Entry: Codable, Identifiable, Equatable {
         classUid = try c.decodeIfPresent(String.self, forKey: .classUid)
         period = try c.decodeIfPresent(Int.self, forKey: .period)
         relaySentAt = try c.decodeIfPresent(Date.self, forKey: .relaySentAt)
+        segs = try c.decodeIfPresent([[Double]].self, forKey: .segs) ?? []
     }
 }
 
@@ -245,6 +248,8 @@ final class Store: ObservableObject {
             case .text(let t, let segs):
                 now.transcript = t.trimmingCharacters(in: .whitespacesAndNewlines)
                 now.stt = .done
+                let len = Double(max(1, (t as NSString).length))
+                now.segs = segs.map { [$0.t, Double($0.offset) / len] }
                 now.starSnippets = Store.snippets(t, segs, now.markers.filter(\.star))
                 if !now.transcript.isEmpty && !now.sent { _ = await Transcriber.embed(now.transcript, into: url(now)) }
                 update(now)
@@ -340,12 +345,18 @@ final class Store: ObservableObject {
     /// 유형·메모 바꾸기. 아직 보내기 전이면 파일 이름도 바꿔 컴퓨터가 올바로 알아듣게 한다.
     func edit(_ e: Entry, kind: String? = nil, memo: String? = nil, text: String? = nil, transcript: String? = nil) {
         guard var cur = items.first(where: { $0.id == e.id }) else { return }
-        if let t = transcript, cur.isAudio, t != cur.transcript, !cur.sent {
+        // 받아쓴 글은 보낸 뒤에도 고칠 수 있다 — 학생별 기록을 다시 나누면 학생 기록 맞추기로 컴퓨터에도 감
+        var retranscribed = false
+        if let t = transcript, cur.isAudio, t != cur.transcript {
             cur.transcript = t
             update(cur)
-            let file = url(cur)
-            Task { _ = await Transcriber.embed(t, into: file) }
+            retranscribed = true
+            if !cur.sent {
+                let file = url(cur)
+                Task { _ = await Transcriber.embed(t, into: file) }
+            }
         }
+        defer { if retranscribed { resplitAudio(e.id) } }
         if let k = kind { cur.kind = k; lastKind = k }
         if let m = memo { cur.memo = m }
         var resplit = false
@@ -362,6 +373,25 @@ final class Store: ObservableObject {
             }
         }
         update(cur)
+    }
+
+    /// 받아쓴 글을 고친 뒤 학생별로 다시 나눔: 이름표를 눌렀으면 그 시점대로, 아니면 이름 기준
+    func resplitAudio(_ id: UUID) {
+        let data = DataStore.shared
+        guard var cur = items.first(where: { $0.id == id }), cur.isAudio, !cur.transcript.isEmpty, data.hasRoster else { return }
+        if cur.markers.contains(where: { $0.student != nil }) {
+            let len = Double((cur.transcript as NSString).length)
+            // 받아쓸 때의 위치(비율)를 고친 글 길이에 맞춤 · 예전 기록은 녹음 길이로 어림
+            let segs = cur.segs.isEmpty
+                ? stride(from: 0.0, through: max(0, cur.duration), by: 1).map { Transcriber.Seg(t: $0, offset: Int(len * $0 / max(1, cur.duration))) }
+                : cur.segs.map { Transcriber.Seg(t: $0[0], offset: min(Int(len), Int($0[1] * len))) }
+            let r = data.splitByMarkers(text: cur.transcript, segs: segs, markers: cur.markers, date: cur.createdAt,
+                                        kind: cur.kind, source: cur.fileName, hint: cur.memo)
+            cur.splitNames = r.names; cur.splitLeftover = r.leftover; cur.splitUnsure = r.unsure
+            update(cur)
+        } else {
+            splitToStudents(cur, text: cur.transcript, force: true)
+        }
     }
 
     func delete(_ e: Entry) {

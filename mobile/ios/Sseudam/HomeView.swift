@@ -481,6 +481,8 @@ struct TranscriptPreview: View {
     @EnvironmentObject var store: Store
     var entry: Entry
     var e: Entry { store.items.first(where: { $0.id == entry.id }) ?? entry }
+    @State private var text = ""
+    @FocusState private var focused: Bool
 
     var body: some View {
         switch e.stt {
@@ -490,10 +492,19 @@ struct TranscriptPreview: View {
                 Text("아이폰에서 글자로 바꾸는 중…").font(Theme.font(13)).foregroundStyle(Theme.soft)
             }
         case .done where !e.transcript.isEmpty:
-            Text(e.transcript).font(Theme.font(14)).lineLimit(4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-                .background(Theme.bg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            // 잘못 들린 이름은 바로 눌러서 고침 — 다 고치면 학생별로 다시 나눔
+            VStack(alignment: .leading, spacing: 4) {
+                TextField("받아쓴 글", text: $text, axis: .vertical).font(Theme.font(14)).lineLimit(2...8)
+                    .focused($focused)
+                    .padding(12)
+                    .background(Theme.bg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                Text(focused ? "다 고치면 키보드를 내려 주세요 · 학생별로 다시 나눠요" : "잘못 들린 이름은 눌러서 고칠 수 있어요")
+                    .font(Theme.font(11)).foregroundStyle(Theme.soft)
+            }
+            .onAppear { text = e.transcript }
+            .onChange(of: e.transcript) { t in if !focused { text = t } }
+            .onChange(of: focused) { f in if !f && text != e.transcript { store.edit(e, transcript: text) } }
+            .onDisappear { if text != e.transcript && !text.isEmpty { store.edit(e, transcript: text) } }
         case .done:
             Text("말소리를 찾지 못했어요").font(Theme.font(12)).foregroundStyle(Theme.soft)
         case .unavailable, .failed:

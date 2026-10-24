@@ -541,3 +541,11 @@ audio { width: 100%; margin: 8px 0; }
 .menu-home.hidden { display: none; }
 @media (max-width: 760px) { .menu-home { top: auto; bottom: 16px; right: 16px; } }
 .seg-pick { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+
+/* 명단 붙여넣기 미리 보기 */
+.bulk-plan { margin-top: 8px; max-height: 220px; overflow: auto; border: 1px solid var(--line); border-radius: 12px; padding: 6px 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 2px 14px; }
+.bulk-plan .bp { display: flex; gap: 8px; align-items: baseline; font-size: 13px; padding: 2px 0; }
+.bulk-plan .bp b { color: var(--blue); min-width: 26px; text-align: right; }
+.bulk-plan .bp small { color: var(--muted); font-size: 11px; }
+.bulk-plan .bp.skip { opacity: .5; }
+.bulk-plan .bp.update small { color: var(--amber); }

@@ -260,6 +260,7 @@ function showManual(op, params, res, onDone) {
 
 // ───────────────────────── 작업 진행 표시 ─────────────────────────
 
+let AI_GEN = 0, AI_TIMER = null;   // 설정 → AI 화면 갱신 (화면을 다시 열 때마다 새 번호)
 let pollTimer;
 async function pollJobs(force) {
   clearTimeout(pollTimer);
@@ -276,7 +277,7 @@ async function pollJobs(force) {
       const failed = d.jobs.filter(j => j.status === '실패' && isRecent(j.finished_at)).length;
       fab.innerHTML = failed ? `⚠︎ 실패한 작업 ${failed}개` : 'AI 작업 기록';
       fab.className = 'jobs-fab idle';
-    } else fab.className = 'jobs-fab hidden';
+    } else { fab.className = 'jobs-fab hidden'; $('#jobs-panel').classList.add('hidden'); }
     renderJobsPanel(d.jobs);
     const ids = d.jobs.filter(j => j.status === '완료' || j.status === '실패').map(j => j.id).join(',');
     if (state.lastJobIds && ids !== state.lastJobIds) {
@@ -294,14 +295,22 @@ function isRecent(ts) { return ts && (Date.now() - new Date(ts.replace(' ', 'T')
 function renderJobsPanel(jobs) {
   const p = $('#jobs-panel');
   p.innerHTML = `<div class="section-title"><h3>AI 작업</h3><span>
-      <button class="sm" id="jp-cancel">대기 작업 취소</button> <button class="sm" id="jp-clear">기록 지우기</button></span></div>` +
+      <button class="sm" id="jp-cancel">대기 작업 취소</button> <button class="sm" id="jp-clear">기록 지우기</button>
+      <button class="sm ghost" id="jp-close" aria-label="닫기">✕</button></span></div>` +
     (jobs.length ? jobs.map(j => `<div class="job"><div><span class="badge ${{ '완료': 'green', '실패': 'red', '진행중': 'blue' }[j.status] || ''}">${esc(j.status)}</span> ${esc(j.label)}</div>
       ${j.message ? `<div class="msg">${esc(j.message)}</div>` : ''}<div class="msg">${esc(fmtDate(j.created_at))}</div></div>`).join('')
       : '<p class="muted">작업이 없습니다.</p>');
   $('#jp-clear', p).onclick = async () => { await api('/api/jobs/clear', {}); pollJobs(); };
   $('#jp-cancel', p).onclick = async () => { await api('/api/jobs/cancel', {}); pollJobs(); };
+  $('#jp-close', p).onclick = () => p.classList.add('hidden');
 }
-$('#jobs-fab').onclick = () => $('#jobs-panel').classList.toggle('hidden');
+$('#jobs-fab').onclick = e => { e.stopPropagation(); $('#jobs-panel').classList.toggle('hidden'); };
+// 작업 창 밖을 누르거나 Esc 를 누르면 닫힘 (작업 버튼이 다른 안내에 가려져도 닫을 수 있게)
+document.addEventListener('click', e => {
+  const p = $('#jobs-panel');
+  if (!p.classList.contains('hidden') && !p.contains(e.target) && e.target.id !== 'jobs-fab') p.classList.add('hidden');
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#jobs-panel').classList.add('hidden'); });
 
 let refreshPending = false;
 function refreshCurrent() {
@@ -940,8 +949,9 @@ async function viewClass(id) {
       <div class="stack">
         <div class="card">
           <h2>명단 일괄 붙여넣기</h2>
-          <p class="help" style="margin-top:-6px">NEIS나 엑셀에서 <b>${club ? '학번, 이름' : '번호, 이름'}</b> 두 열을 복사해 붙여넣으세요. 같은 번호가 있으면 이름을 덮어씁니다.</p>
-          <textarea id="bulk" rows="10" placeholder="${club ? '20315	김민수&#10;10702	이서연' : '1	김민수&#10;2	이서연&#10;3	박지훈'}"></textarea>
+          <p class="help" style="margin-top:-6px"><b>이름만 한 줄에 한 명씩</b> 붙여넣어도 번호가 차례로 붙어요(이미 있는 이름은 건너뜀). NEIS·엑셀에서 <b>${club ? '학번, 이름' : '번호, 이름'}</b> 두 열을 복사해도 돼요 — 같은 번호가 있으면 이름을 바꿔요.</p>
+          <textarea id="bulk" rows="10" placeholder="${club ? '20315	김민수&#10;10702	이서연' : '김민수&#10;이서연&#10;박지훈'}"></textarea>
+          <div id="bulk-plan" class="bulk-plan hidden"></div>
           <div class="row" style="margin-top:8px"><span id="bulk-preview" class="muted small"></span><button class="primary shrink" id="bulk-save">명단 저장</button></div>
         </div>
         <div class="card">
@@ -955,9 +965,20 @@ async function viewClass(id) {
   bindRowLinks();
   bindClassForm();
   const reload = () => router(true);
+  // 붙여넣은 명단이 몇 번 누구로 들어갈지 미리 보기
+  let bulkT;
   $('#bulk').oninput = () => {
-    const lines = $('#bulk').value.split('\n').filter(l => l.trim()).length;
-    $('#bulk-preview').textContent = lines ? `${lines}줄` : '';
+    clearTimeout(bulkT);
+    bulkT = setTimeout(async () => {
+      const text = $('#bulk').value, box = $('#bulk-plan');
+      if (!text.trim()) { box.classList.add('hidden'); $('#bulk-preview').textContent = ''; return; }
+      const { plan } = await api('/api/students/bulk_preview', { class_id: c.id, text }, { silent: true }).catch(() => ({ plan: [] }));
+      const n = k => plan.filter(p => p.action === k).length;
+      $('#bulk-preview').textContent = plan.length ? `추가 ${n('add')}명` + (n('update') ? ` · 이름 바꿈 ${n('update')}명` : '') + (n('skip') ? ` · 이미 있음 ${n('skip')}명` : '') : '읽을 수 있는 이름이 없어요';
+      box.innerHTML = plan.map(p => `<div class="bp ${p.action}"><b>${p.number ?? ''}</b><span>${esc(p.name)}</span><small>${
+        p.action === 'skip' ? '이미 있음' : p.action === 'update' ? esc(p.old) + ' → 바꿈' : ''}</small></div>`).join('');
+      box.classList.toggle('hidden', !plan.length);
+    }, 250);
   };
   $('#bulk-save').onclick = async () => {
     const r = await api('/api/students/bulk', { class_id: c.id, text: $('#bulk').value });
@@ -1590,7 +1611,7 @@ async function viewSettings(section) {
         <p class="help">자동 업데이트는 20분 동안 아무 조작이 없고, AI 작업·모델 내려받기가 없을 때만 해요. 바꾸기 직전에 기록을 자동 백업해요.</p>
       </div>
     </div>
-    <div style="position:sticky;bottom:0;padding:14px 0;background:linear-gradient(transparent, var(--bg) 30%);display:flex;justify-content:flex-end">
+    <div style="position:sticky;bottom:0;padding:14px 0;background:linear-gradient(transparent, var(--bg) 30%);display:flex;justify-content:flex-start">
       <span class="save-chip" id="save-chip">바꾸면 바로 저장돼요</span></div>`;
   $('#open-data').onclick = e => { e.preventDefault(); api('/api/open_data', {}); };
   const collect = () => ({
@@ -1663,7 +1684,8 @@ async function viewSettings(section) {
   // ── 🧠 AI 카드: 하나 고르면 바로 바뀜 ──
   const gb = n => (n / 1e9).toFixed(1) + 'GB';
   const ENG_NAME = { plus: '쓰담 플러스로', builtin: '쓰담 AI 모델로', apple: '기기 안 AI로', gemini: '외부 AI API로', external: '내 맥 AI 앱으로', manual: 'AI 없이 쓰기로' };
-  let aiTimer = null, aiSt = null;
+  let aiSt = null;
+  const aiGen = ++AI_GEN;   // 설정 화면을 다시 열면 예전 화면의 갱신은 멈춤 (두 갱신이 번갈아 그려 깜빡이지 않게)
   const tileHtml = (id, icon, title, sub, status, on, disabled) => `
     <button class="ai-tile${on ? ' on' : ''}${disabled ? ' off' : ''}" data-choice="${id}" ${disabled ? 'aria-disabled="true"' : ''}>
       <span class="ai-tile-check">${on ? '✓ 사용 중' : ''}</span>
@@ -1671,10 +1693,31 @@ async function viewSettings(section) {
       <span class="ai-tile-status small">${status}</span></button>`;
   const modelName = id => ((aiSt.builtin.models.find(m => m.id === id) || {}).model || id);
   let plusSt = { loggedIn: false }, plusFresh = false, showPlus = false, plusEmail = '';
-  const aiLoad = async () => {
+  const dlPct = dd => Math.floor(100 * dd.done / Math.max(1, dd.total));
+  const dlAct = (m) => {
+    const dd = m.download || {}, pct = dlPct(dd);
+    return dd.stage ? `<span class="muted">${esc(dd.stage)}…</span>` : `<span class="bar wide"><i style="width:${pct}%"></i></span> ${pct}% · ${gb(dd.done)} / ${gb(dd.total)} <button class="sm ghost llm-stop" data-id="${m.id}">멈춤</button>`;
+  };
+  const bindStop = () => $$('.llm-stop').forEach(x => x.onclick = async () => { await api('/api/localai/models/cancel', { id: x.dataset.id }); toast('멈췄어요. 다시 누르면 이어서 받아요'); setTimeout(aiLoad, 800); });
+  const aiLoad = async (tick) => {
+    if (aiGen !== AI_GEN || !document.body.contains($('#ai-tiles'))) return;
     try { aiSt = await api('/api/ai/state', undefined, { silent: true }); } catch (e) { $('#ai-detail').textContent = e.message; return; }
+    if (aiGen !== AI_GEN) return;
+    // 모델 받는 중의 주기 갱신: 진행 막대만 바꿈 (화면 전체를 다시 그리면 입력 중인 칸·스크롤이 튐)
+    const dlNow = aiSt.builtin.models.find(m => (m.download || {}).status === 'downloading');
+    if (tick && dlNow) {
+      const pct = dlPct(dlNow.download);
+      const ts = $('.ai-tile[data-choice="builtin"] .ai-tile-status');
+      if (ts) ts.innerHTML = `<span class="bar"><i style="width:${pct}%"></i></span> 받는 중 ${pct}%`;
+      const row = $(`.llm-act[data-id="${dlNow.id}"]`);
+      if (row) { row.innerHTML = dlAct(dlNow); bindStop(); }
+      clearTimeout(AI_TIMER);
+      AI_TIMER = setTimeout(() => aiLoad(true), 1500);
+      return;
+    }
     plusSt = aiSt.plus_enabled ? await api('/api/plus?refresh=' + (plusFresh ? '0' : '1'), undefined, { silent: true }).catch(() => ({ loggedIn: false })) : { loggedIn: false };
     plusFresh = true;
+    if (aiGen !== AI_GEN) return;
     const st = aiSt, b = st.builtin, mc = b.machine || {}, choice = st.choice;
     const plusOn = !!(plusSt.loggedIn && plusSt.sub && plusSt.sub.active);
     const ymd = d => d ? new Date(d).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' }) : '';
@@ -1735,11 +1778,11 @@ async function viewSettings(section) {
         let act;
         if (m.installed) act = m.id === usingId ? '<span class="ok-text">✓ 쓰는 중</span> <button class="sm ghost llm-del" data-id="' + m.id + '">지우기</button>'
           : '<button class="sm primary llm-use" data-id="' + m.id + '">이걸로 쓰기</button> <button class="sm ghost llm-del" data-id="' + m.id + '">지우기</button>';
-        else if (busy) act = dd.stage ? `<span class="muted">${esc(dd.stage)}…</span>` : `<span class="bar wide"><i style="width:${pct}%"></i></span> ${pct}% · ${gb(dd.done)} / ${gb(dd.total)} <button class="sm ghost llm-stop" data-id="${m.id}">멈춤</button>`;
+        else if (busy) act = dlAct(m);
         else act = `<button class="sm ${m.id === b.recommended ? 'primary' : ''} llm-get" data-id="${m.id}">${m.partial ? '이어 받기' : '받기'} (${gb(m.size)})</button>`;
         const err = dd.status === 'error' && dd.error ? `<div class="small bad-text">${esc(dd.error)}</div>` : '';
         const warn = !m.fits ? '<div class="small" style="color:var(--amber)">이 컴퓨터 메모리로는 느리거나 안 될 수 있어요</div>' : '';
-        return `<div class="llm-row${m.id === usingId && m.installed ? ' using' : ''}"><div><b>${esc(m.name)}</b>${tag} · ${esc(m.model)}<div class="small muted">${esc(m.desc)}</div>${warn}${err}</div><div class="llm-act">${act}</div></div>`;
+        return `<div class="llm-row${m.id === usingId && m.installed ? ' using' : ''}"><div><b>${esc(m.name)}</b>${tag} · ${esc(m.model)}<div class="small muted">${esc(m.desc)}</div>${warn}${err}</div><div class="llm-act" data-id="${m.id}">${act}</div></div>`;
       }).join('') + ((st.light || []).includes(usingId)
         ? `<label class="check" style="margin-top:10px"><input type="checkbox" id="draft_light" ${st.draft_light_ok === '1' ? 'checked' : ''}> 세특 초안도 이 가벼운 모델로 쓰기</label>
            <p class="small" style="margin:4px 0 0;color:var(--amber)">가벼운 모델은 기록에 없는 내용을 지어낼 수 있어요. 끄면 초안은 <b>ChatGPT·Gemini로 쓰기</b>(프롬프트 복사)로 해요. 메모리 16GB 이상이면 '추천' 모델이 훨씬 정확해요.</p>`
@@ -1781,13 +1824,13 @@ async function viewSettings(section) {
     if ($('#la-test-apple')) $('#la-test-apple').onclick = () => laTest('apple', $('#la-apple-r'));
     $$('.ai-tile').forEach(t => t.onclick = () => aiChoose(t.dataset.choice, t));
     $$('.llm-get').forEach(x => x.onclick = async () => { await api('/api/localai/models/download', { id: x.dataset.id }); toast('받기 시작했어요. 다 받으면 자동으로 써요 ✨'); aiLoad(); });
-    $$('.llm-stop').forEach(x => x.onclick = async () => { await api('/api/localai/models/cancel', { id: x.dataset.id }); toast('멈췄어요. 다시 누르면 이어서 받아요'); setTimeout(aiLoad, 800); });
+    bindStop();
     $$('.llm-use').forEach(x => x.onclick = async () => { await api('/api/localai/models/use', { id: x.dataset.id }); await api('/api/ai/choose', { choice: 'builtin' }); toast(modelName(x.dataset.id) + '(으)로 바꿨어요 ✓'); flashSaved(x); aiLoad(); updateModeBadge(); });
     $$('.llm-del').forEach(x => x.onclick = async () => { if (!confirmBox('받은 모델을 지울까요? 다시 쓰려면 또 받아야 해요.')) return; await api('/api/localai/models/delete', { id: x.dataset.id }); toast('지웠어요'); aiLoad(); updateModeBadge(); });
     if ($('#draft_local')) $('#draft_local').onchange = async e => { await api('/api/settings', { draft_local: e.target.checked ? '1' : '0' }); flashSaved(e.target); aiLoad(); };
     if ($('#draft_light')) $('#draft_light').onchange = async e => { await api('/api/settings', { draft_light_ok: e.target.checked ? '1' : '0', draft_local: '1' }); flashSaved(e.target); toast(e.target.checked ? '초안도 가벼운 모델로 써요' : '초안은 ChatGPT·Gemini로 쓰기로 해요 ✓'); aiLoad(); };
-    clearTimeout(aiTimer);
-    if (dl && document.body.contains($('#ai-tiles'))) aiTimer = setTimeout(aiLoad, 1500);
+    clearTimeout(AI_TIMER);
+    if (dl && document.body.contains($('#ai-tiles'))) AI_TIMER = setTimeout(() => aiLoad(true), 1500);
     else if (b.models.some(m => (m.download || {}).status === 'done')) updateModeBadge();
   };
   const aiChoose = async (choice, tile, provider) => {

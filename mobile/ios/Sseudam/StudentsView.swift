@@ -595,10 +595,11 @@ struct AddClassSheet: View {
                     }
                 }
                 Section {
-                    TextField("1 김민수\n2 이서연\n…", text: $names, axis: .vertical).lineLimit(5...14)
+                    TextField("김민수\n이서연\n박지훈\n…", text: $names, axis: .vertical).lineLimit(5...14)
                 } header: { Text("학생 명단 (나중에 넣어도 돼요)") } footer: {
-                    Text("NEIS·엑셀에서 번호와 이름을 복사해 붙여넣으세요. 한 줄에 한 명, 번호는 없어도 돼요.")
+                    Text("이름만 한 줄에 한 명씩 붙여넣어도 번호가 1번부터 차례로 붙어요. NEIS·엑셀에서 번호와 이름을 함께 복사해도 돼요.")
                 }
+                RosterPreview(lines: DataStore.previewRoster(names))
             }
             .navigationTitle("반 만들기").navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -626,14 +627,35 @@ struct RosterSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("1 김민수\n2 이서연\n…", text: $names, axis: .vertical).lineLimit(6...16)
-                } footer: { Text("한 줄에 한 명. 이미 있는 이름은 건너뛰어요.") }
+                    TextField("김민수\n이서연\n박지훈\n…", text: $names, axis: .vertical).lineLimit(6...16)
+                } footer: { Text("이름만 한 줄에 한 명씩 붙여넣어도 번호가 차례로 붙어요. '3 김민수'처럼 번호를 써도 돼요. 이미 있는 이름은 건너뛰어요.") }
+                RosterPreview(lines: data.parseRoster(names, for: cls))
             }
             .navigationTitle("\(cls.title) 명단").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("취소") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("넣기") { data.addStudents(names, to: cls); dismiss() }.disabled(names.isEmpty)
+                }
+            }
+        }
+    }
+}
+
+/// 붙여넣은 명단이 몇 번 누구로 들어갈지 미리 보기
+struct RosterPreview: View {
+    var lines: [DataStore.RosterLine]
+    var body: some View {
+        if !lines.isEmpty {
+            Section("이렇게 들어가요 · \(lines.filter { !$0.exists }.count)명") {
+                ForEach(lines) { l in
+                    HStack(spacing: 10) {
+                        Text("\(l.number)").font(Theme.font(14, .bold)).foregroundStyle(Theme.blue).frame(width: 30, alignment: .trailing)
+                        Text(l.name).font(Theme.font(15))
+                        Spacer()
+                        if l.exists { Text("이미 있음").font(Theme.font(12)).foregroundStyle(Theme.soft) }
+                    }
+                    .opacity(l.exists ? 0.5 : 1)
                 }
             }
         }

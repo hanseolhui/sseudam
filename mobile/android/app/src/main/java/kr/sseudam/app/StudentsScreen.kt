@@ -394,8 +394,9 @@ fun AddClassDialog(onDismiss: () -> Unit) {
                     placeholder = { Text(if (kind == "동아리") "동아리 이름" else "과목 (예: 국어)") })
                 Text("학생 명단 (나중에 넣어도 돼요)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = T.soft)
                 OutlinedTextField(names, { names = it }, Modifier.fillMaxWidth().heightIn(min = 110.dp), shape = RoundedCornerShape(14.dp),
-                    colors = fieldColors, placeholder = { Text("1 김민수\n2 이서연\n3 박지훈") })
-                Text("NEIS·엑셀에서 번호와 이름을 복사해 붙여넣으세요. 한 줄에 한 명, 번호는 없어도 돼요.", fontSize = 12.sp, color = T.soft)
+                    colors = fieldColors, placeholder = { Text("김민수\n이서연\n박지훈") })
+                Text("이름만 한 줄에 한 명씩 붙여넣어도 번호가 1번부터 차례로 붙어요. NEIS·엑셀에서 번호와 함께 복사해도 돼요.", fontSize = 12.sp, color = T.soft)
+                RosterPreview(DataStore.previewRoster(names, null))
             }
         },
         confirmButton = {
@@ -417,6 +418,23 @@ private fun Stepper(label: String, minus: () -> Unit, plus: () -> Unit) {
     }
 }
 
+/** 붙여넣은 명단이 몇 번 누구로 들어갈지 미리 보기 */
+@Composable
+fun RosterPreview(lines: List<Triple<Int, String, Boolean>>) {
+    if (lines.isEmpty()) return
+    Column(Modifier.fillMaxWidth().heightIn(max = 220.dp).verticalScroll(rememberScrollState()).clip(RoundedCornerShape(14.dp))
+        .background(T.bg).padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("이렇게 들어가요 · ${lines.count { !it.third }}명", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = T.soft)
+        lines.forEach { (no, name, exists) ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("$no", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (exists) T.soft else T.blue, modifier = Modifier.width(32.dp))
+                Text(name, fontSize = 14.sp, color = if (exists) T.soft else T.ink, modifier = Modifier.weight(1f))
+                if (exists) Text("이미 있음", fontSize = 11.sp, color = T.soft)
+            }
+        }
+    }
+}
+
 @Composable
 fun RosterDialog(cls: SClass, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
@@ -426,11 +444,12 @@ fun RosterDialog(cls: SClass, onDismiss: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(names, { names = it }, Modifier.fillMaxWidth().heightIn(min = 160.dp), shape = RoundedCornerShape(14.dp),
-                    colors = fieldColors, placeholder = { Text("1 김민수\n2 이서연\n3 박지훈") })
+                    colors = fieldColors, placeholder = { Text("김민수\n이서연\n박지훈") })
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("한 줄에 한 명. 이미 있는 이름은 건너뛰어요.", fontSize = 12.sp, color = T.soft, modifier = Modifier.weight(1f))
+                    Text("이름만 한 줄씩 넣어도 번호가 차례로 붙어요. 이미 있는 이름은 건너뛰어요.", fontSize = 12.sp, color = T.soft, modifier = Modifier.weight(1f))
                     ChipButton("붙여넣기") { names = pasteText(ctx) }
                 }
+                RosterPreview(DataStore.previewRoster(names, cls))
                 if (result.isNotEmpty()) Text(result, fontSize = 13.sp, color = T.mint)
             }
         },

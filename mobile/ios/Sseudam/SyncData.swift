@@ -235,13 +235,14 @@ final class DataStore: ObservableObject {
         return c
     }
 
-    /// 명단 붙여넣기: 줄마다 "번호 이름" 또는 "이름". 쉼표·탭으로 이어도 됨.
-    @discardableResult
-    func addStudents(_ text: String, to c: SClass) -> Int {
-        var added = 0
+    /// 붙여넣은 명단 읽기: '1 김민수' · '1번 김민수' · 이름만 한 줄씩 모두 됨. 번호가 없으면 이어서 자동으로 매김.
+    /// exists = 이 반에 이미 있는 이름 (넣을 때 건너뜀)
+    struct RosterLine: Identifiable { let number: Int; let name: String; let exists: Bool; var id: String { "\(number)-\(name)" } }
+    func parseRoster(_ text: String, for c: SClass) -> [RosterLine] {
+        var out: [RosterLine] = []
         var nextNo = (students(in: c).compactMap(\.number).max() ?? 0) + 1
-        let parts = text.components(separatedBy: CharacterSet(charactersIn: "\n,;\t"))
-        for raw in parts {
+        var seen = Set<String>()
+        for raw in text.components(separatedBy: CharacterSet(charactersIn: "\n,;\t")) {
             var line = raw.trimmingCharacters(in: .whitespaces)
             guard !line.isEmpty else { continue }
             var number: Int?
@@ -250,12 +251,45 @@ final class DataStore: ObservableObject {
                 line = String(line[m.upperBound...]).trimmingCharacters(in: .whitespaces)
             }
             let name = line.components(separatedBy: " ").first ?? line
-            guard name.count >= 2, name.count <= 10 else { continue }
+            guard name.count >= 2, name.count <= 10, !seen.contains(name) else { continue }
+            seen.insert(name)
             let uid = DataStore.studentUID(c.uid, name)
-            if let cur = students.first(where: { $0.uid == uid }), !cur.isDeleted { continue }
-            let no = number ?? nextNo
-            nextNo = max(nextNo, no + 1)
-            upsert(&students, SStudent(uid: uid, updated_at: now, class_uid: c.uid, number: no, name: name, aliases: ""))
+            let exists = students.first(where: { $0.uid == uid }).map { !$0.isDeleted } ?? false
+            let no = exists ? (students.first { $0.uid == uid }?.number ?? 0) : (number ?? nextNo)
+            if !exists { nextNo = max(nextNo, no + 1) }
+            out.append(RosterLine(number: no, name: name, exists: exists))
+        }
+        return out
+    }
+
+    /// 아직 없는 반(반 만들기 화면)의 미리 보기 — 번호는 1번부터
+    static func previewRoster(_ text: String) -> [RosterLine] {
+        var out: [RosterLine] = [], next = 1, seen = Set<String>()
+        for raw in text.components(separatedBy: CharacterSet(charactersIn: "\n,;\t")) {
+            var line = raw.trimmingCharacters(in: .whitespaces)
+            guard !line.isEmpty else { continue }
+            var number: Int?
+            if let m = line.range(of: #"^\d{1,3}(번|\.|\))?\s*"#, options: .regularExpression) {
+                number = Int(line[m].filter(\.isNumber))
+                line = String(line[m.upperBound...]).trimmingCharacters(in: .whitespaces)
+            }
+            let name = line.components(separatedBy: " ").first ?? line
+            guard name.count >= 2, name.count <= 10, !seen.contains(name) else { continue }
+            seen.insert(name)
+            let no = number ?? next
+            next = max(next, no + 1)
+            out.append(RosterLine(number: no, name: name, exists: false))
+        }
+        return out
+    }
+
+    /// 명단 붙여넣기: 줄마다 "번호 이름" 또는 "이름". 쉼표·탭으로 이어도 됨.
+    @discardableResult
+    func addStudents(_ text: String, to c: SClass) -> Int {
+        var added = 0
+        for r in parseRoster(text, for: c) where !r.exists {
+            upsert(&students, SStudent(uid: DataStore.studentUID(c.uid, r.name), updated_at: now, class_uid: c.uid,
+                                       number: r.number, name: r.name, aliases: ""))
             added += 1
         }
         changed()

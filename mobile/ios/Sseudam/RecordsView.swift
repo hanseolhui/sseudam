@@ -262,10 +262,12 @@ struct EntryDetail: View {
         .onChange(of: current.transcript) { t in if transcript.isEmpty { transcript = t } }
         .onDisappear {
             player.stop()
-            let tChanged = current.isAudio && transcript != current.transcript
+            let tChanged = current.isAudio && !transcript.isEmpty && transcript != current.transcript
             if !sent && (kind != current.kind || memo != current.memo || (!current.isAudio && text != current.text) || tChanged) {
                 store.edit(current, kind: kind, memo: memo, text: current.isAudio ? nil : text,
                            transcript: tChanged ? transcript : nil)
+            } else if sent && tChanged {
+                store.edit(current, transcript: transcript)   // 보낸 뒤에도 받아쓴 글은 고칠 수 있음
             }
         }
     }
@@ -299,8 +301,7 @@ struct EntryDetail: View {
                     .background(Theme.butter.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 TextField("받아쓴 글", text: $transcript, axis: .vertical).font(Theme.font(16)).lineLimit(3...20)
-                    .disabled(sent)
-                Text(sent ? "컴퓨터로 함께 보냈어요." : "잘못 들린 이름이나 낱말은 여기서 고쳐요. 보낼 때 함께 가요.")
+                Text(sent ? "잘못 들린 이름은 여기서 고치면 학생별 기록을 다시 나눠서 컴퓨터에도 반영돼요." : "잘못 들린 이름이나 낱말은 여기서 고쳐요. 보낼 때 함께 가요.")
                     .font(Theme.font(12)).foregroundStyle(Theme.soft)
             case .done:
                 Text("말소리를 찾지 못했어요.").font(Theme.font(14)).foregroundStyle(Theme.soft)

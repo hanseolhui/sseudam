@@ -415,9 +415,8 @@ def class_detail(h, q, b, cid):
 
 
 def parse_roster(text):
-    """'1 김민수', '1\t김민수', '1번 김민수', '김민수' 형식을 모두 허용."""
+    """'1 김민수', '1\t김민수', '1번 김민수', '김민수' 형식을 모두 허용. [(번호 또는 None, 이름)]"""
     out = []
-    auto_no = 1
     for line in (text or "").splitlines():
         line = line.strip()
         if not line:
@@ -435,28 +434,66 @@ def parse_roster(text):
                 name = cell.replace(" ", "")
         if not name:
             continue
-        if num is None:
-            num = auto_no
-        auto_no = num + 1
         out.append((num, name))
     return out
+
+
+def roster_plan(conn, cid, text):
+    """붙여넣은 명단을 어떻게 넣을지: 번호를 쓴 줄은 그 번호로(같은 번호가 있으면 이름을 바꿈),
+    번호 없이 이름만 쓴 줄은 이 반 마지막 번호 다음부터 차례로 — 이미 있는 이름은 건너뜀 (기존 학생을 덮어쓰지 않게)."""
+    rows = db.rows(conn, "SELECT id, number, name FROM students WHERE class_id=?", (cid,))
+    by_no = {r["number"]: r for r in rows if r["number"] is not None}
+    names = {r["name"] for r in rows}
+    parsed = parse_roster(text)
+    taken = set(by_no) | {n for n, _ in parsed if n is not None}   # 번호를 쓴 줄의 번호는 자동 번호가 피함
+    nxt = max([r["number"] or 0 for r in rows] + [0]) + 1
+    plan, seen = [], set()
+    for num, name in parsed:
+        if name in seen:
+            continue
+        seen.add(name)
+        if num is None:
+            if name in names:
+                plan.append({"number": next((r["number"] for r in rows if r["name"] == name), None), "name": name, "action": "skip"})
+                continue
+            while nxt in taken:
+                nxt += 1
+            num = nxt
+            taken.add(num)
+        ex = by_no.get(num)
+        if ex and ex["name"] == name:
+            plan.append({"number": num, "name": name, "action": "skip"})
+        elif ex:
+            plan.append({"number": num, "name": name, "action": "update", "id": ex["id"], "old": ex["name"]})
+        else:
+            plan.append({"number": num, "name": name, "action": "add"})
+    return plan
+
+
+@route("POST", "/api/students/bulk_preview")
+def students_bulk_preview(h, q, b):
+    conn = db.connect()
+    try:
+        return {"plan": roster_plan(conn, int(b["class_id"]), b.get("text", ""))}
+    finally:
+        conn.close()
 
 
 @route("POST", "/api/students/bulk")
 def students_bulk(h, q, b):
     cid = int(b["class_id"])
-    parsed = parse_roster(b.get("text", ""))
-    if not parsed:
-        raise ApiError("명단을 읽지 못했습니다. 한 줄에 '번호 이름' 형식으로 붙여넣으세요.")
     conn = db.connect()
+    plan = roster_plan(conn, cid, b.get("text", ""))
+    if not plan:
+        conn.close()
+        raise ApiError("명단을 읽지 못했습니다. 한 줄에 이름 하나씩(또는 '번호 이름') 붙여넣으세요.")
     added, updated = 0, 0
-    for num, name in parsed:
-        ex = db.row(conn, "SELECT id FROM students WHERE class_id=? AND number=?", (cid, num))
-        if ex:
-            conn.execute("UPDATE students SET name=? WHERE id=?", (name, ex["id"]))
+    for p in plan:
+        if p["action"] == "update":
+            conn.execute("UPDATE students SET name=? WHERE id=?", (p["name"], p["id"]))
             updated += 1
-        else:
-            conn.execute("INSERT INTO students(class_id, number, name) VALUES (?,?,?)", (cid, num, name))
+        elif p["action"] == "add":
+            conn.execute("INSERT INTO students(class_id, number, name) VALUES (?,?,?)", (cid, p["number"], p["name"]))
             added += 1
     conn.commit()
     conn.close()
