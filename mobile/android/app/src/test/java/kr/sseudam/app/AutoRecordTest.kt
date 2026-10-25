@@ -50,8 +50,20 @@ class AutoRecordTest {
         val (keep, voiced, clip) = sink.ends[0]
         assertTrue(keep)
         assertEquals(3000L, voiced)
-        assertEquals(1000L + 3000 + 2500, clip)        // 프리롤 + 말 + 멈춤 대기
+        assertEquals(1000L + 3000 + 500, clip)         // 프리롤 + 말 + 조용한 꼬리 0.5초
         assertFalse(vad.capturing)
+    }
+
+    @Test fun trailingSilenceIsTrimmedToHalfSecond() {
+        feed(-60f, 2000)          // 프레임 0..19
+        feed(-30f, 2000)          // 20..39 (말)
+        feed(-60f, 1000)          // 40..49 (말 사이 쉼 → 다시 말하면 그대로 씀)
+        feed(-30f, 1000)          // 50..59
+        feed(-60f, 2500)          // 60..84 (끝 조용함)
+        assertEquals(1, sink.ends.size)
+        val all = sink.begins[0] + sink.written
+        assertEquals((10..64).toList(), all)           // 프리롤부터 끝 꼬리 0.5초(60..64)까지, 중간 쉼 포함
+        assertEquals(all.size * 100L, sink.ends[0].third)
     }
 
     @Test fun backAboveThresholdResetsSilence() {

@@ -74,6 +74,7 @@ interface ClipSink<F> {
  * 대기: 처음 1초 평균으로 바닥 소음을 잡고, 이후 조용해지면 빨리(0.9/0.1)·시끄러워지면 천천히(0.995/0.005) 따라간다.
  *       문턱 = max(바닥 + 여유, 최소값). 문턱을 250ms 연속 넘으면 녹음 시작 (프리롤 1초 포함).
  * 녹음: 바닥은 고정. (문턱 − 3dB) 아래가 이어지면 조용함으로 쌓고, 멈춤 시간이 차면 끝. 문턱을 다시 넘으면 조용함을 0으로.
+ *       조용한 프레임은 모아 뒀다가 다시 소리가 나면 쓰고, 끝날 때는 앞 0.5초만 쓴다 (꼬리 자르기 · clipMs = 실제로 쓴 길이).
  *       말소리(문턱 위) 합이 1초 미만이면 버림. 10분이 차면 끊어 담고 바로 이어서 듣는다.
  */
 class AutoVad<F>(
@@ -86,11 +87,16 @@ class AutoVad<F>(
     calibMs: Int = 1000,
     private val minVoicedMs: Long = 1000,
     private val maxClipMs: Long = 10 * 60_000L,
+    tailMs: Int = 500,
 ) {
+    private val tailFrames = tailMs / frameMs
     private val attackFrames = ceil(attackMs / frameMs.toDouble()).toInt().coerceAtLeast(1)
     private val calibFrames = (calibMs / frameMs).coerceAtLeast(1)
     private val ringCap = preRollMs / frameMs + attackFrames
     private val ring = ArrayDeque<F>()
+    /** 담는 중 조용한 프레임은 바로 쓰지 않고 모아 둔다 → 끝의 조용한 꼬리를 0.5초만 남기고 자르려고 */
+    private val held = ArrayList<F>()
+    private var writtenFrames = 0L
 
     /** 바닥 소음 (dBFS) · 처음 1초 동안은 null */
     var floor: Float? = null; private set
@@ -120,7 +126,7 @@ class AutoVad<F>(
         if (db > threshold) above++ else above = 0
         if (above >= attackFrames) {
             capturing = true
-            clipFrames = ring.size.toLong(); voicedFrames = above.toLong(); silenceFrames = 0; above = 0
+            clipFrames = ring.size.toLong(); writtenFrames = clipFrames; voicedFrames = above.toLong(); silenceFrames = 0; above = 0
             sink.begin(ring.toList()); ring.clear()
             return
         }
@@ -128,23 +134,32 @@ class AutoVad<F>(
     }
 
     private fun capture(db: Float, frame: F) {
-        sink.write(frame); clipFrames++
+        clipFrames++
         val th = threshold
-        if (db > th) { voicedFrames++; silenceFrames = 0 } else if (db < th - 3f) silenceFrames++
+        if (db < th - 3f) { silenceFrames++; held.add(frame) }
+        else {
+            // 조용함이 끝났으면 모아 둔 것부터 쓰고 이 프레임을 쓴다
+            held.forEach { sink.write(it) }; writtenFrames += held.size; held.clear()
+            sink.write(frame); writtenFrames++
+            if (db > th) { voicedFrames++; silenceFrames = 0 }
+        }
         if (silenceFrames * frameMs >= stopDelayMs) { endClip(); return }
         if (clipFrames * frameMs >= maxClipMs) {
             val speaking = silenceFrames == 0L
             endClip()
             // 말하는 중에 10분이 찼으면 끊김 없이 다음 녹음으로 이어 간다
-            if (speaking) { capturing = true; clipFrames = 0; voicedFrames = 0; silenceFrames = 0; sink.begin(emptyList()) }
+            if (speaking) { capturing = true; clipFrames = 0; writtenFrames = 0; voicedFrames = 0; silenceFrames = 0; sink.begin(emptyList()) }
         }
     }
 
     private fun endClip() {
         capturing = false
+        // 끝의 조용한 꼬리는 앞 0.5초만 남기고 버림
+        val tail = held.take(tailFrames)
+        tail.forEach { sink.write(it) }; writtenFrames += tail.size; held.clear()
         val voiced = voicedFrames * frameMs
-        sink.end(voiced >= minVoicedMs, voiced, clipFrames * frameMs)
-        clipFrames = 0; voicedFrames = 0; silenceFrames = 0; above = 0
+        sink.end(voiced >= minVoicedMs, voiced, writtenFrames * frameMs)
+        clipFrames = 0; writtenFrames = 0; voicedFrames = 0; silenceFrames = 0; above = 0
         ring.clear()
     }
 

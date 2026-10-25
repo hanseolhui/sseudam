@@ -92,6 +92,7 @@ final class AutoRecorder: ObservableObject {
     private var gate = AutoGate()
     private var preroll: [AVAudioPCMBuffer] = []
     private var prerollFrames: AVAudioFrameCount = 0
+    private var pending: [AVAudioPCMBuffer] = []   // 담는 중 조용한 조각 — 말이 이어지면 쓰고, 끝나면 앞 0.5초만 남긴다
     private var file: AVAudioFile?
     private var url: URL?
     private var framesWritten: AVAudioFramePosition = 0
@@ -173,19 +174,20 @@ final class AutoRecorder: ObservableObject {
         let dt = Double(buf.frameLength) / sampleRate
         level = AutoRecorder.dbToLevel(db)
         thresholdLevel = AutoRecorder.dbToLevel(gate.threshold)
+        let quiet = db <= gate.threshold - gate.hysteresis
         switch gate.feed(db: db, dt: dt) {
         case .start:
             begin()
         case .stop(let voiced):
-            write(buf)
+            pending.append(buf)
             finish(voiced: voiced)
             return
         case .none:
             break
         }
         if capturing {
-            write(buf)
-            captureElapsed = Double(framesWritten) / sampleRate
+            if quiet { pending.append(buf) } else { flushPending(); write(buf) }
+            captureElapsed = Double(framesWritten + AVAudioFramePosition(pending.reduce(0) { $0 + $1.frameLength })) / sampleRate
             if captureElapsed >= maxClip {          // 너무 길면 끊어서 저장하고 계속 듣기
                 let v = gate.reset() ?? captureElapsed
                 finish(voiced: v)
@@ -220,7 +222,16 @@ final class AutoRecorder: ObservableObject {
         do { try file.write(from: buf); framesWritten += AVAudioFramePosition(buf.frameLength) } catch {}
     }
 
+    private func flushPending() {
+        for b in pending { write(b) }
+        pending = []
+    }
+
     private func finish(voiced: Double) {
+        // 끝의 조용한 구간은 0.5초만 남기고 버린다
+        var tail: AVAudioFrameCount = 0
+        for b in pending where tail < AVAudioFrameCount(sampleRate * 0.5) { write(b); tail += b.frameLength }
+        pending = []
         guard capturing, let u = url else { capturing = false; return }
         let d = Double(framesWritten) / sampleRate
         file = nil; url = nil; capturing = false; captureElapsed = 0   // 닫혀야 m4a가 마무리됨
