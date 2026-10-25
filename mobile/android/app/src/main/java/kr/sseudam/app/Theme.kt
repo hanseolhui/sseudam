@@ -45,17 +45,17 @@ import java.io.File
 
 /** 쓰담 디자인 (아이폰 Theme.swift 와 같은 색): 크림 배경 · 파스텔 · 부드러운 카드 */
 object T {
-    val blue = Color(0xFF5C7DFA)
-    val lavender = Color(0xFFA78BFA)
+    val blue = Color(0xFF2E3A8C)
+    val lavender = Color(0xFF5A67C9)
     val coral = Color(0xFFFF8C7A)
     val mint = Color(0xFF5FD1A5)
-    val butter = Color(0xFFFFD166)
+    val butter = Color(0xFFFFD45C)
     val peach = Color(0xFFFFDECC)
     val bg = Color(0xFFFFF8F0)
     val card = Color.White
     val ink = Color(0xFF1F2330)
     val soft = Color(0xFF8A8F9C)
-    val brand = Brush.linearGradient(listOf(blue, lavender))
+    val brand = Brush.linearGradient(listOf(blue, Color(0xFF4B58B5)))
     val warm = Brush.linearGradient(listOf(coral, Color(0xFFFFA880)))
 }
 

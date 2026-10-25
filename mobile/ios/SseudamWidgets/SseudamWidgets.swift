@@ -3,8 +3,8 @@ import WidgetKit
 import AppIntents
 
 private enum Brand {
-    static let blue = Color(red: 0.36, green: 0.49, blue: 0.98)      // #5C7DFA
-    static let lavender = Color(red: 0.65, green: 0.55, blue: 0.98)  // #A78BFA
+    static let blue = Color(red: 0.18, green: 0.23, blue: 0.55)      // #2E3A8C
+    static let lavender = Color(red: 0.29, green: 0.35, blue: 0.71)  // #4B58B5
     static let recordURL = URL(string: "sseudam://record")!
 }
 

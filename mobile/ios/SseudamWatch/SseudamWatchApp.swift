@@ -10,8 +10,8 @@ struct SseudamWatchApp: App {
 }
 
 private enum Brand {
-    static let blue = Color(red: 0.36, green: 0.49, blue: 0.98)      // #5C7DFA
-    static let lavender = Color(red: 0.65, green: 0.55, blue: 0.98)  // #A78BFA
+    static let blue = Color(red: 0.40, green: 0.46, blue: 0.85)      // #6574D8 (검은 화면 위 남색)
+    static let lavender = Color(red: 0.56, green: 0.61, blue: 0.92)  // #8F9BEA
     static let coral = Color(red: 1.00, green: 0.55, blue: 0.48)     // #FF8C7A
     static let mint = Color(red: 0.37, green: 0.82, blue: 0.65)      // #5FD1A5
     static let gradient = LinearGradient(colors: [blue, lavender], startPoint: .topLeading, endPoint: .bottomTrailing)

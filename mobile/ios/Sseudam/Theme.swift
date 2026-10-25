@@ -3,11 +3,12 @@ import UIKit
 
 /// 쓰담 디자인: 크림 배경 · 파스텔 · 둥근 글꼴 · 부드러운 카드
 enum Theme {
-    static let blue = Color(red: 0.36, green: 0.49, blue: 0.98)      // 말랑 블루 #5C7DFA
-    static let lavender = Color(red: 0.65, green: 0.55, blue: 0.98)  // #A78BFA
+    /// 남색 (다크 모드에서는 남색 바탕 위에서 보이게 밝은 남색)
+    static let blue = dyn(0x2E3A8C, 0x8F9BEA)
+    static let lavender = dyn(0x5A67C9, 0xAEB7F2)
     static let coral = Color(red: 1.00, green: 0.55, blue: 0.48)     // #FF8C7A
     static let mint = Color(red: 0.37, green: 0.82, blue: 0.65)      // #5FD1A5
-    static let butter = Color(red: 1.00, green: 0.82, blue: 0.40)    // #FFD166
+    static let butter = Color(red: 1.00, green: 0.83, blue: 0.36)    // #FFD45C
     static let peach = Color(red: 1.00, green: 0.87, blue: 0.80)
 
     static let bg = Color("Background")
@@ -15,7 +16,13 @@ enum Theme {
     static let ink = Color.primary
     static let soft = Color.secondary
 
-    static let brand = LinearGradient(colors: [blue, lavender], startPoint: .topLeading, endPoint: .bottomTrailing)
+    static let brand = LinearGradient(colors: [dyn(0x2E3A8C, 0x4B58B5), dyn(0x4B58B5, 0x6574D8)], startPoint: .topLeading, endPoint: .bottomTrailing)
+
+    /// 라이트 · 다크에 따라 바뀌는 색
+    static func dyn(_ light: UInt32, _ dark: UInt32) -> Color {
+        func ui(_ v: UInt32) -> UIColor { UIColor(red: CGFloat((v >> 16) & 0xFF) / 255, green: CGFloat((v >> 8) & 0xFF) / 255, blue: CGFloat(v & 0xFF) / 255, alpha: 1) }
+        return Color(UIColor { $0.userInterfaceStyle == .dark ? ui(dark) : ui(light) })
+    }
     static let warm = LinearGradient(colors: [coral, Color(red: 1, green: 0.66, blue: 0.5)], startPoint: .topLeading, endPoint: .bottomTrailing)
 
     /// 기기 '글자 크기' 설정을 따라 커진다 (화면이 깨지지 않게 1.5배까지)

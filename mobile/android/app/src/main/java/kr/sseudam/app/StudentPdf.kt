@@ -21,7 +21,7 @@ object StudentPdf {
     private const val W = 595
     private const val H = 842
     private const val M = 40f
-    private val blue = 0xFF5C7DFA.toInt()
+    private val blue = 0xFF2E3A8C.toInt()
     private val ink = 0xFF1F2330.toInt()
     private val soft = 0xFF8A8F9C.toInt()
     private val line = 0xFFE3E5EA.toInt()
