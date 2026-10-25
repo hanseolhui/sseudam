@@ -56,7 +56,8 @@ object T {
     val ink = Color(0xFF1F2330)
     val soft = Color(0xFF8A8F9C)
     val brand = Brush.linearGradient(listOf(blue, Color(0xFF4B58B5)))
-    val warm = Brush.linearGradient(listOf(coral, Color(0xFFFFA880)))
+    /** 녹음 중 버튼 (버터) */
+    val warm = Brush.linearGradient(listOf(butter, Color(0xFFFFC23D)))
 }
 
 fun Modifier.card(padding: Dp = 16.dp): Modifier = this

@@ -35,7 +35,7 @@ final class Recorder: NSObject, ObservableObject {
     private var quietRun = 0.0
     private var stopDelay = 2.5
     private var liveStartFrame: AVAudioFramePosition = 0   // 지금 받아쓰기 요청이 시작된 곳 ('녹음 끝' 자를 위치 계산)
-    private(set) var trimTo: Double?                         // '녹음 끝'이라고 말한 곳 — 그 앞까지만 남긴다
+    private(set) var trimTo: Double?                         // '녹음 끝'이라고 말한 곳·말이 끝난 곳 — 그 앞까지만 남긴다
 
     private let engine = AVAudioEngine()
     private var file: AVAudioFile?
@@ -126,7 +126,7 @@ final class Recorder: NSObject, ObservableObject {
     }
 
     /// 손 없이 시작한 녹음: 주변 소음보다 큰 말소리가 나온 뒤, 정한 시간만큼 조용하면 끝낸다.
-    /// 처음 8초 동안 아무 말도 없으면 그냥 끝낸다 (짧아서 버려짐).
+    /// 처음 8초 동안 아무 말도 없으면 그냥 끝내고 버린다.
     private func watchSilence(db: Float, dt: Double) {
         guard let floor = floorDb else {
             warmDbs.append(db)
@@ -140,8 +140,10 @@ final class Recorder: NSObject, ObservableObject {
             if db < floor { floorDb = floor * 0.9 + db * 0.1 }
             if db < th - 3 { quietRun += dt }
         }
-        if spoke && quietRun >= stopDelay { onAutoStop?() }
-        else if !spoke && elapsed > 8 { onAutoStop?() }
+        // 끝의 조용한 구간은 0.5초만 남기고 자르고, 말이 없었으면 0초로 잘라 버린다
+        if trimTo != nil { return }
+        if spoke && quietRun >= stopDelay { trimTo = max(0, elapsed - quietRun + 0.5); onAutoStop?() }
+        else if !spoke && elapsed > 8 { trimTo = 0; onAutoStop?() }
     }
 
     private func tick() { elapsed = Double(framesWritten) / sampleRate }

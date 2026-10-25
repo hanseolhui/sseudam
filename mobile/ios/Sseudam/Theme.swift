@@ -23,7 +23,8 @@ enum Theme {
         func ui(_ v: UInt32) -> UIColor { UIColor(red: CGFloat((v >> 16) & 0xFF) / 255, green: CGFloat((v >> 8) & 0xFF) / 255, blue: CGFloat(v & 0xFF) / 255, alpha: 1) }
         return Color(UIColor { $0.userInterfaceStyle == .dark ? ui(dark) : ui(light) })
     }
-    static let warm = LinearGradient(colors: [coral, Color(red: 1, green: 0.66, blue: 0.5)], startPoint: .topLeading, endPoint: .bottomTrailing)
+    /// 녹음 중 버튼 (버터)
+    static let warm = LinearGradient(colors: [butter, Color(red: 1, green: 0.76, blue: 0.24)], startPoint: .topLeading, endPoint: .bottomTrailing)
 
     /// 기기 '글자 크기' 설정을 따라 커진다 (화면이 깨지지 않게 1.5배까지)
     static func font(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {

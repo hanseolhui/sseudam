@@ -8,12 +8,17 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.media.MediaCodec
+import android.media.MediaExtractor
+import android.media.MediaFormat
+import android.media.MediaMuxer
 import android.media.MediaRecorder
 import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.io.File
+import java.nio.ByteBuffer
 
 /** 화면이 꺼져도 계속 녹음하는 포그라운드 서비스. AAC(m4a) 모노 16kHz 32kbps ≈ 1시간 14MB. */
 class RecordService : Service() {
@@ -64,7 +69,13 @@ class RecordService : Service() {
                     val amp = it.maxAmplitude
                     level.value = (amp / 20000f).coerceIn(0f, 1f)
                     // 손 없이 녹음: 0.1초마다 소리 크기를 보고 말이 멈추면 끝내고 담는다
-                    if (detector?.feed(EndDetector.dbfs(amp)) == true) { detector = null; endAndSave(); return }
+                    val d = detector
+                    if (d?.feed(EndDetector.dbfs(amp)) == true) {
+                        detector = null
+                        // 말이 없었으면 버리고, 있었으면 끝의 조용한 구간을 0.5초만 남기고 자른다
+                        if (d.spoke) endAndSave(cutMs = (d.stopDelayMs - 500).coerceAtLeast(0)) else { lastFile?.let { f -> end(); f.delete() } }
+                        return
+                    }
                 }
             }
             if (recording.value) android.os.Handler(mainLooper).postDelayed(this, 100)
@@ -121,15 +132,16 @@ class RecordService : Service() {
         else { r.pause(); pausedAt = SystemClock.elapsedRealtime(); paused.value = true; level.value = 0f }
     }
 
-    /** 손 없이 녹음 끝: 버튼 녹음과 같은 Store.add 로 바로 담는다 (1초 미만은 버림) */
-    private fun endAndSave() {
-        val dur = elapsedMs(); val at = startedAt; val f = lastFile
+    /** 손 없이 녹음 끝: 버튼 녹음과 같은 Store.add 로 바로 담는다 (1초 미만은 버림) · cutMs = 끝에서 잘라 낼 길이 */
+    private fun endAndSave(cutMs: Long = 0) {
+        val dur = elapsedMs() - cutMs; val at = startedAt; val f = lastFile
         val marks = markers.value; val cls = pickedClass.value; val p = period.value
         end()
         if (f == null) return
         if (dur < 1000) { f.delete(); return }
+        if (cutMs > 0) trimM4a(f, dur)
         Store.init(this)
-        runCatching { Store.add(f, dur / 1000.0, "수업", "", at, marks, cls, p) }
+        runCatching { Store.add(f, dur / 1000.0, "수업", "", at, marks.filter { it.t * 1000 <= dur }, cls, p) }
             .onSuccess { lastSavedId.value = Store.items.value.firstOrNull()?.id }
     }
 
@@ -140,5 +152,26 @@ class RecordService : Service() {
         recorder?.release(); recorder = null
         recording.value = false; paused.value = false; level.value = 0f
         stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
+    }
+
+    /** m4a 를 앞에서 keepMs 까지만 남긴다 (다시 인코딩 없이 그대로 옮겨 담기). 실패하면 원본 그대로 */
+    private fun trimM4a(f: File, keepMs: Long) {
+        val out = File(f.parentFile, f.nameWithoutExtension + "-cut.m4a")
+        val ok = runCatching {
+            val ex = MediaExtractor(); ex.setDataSource(f.absolutePath)
+            val fmt = ex.getTrackFormat(0); ex.selectTrack(0)
+            val mux = MediaMuxer(out.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            val track = mux.addTrack(fmt); mux.start()
+            val size = if (fmt.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) fmt.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE) else 64 * 1024
+            val buf = ByteBuffer.allocate(size); val info = MediaCodec.BufferInfo()
+            while (true) {
+                val n = ex.readSampleData(buf, 0)
+                if (n < 0 || ex.sampleTime > keepMs * 1000) break
+                info.set(0, n, ex.sampleTime, if (ex.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0)
+                mux.writeSampleData(track, buf, info); ex.advance()
+            }
+            mux.stop(); mux.release(); ex.release()
+        }.isSuccess
+        if (ok && out.length() > 0 && f.delete()) out.renameTo(f) else out.delete()
     }
 }

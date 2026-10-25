@@ -72,7 +72,7 @@ struct HomeView: View {
                         }
                     } else {
                         Button { nav.tab = .connect } label: {
-                            Pill(text: "컴퓨터와 연결하기", icon: "link", color: Theme.coral)
+                            Pill(text: "컴퓨터와 연결하기", icon: "link", color: Theme.blue)
                         }
                     }
                     if store.todayCount > 0 {
@@ -104,15 +104,15 @@ struct HomeView: View {
         VStack(spacing: 16) {
             ZStack {
                 if rec.isRecording && !rec.isPaused {
-                    PulseRings(color: Theme.coral, level: CGFloat(rec.level))
+                    PulseRings(color: Theme.butter, level: CGFloat(rec.level))
                 }
                 Button(action: toggle) {
                     ZStack {
                         Circle().fill(rec.isRecording ? Theme.warm : Theme.brand)
                             .frame(width: 148, height: 148)
-                            .shadow(color: (rec.isRecording ? Theme.coral : Theme.blue).opacity(0.4), radius: 18, y: 8)
+                            .shadow(color: (rec.isRecording ? Theme.butter : Theme.blue).opacity(0.4), radius: 18, y: 8)
                         Image(systemName: rec.isRecording ? "stop.fill" : "mic.fill")
-                            .font(.system(size: 52, weight: .semibold)).foregroundStyle(.white)
+                            .font(.system(size: 52, weight: .semibold)).foregroundStyle(rec.isRecording ? Color(red: 0.18, green: 0.23, blue: 0.55) : .white)
                     }
                 }
                 .buttonStyle(Squishy())

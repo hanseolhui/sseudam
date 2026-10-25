@@ -199,7 +199,7 @@ fun HomeScreen(nav: Nav) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(greeting(recording), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = T.ink)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (paired) Pill("✓ 컴퓨터로 자동 전송", T.mint) else Pill("🔗 컴퓨터와 연결하기", T.coral) { nav.switch(3) }
+                    if (paired) Pill("✓ 컴퓨터로 자동 전송", T.mint) else Pill("🔗 컴퓨터와 연결하기", T.blue) { nav.switch(3) }
                     val today = items.count { android.text.format.DateUtils.isToday(it.createdAt) }
                     if (today > 0) Pill("✨ 오늘 ${today}개", T.lavender)
                 }
@@ -212,11 +212,11 @@ fun HomeScreen(nav: Nav) {
         Column(Modifier.fillMaxWidth().card(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             val pulse by animateFloatAsState(if (recording && !paused) 1f + level * 0.25f else 1f, label = "pulse")
             Box(Modifier.height(200.dp), contentAlignment = Alignment.Center) {
-                if (recording && !paused) Box(Modifier.size(150.dp).scale(pulse).clip(CircleShape).background(T.coral.copy(alpha = 0.15f)))
+                if (recording && !paused) Box(Modifier.size(150.dp).scale(pulse).clip(CircleShape).background(T.butter.copy(alpha = 0.3f)))
                 Box(Modifier.size(148.dp).clip(CircleShape).background(if (recording) T.warm else T.brand).clickable { toggle() },
                     contentAlignment = Alignment.Center) {
                     Icon(if (recording) Icons.Filled.Stop else Icons.Filled.Mic, if (recording) "녹음 끝내기" else "녹음 시작",
-                        tint = Color.White, modifier = Modifier.size(56.dp))
+                        tint = if (recording) T.blue else Color.White, modifier = Modifier.size(56.dp))
                 }
             }
             Text(if (recording) timeString(elapsed) else "눌러서 말하기", fontSize = if (recording) 40.sp else 20.sp,
