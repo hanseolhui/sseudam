@@ -17,6 +17,7 @@ struct ConnectView: View {
                     computerPicker
                     if store.autoSend && !store.computerSeen && !Relay.paired { waitingCard }
                     if store.computer == "mac" { macCards } else { windowsCards }
+                    PlusCard()
                     sttCard
                     aiCard
                     lockCard

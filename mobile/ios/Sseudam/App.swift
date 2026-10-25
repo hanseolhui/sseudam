@@ -9,7 +9,7 @@ struct SseudamApp: App {
     @StateObject private var data = DataStore.shared
     @StateObject private var lock = AppLock.shared
 
-    init() { WatchBridge.shared.activate() }
+    init() { WatchBridge.shared.activate(); Task { @MainActor in Plus.shared.listen() } }
     @Environment(\.scenePhase) private var phase
 
     var body: some Scene {

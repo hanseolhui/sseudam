@@ -13,6 +13,7 @@
 		2CE9844BCEBC52E55B5405F8 /* AssignViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC3062820F22EC3F4C3D9B59 /* AssignViews.swift */; };
 		3397DEE58ED436C15D1945DC /* StudentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16AA1BC28AEFBB92714E8E8A /* StudentsView.swift */; };
 		3461824010FB4D253F770882 /* ConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE147E1357C039411699FAD9 /* ConnectView.swift */; };
+		353D2A21C575E27A16B9322D /* PlusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 322FD0EB6E0F9908E7DEE4F3 /* PlusView.swift */; };
 		3CCC1D476D7F96DEB290DD9E /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BD0D2D816588F4CF251ACAC /* HomeView.swift */; };
 		3FA55CD3B5AC7F00AB35D199 /* AppLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F2CE36A4BB3BC47AA4D7B44 /* AppLock.swift */; };
 		4E1DB116A3C90E56946A8286 /* BackgroundSend.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD01DFCF47256D7982E7B838 /* BackgroundSend.swift */; };
@@ -87,6 +88,7 @@
 		13991F5DEA4767DA151166A9 /* AIEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIEngine.swift; sourceTree = "<group>"; };
 		16AA1BC28AEFBB92714E8E8A /* StudentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudentsView.swift; sourceTree = "<group>"; };
 		2E5449A2CB691CE4F5132412 /* Transcriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transcriber.swift; sourceTree = "<group>"; };
+		322FD0EB6E0F9908E7DEE4F3 /* PlusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlusView.swift; sourceTree = "<group>"; };
 		39C21F7A16DF46704C202742 /* SseudamWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SseudamWidgets.swift; sourceTree = "<group>"; };
 		3A6FF75DAAEF58C8169B93BA /* Store.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Store.swift; sourceTree = "<group>"; };
 		3F2CE36A4BB3BC47AA4D7B44 /* AppLock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLock.swift; sourceTree = "<group>"; };
@@ -177,6 +179,7 @@
 				605EF2F258552343BF899203 /* Info.plist */,
 				BB3F662A6402A5CB85D66D87 /* LocalAI.swift */,
 				81BF9F702054C7D3E05CD87F /* OnboardingView.swift */,
+				322FD0EB6E0F9908E7DEE4F3 /* PlusView.swift */,
 				A1234B6D27099EB65742E6EE /* QuickTools.swift */,
 				F955F5BA710F49B8D0B2DCF0 /* Recorder.swift */,
 				C2BAE67B406D313F4E1BFD09 /* RecordsView.swift */,
@@ -350,6 +353,7 @@
 				66248BE255EA0983C6CEC250 /* LocalAI.swift in Sources */,
 				A0DBD6B3B9C43ED9F8A39AAF /* OnboardingView.swift in Sources */,
 				C9CE4490995BCD332C540171 /* OpenRecordIntent.swift in Sources */,
+				353D2A21C575E27A16B9322D /* PlusView.swift in Sources */,
 				78324E7584CD06AC0BDB62CC /* QuickTools.swift in Sources */,
 				52261A6115B359EC32412053 /* Recorder.swift in Sources */,
 				B0708AF70260D3F3D0F6CBAC /* RecordsView.swift in Sources */,

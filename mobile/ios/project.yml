@@ -28,6 +28,7 @@ targets:
         com.apple.developer.icloud-container-identifiers: [iCloud.kr.sseudam.app]
         com.apple.developer.icloud-services: [CloudDocuments]
         com.apple.developer.ubiquity-container-identifiers: [iCloud.kr.sseudam.app]
+        com.apple.developer.applesignin: [Default]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: kr.sseudam.app
