@@ -24,6 +24,18 @@ final class Recorder: NSObject, ObservableObject {
     /// 이번 녹음에서 선생님이 직접 고른 반(학급 uid)·교시 — 컴퓨터가 학급을 정할 때 쓴다
     @Published var pickedClass: String?
     @Published var period: Int?
+    /// 손 없이 시작한 녹음(시리 · 얼굴 가까이): 말을 멈추면 저절로 끝낸다
+    @Published private(set) var handsFree = false
+    /// 저절로 끝났을 때 (말 멈춤 · '녹음 끝') — 화면이 저장한다
+    var onAutoStop: (() -> Void)?
+    private var floorDb: Float?
+    private var warmDbs: [Float] = []
+    private var loudRun = 0.0
+    private var spoke = false
+    private var quietRun = 0.0
+    private var stopDelay = 2.5
+    private var liveStartFrame: AVAudioFramePosition = 0   // 지금 받아쓰기 요청이 시작된 곳 ('녹음 끝' 자를 위치 계산)
+    private(set) var trimTo: Double?                         // '녹음 끝'이라고 말한 곳 — 그 앞까지만 남긴다
 
     private let engine = AVAudioEngine()
     private var file: AVAudioFile?
@@ -46,7 +58,7 @@ final class Recorder: NSObject, ObservableObject {
                                                name: AVAudioSession.interruptionNotification, object: nil)
     }
 
-    func start(hints: [String] = []) async {
+    func start(hints: [String] = [], handsFree: Bool = false, stopDelay: Double = 2.5) async {
         let granted = await withCheckedContinuation { c in
             AVAudioSession.sharedInstance().requestRecordPermission { c.resume(returning: $0) }
         }
@@ -79,6 +91,8 @@ final class Recorder: NSObject, ObservableObject {
             try engine.start()
             startedAt = Date()
             isRecording = true; isPaused = false; elapsed = 0; liveText = ""; committed = ""; markers = []; currentStudent = nil; pickedClass = nil; period = nil
+            self.handsFree = handsFree; self.stopDelay = stopDelay
+            floorDb = nil; warmDbs = []; loudRun = 0; spoke = false; quietRun = 0; trimTo = nil
             timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
                 Task { @MainActor in self?.tick() }
             }
@@ -107,7 +121,27 @@ final class Recorder: NSObject, ObservableObject {
             let rms = sqrt(sum / Float(max(1, n / 8)))
             let db = 20 * log10(max(rms, 0.000_01))
             level = max(0, min(1, (db + 50) / 50))
+            if handsFree { watchSilence(db: db, dt: Double(n) / sampleRate) }
         }
+    }
+
+    /// 손 없이 시작한 녹음: 주변 소음보다 큰 말소리가 나온 뒤, 정한 시간만큼 조용하면 끝낸다.
+    /// 처음 8초 동안 아무 말도 없으면 그냥 끝낸다 (짧아서 버려짐).
+    private func watchSilence(db: Float, dt: Double) {
+        guard let floor = floorDb else {
+            warmDbs.append(db)
+            if Double(warmDbs.count) * dt >= 0.5 { floorDb = warmDbs.min() ?? db }   // 말을 바로 시작해도 되게 가장 조용한 값
+            return
+        }
+        let th = max(floor + 12, -48)
+        if db > th { loudRun += dt; quietRun = 0; if loudRun >= 0.3 { spoke = true } }
+        else {
+            loudRun = 0
+            if db < floor { floorDb = floor * 0.9 + db * 0.1 }
+            if db < th - 3 { quietRun += dt }
+        }
+        if spoke && quietRun >= stopDelay { onAutoStop?() }
+        else if !spoke && elapsed > 8 { onAutoStop?() }
     }
 
     private func tick() { elapsed = Double(framesWritten) / sampleRate }
@@ -128,17 +162,37 @@ final class Recorder: NSObject, ObservableObject {
         req.addsPunctuation = true
         if !hints.isEmpty { req.contextualStrings = Array(hints.prefix(100)) }
         request = req
+        liveStartFrame = framesWritten
         task = r.recognitionTask(with: req) { [weak self] result, error in
             Task { @MainActor in
                 guard let self else { return }
                 if let result {
                     self.liveText = [self.committed, result.bestTranscription.formattedString].filter { !$0.isEmpty }.joined(separator: " ")
+                    if self.checkStopWord(result.bestTranscription) { return }
                     if result.isFinal { self.restartLive() }
                 } else if error != nil {
                     self.restartLive()
                 }
             }
         }
+    }
+
+    /// '녹음 끝' · '녹음 그만'이라고 말하면 끝 — 그 말 앞까지만 남긴다
+    private func checkStopWord(_ t: SFTranscription) -> Bool {
+        guard isRecording, trimTo == nil else { return false }
+        let segs = t.segments
+        guard segs.count >= 1 else { return false }
+        let words = segs.map { $0.substring.replacingOccurrences(of: " ", with: "").trimmingCharacters(in: .punctuationCharacters) }
+        for i in words.indices.reversed().prefix(4) {
+            let w = words[i], next = i + 1 < words.count ? words[i + 1] : ""
+            let joined = w + next
+            if joined.hasPrefix("녹음끝") || joined.hasPrefix("녹음그만") || w == "녹음끝" || w == "녹음그만" {
+                trimTo = max(0, Double(liveStartFrame) / sampleRate + segs[i].timestamp - 0.2)
+                onAutoStop?()
+                return true
+            }
+        }
+        return false
     }
 
     private func restartLive() {
@@ -178,7 +232,7 @@ final class Recorder: NSObject, ObservableObject {
         stopLive()
         file = nil   // 닫혀야 m4a가 마무리됨
         timer?.invalidate(); timer = nil
-        isRecording = false; isPaused = false; level = 0
+        isRecording = false; isPaused = false; level = 0; handsFree = false
         let m = markers
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         return (url, d, startedAt, m)
@@ -197,4 +251,18 @@ final class Recorder: NSObject, ObservableObject {
             if type == .began, self.isRecording, !self.isPaused { self.engine.pause(); self.isPaused = true }
         }
     }
+}
+
+/// '녹음 끝' 앞까지만 남긴 새 파일 (잘라 내지 못하면 원래 파일)
+func trimAudio(_ url: URL, to seconds: Double) async -> URL {
+    let asset = AVURLAsset(url: url)
+    guard seconds > 0.5, let ex = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough) else { return url }
+    let out = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".m4a")
+    ex.outputURL = out
+    ex.outputFileType = .m4a
+    ex.timeRange = CMTimeRange(start: .zero, duration: CMTime(seconds: seconds, preferredTimescale: 600))
+    await ex.export()
+    guard ex.status == .completed else { return url }
+    try? FileManager.default.removeItem(at: url)
+    return out
 }

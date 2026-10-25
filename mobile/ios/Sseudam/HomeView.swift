@@ -8,11 +8,14 @@ struct HomeView: View {
     @EnvironmentObject var data: DataStore
     @AppStorage("markClass") private var markClass = ""
     @StateObject private var rec = Recorder()
-    @StateObject private var auto = AutoRecorder()
     @Environment(\.scenePhase) private var scenePhase
-    @State private var autoMore = false
-    @State private var autoNotice = false
-    @AppStorage("autoNoticeSeen") private var autoNoticeSeen = false
+    @State private var handsMore = false
+    /// 손 없이 시작한 녹음(시리 · 얼굴 가까이)은 말을 멈추면 저절로 끝
+    @AppStorage("handsAutoStop") private var handsAutoStop = true
+    @AppStorage("handsStopDelay") private var handsStopDelay = 2.5
+    /// 폰을 얼굴(입) 가까이 대면 녹음, 떼면 끝 — 근접 센서만 켜 두고 마이크는 그때만 켬
+    @AppStorage("proximityRec") private var proximityRec = false
+    @State private var startedByProximity = false
     @State private var memoText = ""
     @State private var memoKind = Store.shared.lastKind
     @State private var showTips = false
@@ -43,13 +46,12 @@ struct HomeView: View {
                 Button("설정 열기") { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }
                 Button("닫기", role: .cancel) {}
             } message: { Text("설정 → 쓰담 → 마이크를 켜 주세요.") }
-            .alert("주변 소리도 담길 수 있어요", isPresented: $autoNotice) {
-                Button("알겠어요") { autoNoticeSeen = true }
-            } message: { Text("앱을 켜 둔 동안 말소리가 들리면 녹음해요. 주변 사람 목소리도 담길 수 있고, 녹음은 이 폰과 연결한 컴퓨터에만 저장돼요. 화면이 꺼지면 쉬어요.") }
             .onChange(of: nav.startRecordingRequest) { _ in checkStartRequest() }
-            .onAppear { checkStartRequest(); setupAuto(); resumeAuto() }
-            .onDisappear { auto.stop() }
-            .onChange(of: scenePhase) { p in if p == .active { resumeAuto() } else { auto.stop() } }
+            .onAppear { checkStartRequest(); rec.onAutoStop = { finishRecording() }; updateProximity() }
+            .onDisappear { UIDevice.current.isProximityMonitoringEnabled = false }
+            .onChange(of: scenePhase) { _ in updateProximity() }
+            .onChange(of: proximityRec) { _ in updateProximity() }
+            .onReceive(NotificationCenter.default.publisher(for: UIDevice.proximityStateDidChangeNotification)) { _ in proximityChanged() }
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: store.justSaved)
             .animation(.spring(response: 0.4, dampingFraction: 0.85), value: rec.isRecording)
         }
@@ -125,7 +127,7 @@ struct HomeView: View {
 
             Text(statusText).font(Theme.font(14)).foregroundStyle(Theme.soft).multilineTextAlignment(.center)
 
-            if !rec.isRecording { autoCard }
+            if !rec.isRecording { handsCard }
 
             if rec.isRecording && !rec.liveText.isEmpty {
                 LiveCaption(text: rec.liveText).transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -239,96 +241,81 @@ struct HomeView: View {
     func checkStartRequest() {
         guard nav.startRecordingRequest > nav.handledRecordingRequest else { return }
         nav.handledRecordingRequest = nav.startRecordingRequest
-        if !rec.isRecording { auto.stop(); Task { await rec.start(hints: data.rosterNames) } }
+        if !rec.isRecording { startedByProximity = false; startRecording(handsFree: true) }
     }
 
-    // MARK: 말하면 담기 (앱이 켜져 있는 동안만)
-    func setupAuto() {
-        auto.onClip = { url, d, at in
-            store.addAudio(tempFile: url, duration: d, at: at, markers: [],
-                           classUid: markClass.isEmpty ? nil : markClass, period: nil)
-        }
-    }
-
-    func resumeAuto() {
-        guard auto.enabled, !rec.isRecording, scenePhase == .active else { return }
-        Task { await auto.start() }
-    }
-
-    var autoCard: some View {
+    // MARK: 손 없이 녹음 — 시리로 시작 · 얼굴 가까이 대면 시작 · 말 멈추면 끝 · '녹음 끝'
+    var handsCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Toggle(isOn: Binding(get: { auto.enabled }, set: { on in
-                auto.enabled = on
-                if on { if !autoNoticeSeen { autoNotice = true }; resumeAuto() } else { auto.stop() }
-            })) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("말하면 담기").font(Theme.font(15, .bold))
-                    Text("앱을 켜 둔 동안 말하면 저절로 녹음하고, 말을 멈추면 끝내요").font(Theme.font(12)).foregroundStyle(Theme.soft)
+            Button { withAnimation { handsMore.toggle() } } label: {
+                HStack {
+                    Label("손 없이 녹음", systemImage: "hand.raised.slash").font(Theme.font(15, .bold))
+                    Spacer()
+                    Image(systemName: handsMore ? "chevron.up" : "chevron.down").font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.soft)
                 }
             }
-            .tint(Theme.blue)
-            if auto.enabled {
-                HStack(spacing: 8) {
-                    Circle().fill(auto.capturing ? Theme.coral : (auto.listening ? Theme.mint : Color.gray.opacity(0.4)))
-                        .frame(width: 8, height: 8)
-                    Text(autoStatus).font(Theme.font(13, .semibold)).foregroundStyle(auto.capturing ? Theme.coral : Theme.ink)
-                        .monospacedDigit().contentTransition(.numericText())
-                    Spacer()
-                    Button { withAnimation { autoMore.toggle() } } label: {
-                        Label("자세히", systemImage: autoMore ? "chevron.up" : "chevron.down").font(Theme.font(12, .semibold))
+            .buttonStyle(.plain)
+            Text("“시리야, 쓰담 녹음” 하면 시작하고, 말을 멈추거나 “녹음 끝”이라고 하면 끝나요")
+                .font(Theme.font(12)).foregroundStyle(Theme.soft)
+            if handsMore {
+                Toggle(isOn: $proximityRec) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("폰을 얼굴 가까이 대면 녹음").font(Theme.font(14, .semibold))
+                        Text("이 화면을 켜 둔 채 폰을 입 가까이 들면 시작, 떼면 끝나요").font(Theme.font(11)).foregroundStyle(Theme.soft)
                     }
+                }.tint(Theme.blue)
+                Toggle(isOn: $handsAutoStop) {
+                    Text("말을 멈추면 저절로 끝내기").font(Theme.font(14, .semibold))
+                }.tint(Theme.blue)
+                if handsAutoStop {
+                    Picker("말 끝나고 멈추기", selection: $handsStopDelay) {
+                        Text("1.5초").tag(1.5); Text("2.5초").tag(2.5); Text("4초").tag(4.0)
+                    }.pickerStyle(.segmented)
                 }
-                AutoMeter(level: CGFloat(auto.level), threshold: CGFloat(auto.thresholdLevel), active: auto.capturing)
-                    .frame(height: 8)
-                    .accessibilityHidden(true)
-                if autoMore {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("감도 — 시끄러운 곳일수록 크게 말해야 시작해요").font(Theme.font(12, .semibold)).foregroundStyle(Theme.soft)
-                        Picker("감도", selection: $auto.sensitivity) {
-                            ForEach(AutoGate.Sensitivity.allCases, id: \.self) { Text($0.label).tag($0) }
-                        }.pickerStyle(.segmented)
-                        Text("말 끝나고 멈추기 — 이만큼 조용하면 녹음을 끝내요").font(Theme.font(12, .semibold)).foregroundStyle(Theme.soft)
-                        Picker("말 끝나고 멈추기", selection: $auto.stopDelay) {
-                            Text("1.5초").tag(1.5); Text("2.5초").tag(2.5); Text("4초").tag(4.0)
-                        }.pickerStyle(.segmented)
-                        Text("막대의 선을 넘는 소리가 0.25초 이어지면 시작해요. 1초보다 짧은 소리(기침 · 문소리)는 버리고, 말 시작 직전 1초도 같이 담아요. 화면이 꺼지거나 다른 탭으로 가면 쉬어요.")
-                            .font(Theme.font(11)).foregroundStyle(Theme.soft)
-                    }
-                    .transition(.opacity)
-                }
+                Text("마이크는 녹음할 때만 켜져요. 시리로 시작하거나 얼굴 가까이 대서 시작한 녹음은 말을 멈추면 끝나고, 버튼으로 시작한 녹음도 “녹음 끝”이라고 하면 끝나요(그 말은 잘라 내요).")
+                    .font(Theme.font(11)).foregroundStyle(Theme.soft)
             }
         }
         .padding(12)
         .background(Theme.bg.opacity(0.6), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .alert("마이크 권한이 필요해요", isPresented: $auto.permissionDenied) {
-            Button("설정 열기") { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }
-            Button("닫기", role: .cancel) {}
-        } message: { Text("설정 → 쓰담 → 마이크를 켜 주세요.") }
     }
 
-    var autoStatus: String {
-        if auto.justSaved { return "방금 담았어요 ✓" }
-        if auto.capturing { return "담는 중 " + timeString(auto.captureElapsed) }
-        return auto.listening ? "듣는 중 · 말하면 바로 담아요" : "잠깐 쉬는 중"
+    func updateProximity() {
+        UIDevice.current.isProximityMonitoringEnabled = proximityRec && scenePhase == .active
+    }
+
+    func proximityChanged() {
+        guard proximityRec else { return }
+        if UIDevice.current.proximityState {
+            if !rec.isRecording { startedByProximity = true; startRecording(handsFree: true) }
+        } else if rec.isRecording && startedByProximity {
+            finishRecording()
+        }
+    }
+
+    func startRecording(handsFree: Bool) {
+        memoFocused = false
+        Task { await rec.start(hints: data.rosterNames, handsFree: handsFree && handsAutoStop, stopDelay: handsStopDelay) }
+    }
+
+    /// 녹음 끝 → 저장 ('녹음 끝'이라고 했으면 그 앞까지만)
+    func finishRecording() {
+        guard rec.isRecording, let r = rec.stop() else { return }
+        startedByProximity = false
+        let trim = rec.trimTo
+        if (trim ?? r.1) < 1 { try? FileManager.default.removeItem(at: r.0); return }
+        let cls = rec.pickedClass, per = rec.period
+        Task {
+            let url = trim != nil ? await trimAudio(r.0, to: trim!) : r.0
+            store.addAudio(tempFile: url, duration: trim ?? r.1, at: r.2, markers: r.3.filter { $0.t <= (trim ?? r.1) },
+                           classUid: cls, period: per)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        }
     }
 
     func toggle() {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        if rec.isRecording {
-            if let r = rec.stop() {
-                if r.1 < 1 { try? FileManager.default.removeItem(at: r.0) }
-                else {
-                    store.addAudio(tempFile: r.0, duration: r.1, at: r.2, markers: r.3,
-                                   classUid: rec.pickedClass, period: rec.period)
-                    UINotificationFeedbackGenerator().notificationOccurred(.success)
-                }
-            }
-            resumeAuto()
-        } else {
-            memoFocused = false
-            auto.stop()
-            Task { await rec.start(hints: data.rosterNames) }
-        }
+        if rec.isRecording { finishRecording() } else { startedByProximity = false; startRecording(handsFree: false) }
     }
 
     // MARK: 한 줄 메모
@@ -640,24 +627,5 @@ struct PulseRings: View {
                 .animation(.linear(duration: 0.1), value: level)
         }
         .onAppear { animate = true }
-    }
-}
-
-/// 자동 녹음 소리 막대: 지금 소리 크기와 '이 선을 넘으면 시작' 선
-struct AutoMeter: View {
-    var level: CGFloat
-    var threshold: CGFloat
-    var active: Bool
-    var body: some View {
-        GeometryReader { g in
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.gray.opacity(0.15))
-                Capsule().fill(active ? Theme.coral : (level >= threshold ? Theme.blue : Theme.mint))
-                    .frame(width: max(4, g.size.width * level))
-                    .animation(.linear(duration: 0.1), value: level)
-                Rectangle().fill(Theme.ink.opacity(0.55)).frame(width: 2)
-                    .offset(x: g.size.width * threshold - 1)
-            }
-        }
     }
 }
