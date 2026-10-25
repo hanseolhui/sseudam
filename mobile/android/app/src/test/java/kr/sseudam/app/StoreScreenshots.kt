@@ -116,7 +116,6 @@ class StoreScreenshots {
             repeat(5) { rule.mainClock.advanceTimeByFrame() }
             rule.mainClock.advanceTimeBy(1600)
             rule.waitForIdle()
-            if (s.tab == 3) scrollTo("쓰담 플러스 · 준비 중")   // 연결: 내 AI 연결 · 쓰담 플러스(준비 중)
             if (s.route is Route.Draft) {
                 // ① 요청문 복사 → ChatGPT·Gemini 버튼, ② AI 답(예시) 붙여넣기 → 학생별 초안
                 rule.onNodeWithText("요청문 복사하기").performSemanticsAction(SemanticsActions.OnClick)
