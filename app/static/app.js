@@ -1779,9 +1779,11 @@ async function viewSettings(section) {
           <div id="plus-r" class="small" style="margin-top:6px">${plusSt.error ? esc(plusSt.error) : ''}</div></div>`;
       } else if (plusOn) {
         const u = plusSt.sub;
-        d = `<div class="spec">💜 <b>${esc(plusSt.email)}</b> · ${esc(u.planName)} · <b>${ymd(u.endsAt)}</b>까지 (${u.daysLeft}일 남음)
+        const renew = !u.autoRenew && u.plan !== 'staff';   // 자동 결제가 없으면 연장하기 (미리 사도 남은 기간 뒤에 이어 붙음)
+        d = `<div class="spec">💜 <b>${esc(plusSt.email)}</b> · ${esc(u.planName)} · <b>${ymd(u.endsAt)}</b>까지 (<b${renew && (u.daysToEnd ?? u.daysLeft) <= 7 ? ' style="color:var(--amber)"' : ''}>${u.daysToEnd ?? u.daysLeft}일 남음</b>)${u.autoRenew ? ' · 자동 결제' : ''}
           <div class="small muted" style="margin-top:4px">초안 · 분리 무제한 · 정성 초안 ${(u.deepCap || 0) >= 1e8 ? '무제한' : Math.max(0, (u.deepCap || 0) - (u.deepUsed || 0)) + '회 남음'} · 등록된 컴퓨터 ${plusSt.devices.length}/${plusSt.deviceLimit}대 (${plusSt.devices.map(x => esc(x.device_name)).join(', ')})${plusSt.offline ? ' · 지금은 서버 확인이 안 돼서 마지막 상태를 보여요' : ''}</div>
-          <div class="row" style="margin-top:8px">${choice !== 'plus' ? '<button class="sm primary shrink" id="plus-use">쓰담 플러스로 쓰기</button>' : ''}<a class="btn sm shrink" href="https://apps.seoriarts.com/sseudam/plus" target="_blank">구독·결제 관리 ↗</a><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`;
+          ${renew ? `<div class="small muted" style="margin-top:4px">자동 결제가 없는 이용권이에요. 미리 연장해도 <b>남은 기간 뒤에 이어 붙어서</b> 손해 없어요.</div>` : ''}
+          <div class="row" style="margin-top:8px">${choice !== 'plus' ? '<button class="sm primary shrink" id="plus-use">쓰담 플러스로 쓰기</button>' : ''}${renew ? `<a class="btn sm primary shrink" href="${esc(plusSt.renewUrl || 'https://apps.seoriarts.com/sseudam/plus')}" target="_blank">연장하기 ↗</a>` : ''}<a class="btn sm shrink" href="https://apps.seoriarts.com/sseudam/plus" target="_blank">구독·결제 관리 ↗</a><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`;
       } else {
         d = plusSt.pay
           ? `<div class="spec">💜 <b>${esc(plusSt.email)}</b>로 로그인했어요. 지금은 구독 기간이 아니에요.
@@ -2249,6 +2251,23 @@ async function runUpdate(u) {
   modal(`<h2>업데이트 확인 필요</h2><p>새 버전이 시작되지 않았습니다. 쓰담을 종료 후 다시 실행해 주세요.</p><div class="modal-actions"><button onclick="location.reload()">새로고침</button></div>`);
 }
 
+// 쓰담 플러스 이용권이 7일 안에 끝나면 맨 위에 연장 안내 (자동 결제 · 운영자는 제외, 닫으면 그날은 안 보임)
+async function checkPlusRenew() {
+  try {
+    const p = await api('/api/plus?refresh=0', undefined, { silent: true });
+    const u = p && p.loggedIn && p.sub;
+    const b = $('#plus-banner');
+    if (!u || !u.active || u.autoRenew || u.plan === 'staff' || (u.daysToEnd ?? 99) > 7) { b.classList.add('hidden'); return; }
+    const key = 'plus-renew-hide-' + new Date().toISOString().slice(0, 10);
+    try { if (localStorage.getItem(key)) return; } catch (e) { /* */ }
+    const end = new Date(u.endsAt).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
+    b.innerHTML = `<b>💜 쓰담 플러스가 ${u.daysToEnd ? u.daysToEnd + '일 뒤' : '오늘'}(${end}) 끝나요</b> 미리 연장해도 남은 기간 뒤에 이어 붙어요.
+      <a class="btn sm primary" href="${esc(p.renewUrl || 'https://apps.seoriarts.com/sseudam/plus')}" target="_blank">연장하기 ↗</a> <button class="sm ghost" id="pb-x">닫기</button>`;
+    b.classList.remove('hidden');
+    $('#pb-x').onclick = () => { b.classList.add('hidden'); try { localStorage.setItem(key, '1'); } catch (e) { /* */ } };
+  } catch (e) { /* 로그인 안 함 · 인터넷 없음 */ }
+}
+
 async function checkUpdateBanner() {
   try {
     const v = await api('/api/version?notice=1', undefined, { silent: true });
@@ -2500,6 +2519,8 @@ window.addEventListener('drop', e => e.preventDefault());
 
 updateModeBadge();
 checkUpdateBanner();
+checkPlusRenew();
+setInterval(checkPlusRenew, 6 * 3600 * 1000);
 maybeOnboard();
 updatePending();
 setInterval(updatePending, 30000);
