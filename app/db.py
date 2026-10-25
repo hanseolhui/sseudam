@@ -71,6 +71,7 @@ DEFAULT_SETTINGS = {
     "share_info": "0",              # 선생님 정보 보내기 = 개인정보 수집·이용 동의
     "contact_email": "",
     "school_name": "",
+    "org_type": "",                 # 소속 유형: 학교 · 유치원·어린이집 · 학원·교습소 · 방과후·돌봄 · 기타 기관
     "region_sido": "",
     "region_sigungu": "",
     "teacher_grades": "",           # 맡은 학년 (예: 1, 2)

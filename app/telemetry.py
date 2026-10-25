@@ -21,7 +21,7 @@ import version
 
 URL = os.environ.get("SSEUDAM_PING_URL", "https://apps.seoriarts.com/api/ping")
 # 선생님 정보 (설정 이름) — 바뀌면 바로 보냄
-PROFILE_KEYS = ("share_info", "contact_email", "teacher_name", "school_name", "school_level", "region_sido", "region_sigungu",
+PROFILE_KEYS = ("share_info", "contact_email", "teacher_name", "org_type", "school_name", "school_level", "region_sido", "region_sigungu",
                 "teacher_subject", "teacher_grades", "homeroom", "phone", "marketing_ok")
 EVERY = 20 * 3600          # 하루 한 번쯤 (켜 둔 채로 다음 날이 되면)
 _lock = threading.Lock()
@@ -98,7 +98,7 @@ def payload():
     if s.get("share_info") == "1":
         g = lambda k: (s.get(k) or "").strip()
         body.update(share=True, email=g("contact_email"), name=g("teacher_name"), school=g("school_name"),
-                    region_sido=g("region_sido"), region_sigungu=g("region_sigungu"), school_level=g("school_level"),
+                    org_type=g("org_type"), region_sido=g("region_sido"), region_sigungu=g("region_sigungu"), school_level=g("school_level"),
                     subjects=g("teacher_subject"), grades=g("teacher_grades"), homeroom=g("homeroom"), phone=g("phone"),
                     marketing=s.get("marketing_ok") == "1")
     return body

@@ -2312,21 +2312,23 @@ const PRIVACY_URL = 'https://apps.seoriarts.com/sseudam-privacy';
 /** p = id 앞에 붙일 말 (설정은 '' → id 가 곧 설정 이름) */
 function profileFields(s, p) {
   const sel = (id, opts, v) => `<select id="${p}${id}">${opts.map(([k, n]) => `<option value="${esc(k)}" ${String(v || '') === k ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`;
-  return `<div class="row">
-      <label class="field"><span>이름</span><input id="${p}teacher_name" value="${esc(s.teacher_name || '')}" placeholder="예: 김쓰담"></label>
-      <label class="field"><span>이메일</span><input id="${p}contact_email" type="email" value="${esc(s.contact_email || s.plus_email || '')}" placeholder="안내를 받을 주소"></label></div>
-    <div class="row">
-      <label class="field"><span>학교</span><input id="${p}school_name" value="${esc(s.school_name || '')}" placeholder="예: 쓰담고등학교"></label>
-      <label class="field"><span>학교급</span>${sel('school_level', ['고등학교', '중학교', '초등학교', '특수학교', '기타'].map(x => [x, x]), s.school_level || '고등학교')}</label></div>
-    <div class="row">
-      <label class="field"><span>지역 (시·도)</span>${sel('region_sido', [['', '고르기']].concat(SIDO.map(x => [x, x])), s.region_sido)}</label>
-      <label class="field"><span>시·군·구</span><input id="${p}region_sigungu" value="${esc(s.region_sigungu || '')}" placeholder="예: 파주시"></label></div>
-    <div class="row">
-      <label class="field"><span>담당 과목</span><input id="${p}teacher_subject" value="${esc(s.teacher_subject || '')}" placeholder="예: 국어 (초안의 기본 과목)"></label>
-      <label class="field"><span>맡은 학년</span><input id="${p}teacher_grades" value="${esc(s.teacher_grades || '')}" placeholder="예: 2 또는 1, 3"></label>
-      <label class="field"><span>담임</span>${sel('homeroom', [['', '고르기'], ['1', '담임'], ['0', '비담임']], s.homeroom)}</label></div>
-    <div class="row"><label class="field"><span>휴대폰 (선택)</span><input id="${p}phone" inputmode="tel" value="${esc(s.phone || '')}" placeholder="연락이 필요할 때만 써요"></label><span></span></div>
-    <label class="check" style="margin-top:8px"><input type="checkbox" id="${p}share_info" ${s.share_info === '1' ? 'checked' : ''}> <span><b>개인정보 수집·이용 동의</b> — 위 정보를 쓰담 운영(문제 해결·안내, 쓰담 플러스 계정 연결, 사용자 통계)에 보내요. 지원사업 보고에는 이름 없이 합계 숫자로만 써요. <a href="${PRIVACY_URL}" target="_blank">자세히</a></span></label>
+  const f = (label, html) => `<label class="field"><span>${label}</span>${html}</label>`;
+  const inp = (id, v, ph, extra = '') => `<input id="${p}${id}" value="${esc(v || '')}" placeholder="${ph}" ${extra}>`;
+  // 2열 격자: 칸 높이를 모두 맞추고 줄을 가지런히 (학교 · 유치원 · 학원 선생님 모두)
+  return `<div class="pf-grid">
+      ${f('이름', inp('teacher_name', s.teacher_name, '예: 김쓰담'))}
+      ${f('이메일', inp('contact_email', s.contact_email || s.plus_email, '안내를 받을 주소', 'type="email"'))}
+      ${f('소속 유형', sel('org_type', [['', '고르기'], ['학교', '학교'], ['유치원·어린이집', '유치원 · 어린이집'], ['학원·교습소', '학원 · 교습소'], ['방과후·돌봄', '방과후 · 돌봄'], ['기타 기관', '기타 기관']], s.org_type))}
+      ${f('소속 이름', inp('school_name', s.school_name, '예: 쓰담고등학교 · 쓰담수학학원'))}
+      ${f('지역 (시·도)', sel('region_sido', [['', '고르기']].concat(SIDO.map(x => [x, x])), s.region_sido))}
+      ${f('시·군·구', inp('region_sigungu', s.region_sigungu, '예: 파주시'))}
+      ${f('가르치는 대상', sel('school_level', ['유아', '초등학교', '중학교', '고등학교', '특수학교', '성인·기타'].map(x => [x, x]), s.school_level || '고등학교'))}
+      ${f('담임 · 반 담당', sel('homeroom', [['', '고르기'], ['1', '맡고 있어요'], ['0', '안 맡아요']], s.homeroom))}
+      ${f('담당 과목', inp('teacher_subject', s.teacher_subject, '예: 국어 (초안의 기본 과목)'))}
+      ${f('맡은 학년 · 연령', inp('teacher_grades', s.teacher_grades, '예: 2학년 · 1, 3 · 만 5세'))}
+      ${f('휴대폰 (선택)', inp('phone', s.phone, '연락이 필요할 때만 써요', 'inputmode="tel"'))}
+    </div>
+    <label class="check" style="margin-top:12px"><input type="checkbox" id="${p}share_info" ${s.share_info === '1' ? 'checked' : ''}> <span><b>개인정보 수집·이용 동의</b> — 위 정보를 쓰담 운영(문제 해결·안내, 쓰담 플러스 계정 연결, 사용자 통계)에 보내요. 지원사업 보고에는 이름 없이 합계 숫자로만 써요. <a href="${PRIVACY_URL}" target="_blank">자세히</a></span></label>
     <label class="check" style="margin-top:4px"><input type="checkbox" id="${p}marketing_ok" ${s.marketing_ok === '1' ? 'checked' : ''}> <span>(선택) 새 기능 · 지원 사업 · 연수 소식 받기</span></label>
     <p class="small muted" style="margin:4px 0 0">동의하지 않아도 쓰담은 똑같이 다 쓸 수 있어요. 학생 이름·기록·녹음은 보내지 않아요.</p>`;
 }
@@ -2335,7 +2337,7 @@ function readProfile(root, p) {
   if (!q('teacher_name')) return {};
   const v = id => (q(id).value || '').trim();
   return {
-    teacher_name: v('teacher_name'), contact_email: v('contact_email'), school_name: v('school_name'), school_level: v('school_level'),
+    teacher_name: v('teacher_name'), contact_email: v('contact_email'), org_type: v('org_type'), school_name: v('school_name'), school_level: v('school_level'),
     region_sido: v('region_sido'), region_sigungu: v('region_sigungu'), teacher_subject: v('teacher_subject'), teacher_grades: v('teacher_grades'),
     homeroom: v('homeroom'), phone: v('phone'), share_info: q('share_info').checked ? '1' : '0', marketing_ok: q('marketing_ok').checked ? '1' : '0',
   };
