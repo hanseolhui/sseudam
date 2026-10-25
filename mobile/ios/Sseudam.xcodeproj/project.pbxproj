@@ -11,6 +11,7 @@
 		103183D0B7B826444E42240D /* DraftTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = F59B2DA838F91102FE689C18 /* DraftTools.swift */; };
 		239D6AD09F738D7446B2A6BE /* SseudamWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = A602516E9254AA9569E5CDD0 /* SseudamWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		2CE9844BCEBC52E55B5405F8 /* AssignViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC3062820F22EC3F4C3D9B59 /* AssignViews.swift */; };
+		2E3FEDA0B12903BA198F708B /* AutoRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BED4858CE32861A46FC21D34 /* AutoRecorder.swift */; };
 		3397DEE58ED436C15D1945DC /* StudentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16AA1BC28AEFBB92714E8E8A /* StudentsView.swift */; };
 		3461824010FB4D253F770882 /* ConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE147E1357C039411699FAD9 /* ConnectView.swift */; };
 		3CCC1D476D7F96DEB290DD9E /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BD0D2D816588F4CF251ACAC /* HomeView.swift */; };
@@ -107,6 +108,7 @@
 		AEA1284C4F15C899D71C7C32 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B32E604D39B0EE71A09D9747 /* WatchBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBridge.swift; sourceTree = "<group>"; };
 		BB3F662A6402A5CB85D66D87 /* LocalAI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalAI.swift; sourceTree = "<group>"; };
+		BED4858CE32861A46FC21D34 /* AutoRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoRecorder.swift; sourceTree = "<group>"; };
 		BF3EDFF11AF5873026BEA3FD /* SseudamWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = SseudamWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		C2BAE67B406D313F4E1BFD09 /* RecordsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordsView.swift; sourceTree = "<group>"; };
 		C57348737277454D799DAD7A /* Relay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Relay.swift; sourceTree = "<group>"; };
@@ -170,6 +172,7 @@
 				3F2CE36A4BB3BC47AA4D7B44 /* AppLock.swift */,
 				AEA1284C4F15C899D71C7C32 /* Assets.xcassets */,
 				AC3062820F22EC3F4C3D9B59 /* AssignViews.swift */,
+				BED4858CE32861A46FC21D34 /* AutoRecorder.swift */,
 				DD01DFCF47256D7982E7B838 /* BackgroundSend.swift */,
 				CE147E1357C039411699FAD9 /* ConnectView.swift */,
 				F59B2DA838F91102FE689C18 /* DraftTools.swift */,
@@ -343,6 +346,7 @@
 				A25527A0C1C17C7A079951CC /* App.swift in Sources */,
 				3FA55CD3B5AC7F00AB35D199 /* AppLock.swift in Sources */,
 				2CE9844BCEBC52E55B5405F8 /* AssignViews.swift in Sources */,
+				2E3FEDA0B12903BA198F708B /* AutoRecorder.swift in Sources */,
 				4E1DB116A3C90E56946A8286 /* BackgroundSend.swift in Sources */,
 				3461824010FB4D253F770882 /* ConnectView.swift in Sources */,
 				103183D0B7B826444E42240D /* DraftTools.swift in Sources */,
@@ -444,7 +448,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 17;
+				CURRENT_PROJECT_VERSION = 18;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 967DUR6926;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -504,7 +508,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 17;
+				CURRENT_PROJECT_VERSION = 18;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 967DUR6926;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
