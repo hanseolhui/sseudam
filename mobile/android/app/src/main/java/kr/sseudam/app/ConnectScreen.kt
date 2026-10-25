@@ -80,14 +80,16 @@ fun ConnectScreen() {
             if (result.isNotEmpty()) Text(result, fontSize = 13.sp, color = if (result.startsWith("✓")) T.mint else T.coral)
             Text("컴퓨터(맥·윈도우)의 쓰담 → 설정 → 📱 휴대폰 → QR을 찍으세요. 녹음·한 줄 메모·학생 기록이 저절로 오가요. 이 폰과 그 컴퓨터만 아는 열쇠로 암호화돼서, 중간 서버는 내용을 볼 수 없어요.",
                 fontSize = 12.sp, color = T.soft)
-            Text("🎙 다른 녹음 앱으로 녹음했다면: 그 앱에서 녹음 → 공유 → ‘쓰담’을 고르면 쓰담에 담기고 컴퓨터로 가요.",
+            Text("📝 한 줄 메모: 홈의 ‘한 줄로 남기기’에 쓰거나 🎤로 말하면 글자로 바뀌어, 녹음처럼 연결된 컴퓨터로 같이 가요. 따로 설정할 건 없어요.",
+                fontSize = 12.sp, color = T.ink)
+            Text("🎙 다른 녹음 앱(갤럭시 녹음 등)으로 녹음했다면: 그 앱에서 녹음 → 공유 → ‘쓰담’을 고르면 쓰담에 담기고 컴퓨터로 가요.",
                 fontSize = 12.sp, color = T.ink)
         }
 
         // 학생 기록(글) 주고받기 — 구글 연결은 '올리기 전용'이라 파일로 옮긴다
         Column(Modifier.fillMaxWidth().card(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("📁 학생 기록 파일 (맥·다른 폰과 맞추기)", fontWeight = FontWeight.Bold, color = T.ink, fontSize = 16.sp)
-            Text("반·학생 명단·관찰 기록·초안을 한 파일(.json)로 내보내거나, 맥·아이폰·다른 폰에서 내보낸 파일을 가져와 합쳐요. 녹음은 빠지고 글만 들어가요. 같은 기록은 나중에 고친 쪽이 남아요.",
+            Text("📁 학생 기록 파일 (연결 없이 옮길 때)", fontWeight = FontWeight.Bold, color = T.ink, fontSize = 16.sp)
+            Text("위에서 컴퓨터와 연결했다면 학생 기록은 저절로 맞춰져서 이건 필요 없어요. 연결 없이 옮길 때: 반·학생 명단·관찰 기록·초안을 한 파일(.json)로 내보내거나, 맥·아이폰·다른 폰에서 내보낸 파일을 가져와 합쳐요. 녹음은 빠지고 글만 들어가요. 같은 기록은 나중에 고친 쪽이 남아요.",
                 fontSize = 12.sp, color = T.soft)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ChipButton("내보내기", T.blue, filled = true) {
@@ -114,10 +116,10 @@ fun ConnectScreen() {
 
         Column(Modifier.fillMaxWidth().card(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("🗂️ 녹음 보관", fontWeight = FontWeight.Bold, color = T.ink)
-            Text("녹음은 선생님이 지우기 전까지 휴대폰에 그대로 보관돼요. 컴퓨터의 쓰담과 구글 드라이브에도 원본이 학기말 이후까지 보관돼요.", fontSize = 13.sp, color = T.soft)
+            Text("녹음은 선생님이 지우기 전까지 휴대폰에 그대로 보관돼요. 연결된 컴퓨터의 쓰담에도 원본이 학기말 이후까지 보관돼요.", fontSize = 13.sp, color = T.soft)
         }
         TextButton({ openUrl(ctx, "https://apps.seoriarts.com/sseudam") }) { Text("컴퓨터용 쓰담 설치·사용법") }
-        TextButton({ openUrl(ctx, "https://hanseolhui.github.io/sseudam/privacy.html") }) { Text("개인정보 처리방침") }
+        TextButton({ openUrl(ctx, "https://apps.seoriarts.com/sseudam-privacy") }) { Text("개인정보 처리방침") }
         Spacer(Modifier.height(20.dp))
     }
     if (manual) AlertDialog(onDismissRequest = { manual = false }, containerColor = T.card, title = { Text("연결 코드") },

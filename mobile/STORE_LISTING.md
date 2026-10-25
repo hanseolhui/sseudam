@@ -8,7 +8,7 @@
 | 부제 / 짧은 설명 (30자) | 수업 중 말로 남기면 학생별로 정리 |
 | 카테고리 | 교육 (App Store: Education · Play: 교육) |
 | 연령 등급 | 4+ / 전체이용가 (콘텐츠 기준) · 대상 사용자: 교사(성인) — 아동용 아님 |
-| 개인정보 처리방침 | https://hanseolhui.github.io/sseudam/privacy.html |
+| 개인정보 처리방침 | https://apps.seoriarts.com/sseudam-privacy |
 | 지원 URL | https://github.com/hanseolhui/sseudam/issues |
 | 마케팅 URL | https://hanseolhui.github.io/sseudam/ |
 | 번들 ID / 패키지 | `kr.sseudam.app` (iOS) · `kr.sseudam.app` (Android) |
@@ -80,7 +80,7 @@
 | 태그 (선택) | 교육, 생산성/메모 |
 | 연락처 이메일 | `support@○○○○.kr` ← **실제 지원용 이메일로 바꿔 넣기** (공개됨) |
 | 웹사이트 | https://hanseolhui.github.io/sseudam/ |
-| 개인정보처리방침 URL | https://hanseolhui.github.io/sseudam/privacy.html |
+| 개인정보처리방침 URL | https://apps.seoriarts.com/sseudam-privacy |
 | 광고 포함 | 아니요 |
 
 ### 자세한 설명 (4000자 이내)

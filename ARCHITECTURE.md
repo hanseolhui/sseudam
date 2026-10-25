@@ -212,6 +212,14 @@ Apps Script 요청은 앱이 자동 생성한 토큰으로 보호(스크립트 �
 - QR 연동 녹음은 `BackgroundSend`(URLSession background, `kr.sseudam.app.upload`)로 올림: 암호화한 내용을 Caches/relay-out 에 쓰고 업로드 작업을 iOS에 맡김 → 앱을 닫거나 화면이 꺼져도 끝까지 감. 상태 `sending` → 끝나면 `Store.relayFinished`(앱이 꺼져 있으면 iOS가 AppDelegate 로 깨움).
 - `BGAppRefreshTask`(`kr.sseudam.app.refresh`)로 틈틈이 `syncAll`(못 보낸 것 · 받음 확인) + 학생 기록 맞추기. 녹음을 끝내자마자 화면을 꺼도 고칠 시간 20초 동안은 백그라운드 작업으로 깨어 있다가 전송을 맡김.
 
+**선생님 정보 (동의한 경우만) · 쓰담 사용자 관리**
+- 설정 → 선생님(`profileFields`): 이름 · 이메일 · 학교 · 학교급 · 지역 · 과목 · 학년 · 담임 · 휴대폰(선택), `share_info` = 개인정보 수집·이용 동의(직접 체크), `marketing_ok` = 소식 받기(선택). 첫 실행 1단계 · 이미 쓰던 분은 한 번만(`profile_asked`).
+- `telemetry.payload()` 가 동의한 경우만 이 칸들을 보냄 → 서버 `sseudam_profiles`(새 칸: toktok-server `supabase/2026-10-26-sseudam-profile.sql`). 동의를 끄면 다음 보내기 때 서버 쪽 칸이 비워짐.
+- 관리자 `/sseudam-users`: 설치(무료 포함) + 선생님 정보 + 쓰담 플러스를 한 사람 한 줄로, 지역 · 학교급 분포, 지원사업용 요약 CSV.
+
+**휴대폰 연결 안내**
+- 설정 → 휴대폰 맨 위 'QR 한 번' 카드에 조합별(아이폰·안드로이드 × 맥·윈도우) 안내. 모든 조합의 기본은 QR, 구글 드라이브는 '다른 방법(QR이 막힐 때만)'으로 접어 둠.
+
 **열 때 할 일**
 1. 포트원 정기결제(빌링키) 채널 심사 → 카드 등록·1주 체험·자동 결제·해지·결제 실패 유예 붙이기 (2단계).
 2. Vercel 에 `ANTHROPIC_API_KEY`, `sseudam-plus` 브랜치를 main 에 합쳐 배포.

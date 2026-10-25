@@ -154,8 +154,8 @@ struct ConnectView: View {
 
     // MARK: 맥
     @ViewBuilder var macCards: some View {
-        methodCard(icon: "icloud.fill", color: Theme.blue, title: "iCloud로 자동 보내기", badge: "추천 · 설정 없음",
-                   text: "아이폰과 맥이 같은 Apple ID면 끝이에요. 담은 기록이 맥의 쓰담으로 저절로 넘어가요.") {
+        methodCard(icon: "icloud.fill", color: Theme.blue, title: "iCloud로도 보내기", badge: "같은 Apple ID면 덤으로",
+                   text: "위 QR 연결과 함께 켜 둬도 괜찮아요. 아이폰과 맥이 같은 Apple ID면 담은 녹음이 iCloud로도 맥의 쓰담에 넘어가요.") {
             Toggle(isOn: Binding(get: { store.useICloud }, set: { store.useICloud = $0 })) {
                 Text("iCloud로 보내기").font(Theme.font(15, .semibold))
             }.tint(Theme.mint)
@@ -166,12 +166,12 @@ struct ConnectView: View {
         }
         methodCard(icon: "wave.3.right", color: Theme.lavender, title: "AirDrop으로 보내기", badge: "가까이 있을 때",
                    text: "기록함에서 왼쪽으로 밀기 → 보내기 → 내 맥 선택. 맥의 쓰담이 ‘다운로드’ 폴더에서 자동으로 가져가요.") { EmptyView() }
-        googleCard(primary: false)
+        if store.googlePaired || !Relay.paired { googleCard }
     }
 
     // MARK: 윈도우
     @ViewBuilder var windowsCards: some View {
-        googleCard(primary: true)
+        if store.googlePaired || !Relay.paired { googleCard }
         methodCard(icon: "icloud.fill", color: Theme.blue, title: "iCloud for Windows", badge: "선택",
                    text: "윈도우 PC에 'iCloud for Windows'가 설치되어 있다면 iCloud로도 보낼 수 있어요.") {
             Toggle(isOn: Binding(get: { store.useICloud }, set: { store.useICloud = $0 })) {
@@ -180,10 +180,11 @@ struct ConnectView: View {
         }
     }
 
-    func googleCard(primary: Bool) -> some View {
-        methodCard(icon: "externaldrive.fill", color: Theme.mint, title: "구글 드라이브로 보내기 (예전 방식)",
-                   badge: primary ? "추천" : "다른 컴퓨터도 쓸 때",
-                   text: "컴퓨터 쓰담의 ‘설정 → 휴대폰 연결’에 나오는 QR을 한 번 찍으면 돼요. 기록은 선생님 구글 드라이브를 거쳐 컴퓨터로 가요.") {
+    /// 다른 방법: 학교 인터넷이 QR 연결을 막을 때만 (QR로 이어졌으면 숨김)
+    var googleCard: some View {
+        methodCard(icon: "externaldrive.fill", color: Theme.mint, title: "구글 드라이브를 거쳐 보내기",
+                   badge: "QR 연결이 안 될 때만",
+                   text: "위 QR 연결이 학교 인터넷에서 막힐 때 쓰는 방법이에요. 컴퓨터 쓰담 → 설정 → 📱 휴대폰 → ‘다른 방법: 구글 드라이브’를 펼쳐 나오는 QR을 찍으면, 녹음이 선생님 구글 드라이브를 거쳐 컴퓨터로 가요.") {
             if store.googlePaired {
                 HStack {
                     Pill(text: store.teacherName.isEmpty ? "연결됨" : "\(store.teacherName) 선생님 연결됨", icon: "checkmark", color: Theme.mint)
@@ -247,7 +248,7 @@ struct ConnectView: View {
             Link(destination: URL(string: "https://apps.seoriarts.com/sseudam")!) {
                 Label("컴퓨터용 쓰담 받기·사용법", systemImage: "desktopcomputer")
             }
-            Link(destination: URL(string: "https://hanseolhui.github.io/sseudam/privacy.html")!) {
+            Link(destination: URL(string: "https://apps.seoriarts.com/sseudam-privacy")!) {
                 Label("개인정보 처리방침", systemImage: "hand.raised.fill")
             }
             Button { store.onboarded = false } label: { Label("처음 안내 다시 보기", systemImage: "sparkles") }

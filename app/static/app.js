@@ -1586,7 +1586,12 @@ async function viewSettings(section) {
       </div>
       <div class="card" style="grid-column:1 / -1;order:0" id="qr-link" data-pane="phone">
         <div class="section-title"><h2>📱 휴대폰 연결 — QR 한 번</h2><span id="rl-state" class="small"></span></div>
-        <p class="help" style="margin-top:-4px">아이폰·안드로이드 어떤 폰이든, 맥·윈도우 어떤 컴퓨터든 이어져요. 휴대폰 쓰담 앱 → <b>컴퓨터 연결</b> → 아래 QR을 찍으면 끝. 녹음과 학생 기록이 저절로 오가요.</p>
+        <p class="help" style="margin-top:-4px">아이폰·안드로이드 어떤 폰이든, 맥·윈도우 어떤 컴퓨터든 <b>이 방법 하나</b>면 돼요. 휴대폰 쓰담 앱 → <b>연결</b> 탭 → 아래 QR을 찍으면 끝. 녹음 · 한 줄 메모 · 학생 기록이 저절로 오가요.</p>
+        <div class="combo" id="combo">
+          <div class="combo-tabs">${[['ios-mac', '아이폰 → 맥'], ['ios-win', '아이폰 → 윈도우'], ['and-mac', '안드로이드 → 맥'], ['and-win', '안드로이드 → 윈도우']]
+            .map(([k, n]) => `<button type="button" data-combo="${k}" class="${k === (s.platform === 'win' ? 'ios-win' : 'ios-mac') ? 'on' : ''}">${n}</button>`).join('')}</div>
+          <div class="combo-body small" id="combo-body"></div>
+        </div>
         <div class="split">
           <div style="text-align:center"><div id="rl-qr" class="muted small">불러오는 중…</div></div>
           <div>
@@ -1602,14 +1607,15 @@ async function viewSettings(section) {
         </div>
       </div>
       <div class="card" style="grid-column:1 / -1;order:1" id="phone" data-pane="phone">
-        <div class="section-title"><h2>구글 드라이브로 연결 (예전 방식)</h2><label class="check"><input type="checkbox" id="drive_inbox" ${s.drive_inbox === '1' ? 'checked' : ''}> 휴대폰 녹음 자동으로 가져오기</label></div>
+        <details><summary><b>다른 방법: 구글 드라이브를 거쳐 보내기</b> <span class="small muted">— 학교 인터넷이 QR 연결을 막을 때만 쓰세요. 위 QR로 이어졌다면 필요 없어요.</span></summary>
+        <div class="section-title" style="margin-top:10px"><span></span><label class="check"><input type="checkbox" id="drive_inbox" ${s.drive_inbox === '1' ? 'checked' : ''}> 구글 드라이브로 온 휴대폰 녹음 가져오기</label></div>
         <div class="split">
           <div class="info-box"><b>아이폰</b> — App Store에서 <b>쓰담</b> 설치 → 녹음하면 <b>iCloud로 자동 연동</b> (같은 Apple ID면 설정 없음)${s.platform === 'win' ? '<br><span class="small muted">윈도우 PC는 iCloud for Windows가 설치돼 있어야 합니다. 없으면 아래 구글 연결을 쓰세요.</span>' : ''}
             <br><br><b>안드로이드(갤럭시) · 아이폰 공통</b> — Play 스토어/App Store에서 <b>쓰담</b> 설치 → 앱의 <b>컴퓨터 연결</b> → 오른쪽 QR 찍기 → 녹음이 <b>내 구글 드라이브</b>를 거쳐 이 컴퓨터로 자동 전송
             <p class="small muted" style="margin:6px 0 0">QR에는 '녹음 올리기'만 가능한 전용 열쇠가 들어 있습니다. 휴대폰을 잃어버려도 기록을 볼 수는 없습니다. <b>💾 백업·업데이트 → 구글 연결</b>이 먼저 되어 있어야 해요.</p></div>
           <div style="text-align:center"><div id="qr-box" class="muted small">불러오는 중…</div>
             <button class="sm" id="phone-scan" style="margin-top:8px">휴대폰 녹음 지금 가져오기</button></div>
-        </div>
+        </div></details>
         <div class="source" id="ts-box" style="margin-top:14px"></div>
       </div>
       <div class="card" style="grid-column:1 / -1;order:1" id="backup-card" data-pane="data">
@@ -1906,6 +1912,20 @@ async function viewSettings(section) {
   };
   $('#ai-ext').addEventListener('toggle', () => { if ($('#ai-ext').open) extLoad(); });
   aiLoad();
+  // 📱 휴대폰 · 컴퓨터 조합별 안내 (모두 QR이 기본, 조합마다 덤으로 되는 것)
+  const COMBO = {
+    'ios-mac': `<ol><li>아이폰 App Store에서 <b>쓰담</b> 설치</li><li>쓰담 앱 → <b>연결</b> 탭 → <b>컴퓨터와 QR로 연결</b> → 이 화면의 QR 찍기</li><li>끝. 녹음 · 한 줄 메모가 이 맥으로 오고, 학생 기록은 양쪽이 같아져요.</li></ol>
+      <p class="muted">덤: 같은 Apple ID면 iCloud로도 이어져요(둘 다 켜도 괜찮아요). 쓰담 앱 대신 아이폰 기본 <b>음성 메모 · 메모</b> 앱을 쓰고 싶으면 아래 <b>녹음 가져오기</b> ① ②를 켜세요.</p>`,
+    'ios-win': `<ol><li>아이폰 App Store에서 <b>쓰담</b> 설치</li><li>쓰담 앱 → <b>연결</b> 탭 → <b>컴퓨터와 QR로 연결</b> → 이 화면의 QR 찍기</li><li>끝. 녹음 · 한 줄 메모가 이 컴퓨터로 오고, 학생 기록은 양쪽이 같아져요.</li></ol>
+      <p class="muted">윈도우는 iCloud가 기본으로 없어서 QR이 가장 쉬워요. 아이폰 기본 음성 메모 · 메모 앱 자동 가져오기는 맥에서만 돼요 — 대신 쓰담 앱의 녹음과 <b>한 줄로 남기기</b>(🎤로 말하면 글자로)를 쓰세요.</p>`,
+    'and-mac': `<ol><li>안드로이드에 <b>쓰담</b> 설치 (Play 스토어 또는 <a href="https://github.com/hanseolhui/sseudam/releases/latest" target="_blank">설치 파일</a>)</li><li>쓰담 앱 → <b>연결</b> 탭 → <b>QR 찍기</b> → 이 화면의 QR 찍기</li><li>끝. 녹음 · 한 줄 메모가 이 맥으로 오고, 학생 기록은 양쪽이 같아져요.</li></ol>
+      <p class="muted">메모: 쓰담 앱 홈의 <b>한 줄로 남기기</b>에 쓰거나 🎤로 말하면 글자로 바뀌어 자동으로 와요(따로 설정 없음). 갤럭시 기본 <b>녹음</b> 앱으로 녹음했다면 그 파일을 <b>공유 → 쓰담</b>으로 보내면 돼요.</p>`,
+    'and-win': `<ol><li>안드로이드에 <b>쓰담</b> 설치 (Play 스토어 또는 <a href="https://github.com/hanseolhui/sseudam/releases/latest" target="_blank">설치 파일</a>)</li><li>쓰담 앱 → <b>연결</b> 탭 → <b>QR 찍기</b> → 이 화면의 QR 찍기</li><li>끝. 녹음 · 한 줄 메모가 이 컴퓨터로 오고, 학생 기록은 양쪽이 같아져요.</li></ol>
+      <p class="muted">메모: 쓰담 앱 홈의 <b>한 줄로 남기기</b>에 쓰거나 🎤로 말하면 글자로 바뀌어 자동으로 와요(따로 설정 없음). 갤럭시 기본 <b>녹음</b> 앱 파일은 <b>공유 → 쓰담</b>, 또는 <b>퀵 셰어</b>로 이 컴퓨터에 보내도 돼요(아래 녹음 가져오기).</p>`,
+  };
+  const comboShow = k => { $('#combo-body').innerHTML = COMBO[k]; $$('#combo [data-combo]').forEach(b => b.classList.toggle('on', b.dataset.combo === k)); };
+  $$('#combo [data-combo]').forEach(b => b.onclick = () => comboShow(b.dataset.combo));
+  comboShow(s.platform === 'win' ? 'ios-win' : 'ios-mac');
   // 📱 QR 연동
   const rlDraw = async (r) => {
     r = r || await api('/api/relay', undefined, { silent: true }).catch(() => null);
@@ -2178,7 +2198,7 @@ async function renderSources() {
         <li>위 <b>사용</b> 체크 → "메모를 제어하려고 합니다" 창이 뜨면 <b>허용</b></li>
         <li>사용 팁: 메모 제목에 <b>2-3</b> 같은 학급을 쓰거나, 시간표를 채워 두면 학급이 자동 지정됩니다</li></ol></details>
     </div>
-` : '<p class="muted small">아이폰 음성메모·메모 앱 자동 가져오기는 맥에서만 됩니다. 윈도우에서는 휴대폰 \'쓰담\' 앱(아래)이나 iCloud 폴더를 쓰세요.</p>') + `
+` : '<p class="muted small">아이폰 기본 음성메모·메모 앱 자동 가져오기는 맥에서만 됩니다. 윈도우에서는 위 <b>휴대폰 연결 — QR 한 번</b>으로 쓰담 앱의 녹음·한 줄 메모를 받으세요.</p>') + `
     <div class="source">
       <div class="source-head"><h3>AirDrop · 퀵 셰어로 받기 <span class="badge blue">맥·윈도우</span> ${src.downloads.enabled ? '<span class="badge green">작동 중</span>' : ''}</h3>
         <label class="switch"><input type="checkbox" id="dl-on" ${src.downloads.enabled ? 'checked' : ''}> 사용</label></div>

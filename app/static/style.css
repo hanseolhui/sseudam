@@ -555,3 +555,11 @@ audio { width: 100%; margin: 8px 0; }
 .act-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 14px; }
 .act-group .act-label { font-size: 11px; font-weight: 700; color: var(--muted); margin-right: 2px; white-space: nowrap; }
 .act-group button { height: 34px; padding: 0 14px; white-space: nowrap; }
+
+/* 휴대폰 · 컴퓨터 조합별 안내 */
+.combo { border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; margin: 8px 0 12px; }
+.combo-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.combo-tabs button { height: 30px; padding: 0 12px; font-size: 12px; border-radius: 999px; }
+.combo-tabs button.on { background: var(--grad, var(--blue)); color: #fff; border-color: transparent; }
+.combo-body ol { margin: 4px 0 6px; padding-left: 20px; line-height: 1.8; }
+.combo-body p { margin: 4px 0 0; }
