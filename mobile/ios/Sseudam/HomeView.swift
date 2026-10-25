@@ -8,6 +8,11 @@ struct HomeView: View {
     @EnvironmentObject var data: DataStore
     @AppStorage("markClass") private var markClass = ""
     @StateObject private var rec = Recorder()
+    @StateObject private var auto = AutoRecorder()
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var autoMore = false
+    @State private var autoNotice = false
+    @AppStorage("autoNoticeSeen") private var autoNoticeSeen = false
     @State private var memoText = ""
     @State private var memoKind = Store.shared.lastKind
     @State private var showTips = false
@@ -38,8 +43,13 @@ struct HomeView: View {
                 Button("설정 열기") { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }
                 Button("닫기", role: .cancel) {}
             } message: { Text("설정 → 쓰담 → 마이크를 켜 주세요.") }
+            .alert("주변 소리도 담길 수 있어요", isPresented: $autoNotice) {
+                Button("알겠어요") { autoNoticeSeen = true }
+            } message: { Text("앱을 켜 둔 동안 말소리가 들리면 녹음해요. 주변 사람 목소리도 담길 수 있고, 녹음은 이 폰과 연결한 컴퓨터에만 저장돼요. 화면이 꺼지면 쉬어요.") }
             .onChange(of: nav.startRecordingRequest) { _ in checkStartRequest() }
-            .onAppear { checkStartRequest() }
+            .onAppear { checkStartRequest(); setupAuto(); resumeAuto() }
+            .onDisappear { auto.stop() }
+            .onChange(of: scenePhase) { p in if p == .active { resumeAuto() } else { auto.stop() } }
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: store.justSaved)
             .animation(.spring(response: 0.4, dampingFraction: 0.85), value: rec.isRecording)
         }
@@ -114,6 +124,8 @@ struct HomeView: View {
                 .contentTransition(.numericText())
 
             Text(statusText).font(Theme.font(14)).foregroundStyle(Theme.soft).multilineTextAlignment(.center)
+
+            if !rec.isRecording { autoCard }
 
             if rec.isRecording && !rec.liveText.isEmpty {
                 LiveCaption(text: rec.liveText).transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -227,7 +239,77 @@ struct HomeView: View {
     func checkStartRequest() {
         guard nav.startRecordingRequest > nav.handledRecordingRequest else { return }
         nav.handledRecordingRequest = nav.startRecordingRequest
-        if !rec.isRecording { Task { await rec.start(hints: data.rosterNames) } }
+        if !rec.isRecording { auto.stop(); Task { await rec.start(hints: data.rosterNames) } }
+    }
+
+    // MARK: 말하면 담기 (앱이 켜져 있는 동안만)
+    func setupAuto() {
+        auto.onClip = { url, d, at in
+            store.addAudio(tempFile: url, duration: d, at: at, markers: [],
+                           classUid: markClass.isEmpty ? nil : markClass, period: nil)
+        }
+    }
+
+    func resumeAuto() {
+        guard auto.enabled, !rec.isRecording, scenePhase == .active else { return }
+        Task { await auto.start() }
+    }
+
+    var autoCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle(isOn: Binding(get: { auto.enabled }, set: { on in
+                auto.enabled = on
+                if on { if !autoNoticeSeen { autoNotice = true }; resumeAuto() } else { auto.stop() }
+            })) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("말하면 담기").font(Theme.font(15, .bold))
+                    Text("앱을 켜 둔 동안 말하면 저절로 녹음하고, 말을 멈추면 끝내요").font(Theme.font(12)).foregroundStyle(Theme.soft)
+                }
+            }
+            .tint(Theme.blue)
+            if auto.enabled {
+                HStack(spacing: 8) {
+                    Circle().fill(auto.capturing ? Theme.coral : (auto.listening ? Theme.mint : Color.gray.opacity(0.4)))
+                        .frame(width: 8, height: 8)
+                    Text(autoStatus).font(Theme.font(13, .semibold)).foregroundStyle(auto.capturing ? Theme.coral : Theme.ink)
+                        .monospacedDigit().contentTransition(.numericText())
+                    Spacer()
+                    Button { withAnimation { autoMore.toggle() } } label: {
+                        Label("자세히", systemImage: autoMore ? "chevron.up" : "chevron.down").font(Theme.font(12, .semibold))
+                    }
+                }
+                AutoMeter(level: CGFloat(auto.level), threshold: CGFloat(auto.thresholdLevel), active: auto.capturing)
+                    .frame(height: 8)
+                    .accessibilityHidden(true)
+                if autoMore {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("감도 — 시끄러운 곳일수록 크게 말해야 시작해요").font(Theme.font(12, .semibold)).foregroundStyle(Theme.soft)
+                        Picker("감도", selection: $auto.sensitivity) {
+                            ForEach(AutoGate.Sensitivity.allCases, id: \.self) { Text($0.label).tag($0) }
+                        }.pickerStyle(.segmented)
+                        Text("말 끝나고 멈추기 — 이만큼 조용하면 녹음을 끝내요").font(Theme.font(12, .semibold)).foregroundStyle(Theme.soft)
+                        Picker("말 끝나고 멈추기", selection: $auto.stopDelay) {
+                            Text("1.5초").tag(1.5); Text("2.5초").tag(2.5); Text("4초").tag(4.0)
+                        }.pickerStyle(.segmented)
+                        Text("막대의 선을 넘는 소리가 0.25초 이어지면 시작해요. 1초보다 짧은 소리(기침 · 문소리)는 버리고, 말 시작 직전 1초도 같이 담아요. 화면이 꺼지거나 다른 탭으로 가면 쉬어요.")
+                            .font(Theme.font(11)).foregroundStyle(Theme.soft)
+                    }
+                    .transition(.opacity)
+                }
+            }
+        }
+        .padding(12)
+        .background(Theme.bg.opacity(0.6), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .alert("마이크 권한이 필요해요", isPresented: $auto.permissionDenied) {
+            Button("설정 열기") { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }
+            Button("닫기", role: .cancel) {}
+        } message: { Text("설정 → 쓰담 → 마이크를 켜 주세요.") }
+    }
+
+    var autoStatus: String {
+        if auto.justSaved { return "방금 담았어요 ✓" }
+        if auto.capturing { return "담는 중 " + timeString(auto.captureElapsed) }
+        return auto.listening ? "듣는 중 · 말하면 바로 담아요" : "잠깐 쉬는 중"
     }
 
     func toggle() {
@@ -241,8 +323,10 @@ struct HomeView: View {
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
                 }
             }
+            resumeAuto()
         } else {
             memoFocused = false
+            auto.stop()
             Task { await rec.start(hints: data.rosterNames) }
         }
     }
@@ -556,5 +640,24 @@ struct PulseRings: View {
                 .animation(.linear(duration: 0.1), value: level)
         }
         .onAppear { animate = true }
+    }
+}
+
+/// 자동 녹음 소리 막대: 지금 소리 크기와 '이 선을 넘으면 시작' 선
+struct AutoMeter: View {
+    var level: CGFloat
+    var threshold: CGFloat
+    var active: Bool
+    var body: some View {
+        GeometryReader { g in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.gray.opacity(0.15))
+                Capsule().fill(active ? Theme.coral : (level >= threshold ? Theme.blue : Theme.mint))
+                    .frame(width: max(4, g.size.width * level))
+                    .animation(.linear(duration: 0.1), value: level)
+                Rectangle().fill(Theme.ink.opacity(0.55)).frame(width: 2)
+                    .offset(x: g.size.width * threshold - 1)
+            }
+        }
     }
 }
