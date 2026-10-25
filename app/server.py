@@ -275,8 +275,8 @@ def classes_save(h, q, b):
             _int(b.get("grade")), _int(b.get("class_no")), (b.get("subject") or "").strip(), kind)
     if kind in ("교과", "담임") and (not vals[2] or not vals[3]):
         raise ApiError("학년과 반을 입력하세요.")
-    if kind in ("동아리", "기타") and not vals[4]:
-        raise ApiError("%s 이름을 입력하세요." % ("동아리" if kind == "동아리" else "모둠"))
+    if (kind in ("동아리", "기타") or kind in db.NAMED_KINDS) and not vals[4]:
+        raise ApiError("%s 이름을 입력하세요." % {"동아리": "동아리", "유아반": "반", "학원·과외": "반 · 수업", "PT·필라테스": "수업"}.get(kind, "모둠"))
     conn = db.connect()
     if b.get("id"):
         conn.execute("UPDATE classes SET year=?, semester=?, grade=?, class_no=?, subject=?, kind=? WHERE id=?",
@@ -398,7 +398,7 @@ def class_detail(h, q, b, cid):
         for st in students:
             notes = db.rows(conn, "SELECT area FROM notes WHERE student_id=?", (st["id"],))
             st["notes"] = len(notes)
-            st["area_notes"] = sum(1 for n in notes if db.note_area(n, kind) == area)
+            st["area_notes"] = sum(1 for n in notes if db.note_in_area(n, kind, area))
             d = db.row(conn, "SELECT status, bytes, content FROM drafts WHERE student_id=? AND area=? "
                              "ORDER BY (status='확정') DESC, id DESC LIMIT 1", (st["id"], area))
             st["draft_status"] = d["status"] if d else None
@@ -551,7 +551,7 @@ def student_detail(h, q, b, sid):
                                  WHERE n.student_id=? ORDER BY n.date DESC, n.id DESC""", (int(sid),))
         drafts = db.rows(conn, "SELECT * FROM drafts WHERE student_id=? ORDER BY id DESC", (int(sid),))
         for d in drafts:
-            d["forbidden"] = prompts.check_forbidden(d["content"])
+            d["forbidden"] = prompts.check_forbidden(d["content"]) if (d.get("area") or "subject") in db.SCHOOL_AREA_IDS else []
         siblings = db.rows(conn, "SELECT id, number, name FROM students WHERE class_id=? ORDER BY number, name",
                            (s["class_id"],))
         kind = c.get("kind") or "교과"
@@ -878,7 +878,7 @@ def _batch_targets(conn, class_id, area_in, only_missing):
     out = []
     for st in db.rows(conn, "SELECT * FROM students WHERE class_id=? ORDER BY number", (c["id"],)):
         notes = [n for n in db.rows(conn, "SELECT * FROM notes WHERE student_id=? AND use_in_draft=1 ORDER BY date, id", (st["id"],))
-                 if db.note_area(n, kind) == area]
+                 if db.note_in_area(n, kind, area)]
         if not notes:
             continue
         if only_missing and db.row(conn, "SELECT id FROM drafts WHERE student_id=? AND area=?", (st["id"], area)):
@@ -943,7 +943,7 @@ def drafts_batch(h, q, b):
     targets = []
     for st in students:
         notes = db.rows(conn, "SELECT area FROM notes WHERE student_id=? AND use_in_draft=1", (st["id"],))
-        if not any(db.note_area(n, kind) == area for n in notes):
+        if not any(db.note_in_area(n, kind, area) for n in notes):
             continue
         if b.get("only_missing") and db.row(conn, "SELECT id FROM drafts WHERE student_id=? AND area=?", (st["id"], area)):
             continue
@@ -1529,7 +1529,7 @@ def student_notes_text(h, q, b, sid):
     notes = db.rows(conn, "SELECT * FROM notes WHERE student_id=? AND use_in_draft=1 ORDER BY date, id", (int(sid),))
     conn.close()
     if q.get("area"):
-        notes = [n for n in notes if db.note_area(n, c["kind"] or "교과") == q["area"]]
+        notes = [n for n in notes if db.note_in_area(n, c["kind"] or "교과", q["area"])]
     lines = ["- [%s/%s%s] %s" % (n["date"] or "", n["kind"] or "", ("/" + n["category"]) if n["category"] else "", n["content"])
              for n in notes]
     return {"text": "\n".join(lines), "count": len(notes)}

@@ -882,27 +882,42 @@ const KIND_HELP = {
   '담임': '담임 학급. 행동특성 및 종합의견, 자율·자치, 진로활동, 개인별 세특을 씁니다.',
   '동아리': '여러 반 학생이 모인 동아리. 명단은 학번(예: 20315)으로 넣으세요.',
   '기타': '방과후·모둠 등. 모든 영역을 쓸 수 있습니다.',
+  '유아반': '유치원·어린이집 반. 유아 관찰 기록(누리과정), 학기말 발달 평가, 가정 알림 글을 씁니다.',
+  '학원·과외': '학원 반이나 과외 학생. 학부모 학습 리포트와 수업 뒤 피드백 문자를 씁니다.',
+  'PT·필라테스': 'PT·필라테스·운동 수업. 회원 수업 일지, 진행 리포트, 수업 뒤 회원 메시지를 씁니다.',
 };
+const CLASS_KINDS = ['교과', '담임', '동아리', '유아반', '학원·과외', 'PT·필라테스', '기타'];
+// 학년·반 없이 이름만 쓰는 유형과 이름 칸 안내
+const NAME_KIND = { '동아리': ['동아리 이름', '예: 로봇탐구반'], '기타': ['이름', '예: 방과후 코딩반'], '유아반': ['반 이름', '예: 해바라기반 (5세)'],
+  '학원·과외': ['반 · 수업 이름', '예: 중2 수학 A반 · 고1 영어 과외'], 'PT·필라테스': ['수업 이름', '예: 개인 PT · 오전 그룹 필라테스'] };
+// 소속 유형(설정 → 선생님)에 맞는 새 학급 기본 유형
+function defaultKind() {
+  const o = (state.settings && state.settings.org_type) || '';
+  return o.startsWith('유치원') ? '유아반' : (o.startsWith('학원') || o === '과외') ? '학원·과외' : o.startsWith('PT') ? 'PT·필라테스' : '교과';
+}
+// 학급 유형에 맞는 사람 부르는 말
+function whoWord(kind) { return kind === 'PT·필라테스' ? '회원' : kind === '유아반' ? '유아' : '학생'; }
 
 function classFormFields(c) {
   const kind = c.kind || '교과';
-  const named = kind === '동아리' || kind === '기타';
+  const named = !!NAME_KIND[kind];
   return `
-    <label class="field shrink" style="min-width:110px"><span>유형</span><select id="c-kind">${['교과', '담임', '동아리', '기타'].map(k => `<option ${k === kind ? 'selected' : ''}>${k}</option>`).join('')}</select></label>
+    <label class="field shrink" style="min-width:110px"><span>유형</span><select id="c-kind">${CLASS_KINDS.map(k => `<option ${k === kind ? 'selected' : ''}>${k}</option>`).join('')}</select></label>
     <label class="field"><span>연도</span><input id="c-year" type="number" value="${c.year}"></label>
     <label class="field"><span>학기</span><select id="c-sem"><option value="1" ${c.semester == 1 ? 'selected' : ''}>1학기</option><option value="2" ${c.semester == 2 ? 'selected' : ''}>2학기</option></select></label>
     <label class="field ${named ? 'hidden' : ''}" data-f="grade"><span>학년</span><input id="c-grade" type="number" min="1" max="6" value="${c.grade ?? ''}" placeholder="2"></label>
     <label class="field ${named ? 'hidden' : ''}" data-f="no"><span>반</span><input id="c-no" type="number" min="1" value="${c.class_no ?? ''}" placeholder="3"></label>
-    <label class="field ${kind === '담임' ? 'hidden' : ''}" data-f="subj"><span id="c-subj-l">${named ? (kind === '동아리' ? '동아리 이름' : '이름') : '과목'}</span><input id="c-subj" value="${esc(c.subject || '')}" placeholder="${named ? '예: 로봇탐구반' : '예: 국어'}"></label>`;
+    <label class="field ${kind === '담임' ? 'hidden' : ''}" data-f="subj"><span id="c-subj-l">${named ? NAME_KIND[kind][0] : '과목'}</span><input id="c-subj" value="${esc(c.subject || '')}" placeholder="${named ? NAME_KIND[kind][1] : '예: 국어'}"></label>`;
 }
 
 function bindClassForm() {
   const upd = () => {
-    const k = $('#c-kind').value, named = k === '동아리' || k === '기타';
+    const k = $('#c-kind').value, named = !!NAME_KIND[k];
     $('[data-f=grade]').classList.toggle('hidden', named);
     $('[data-f=no]').classList.toggle('hidden', named);
     $('[data-f=subj]').classList.toggle('hidden', k === '담임');
-    $('#c-subj-l').textContent = named ? (k === '동아리' ? '동아리 이름' : '이름') : '과목';
+    $('#c-subj-l').textContent = named ? NAME_KIND[k][0] : '과목';
+    $('#c-subj').placeholder = named ? NAME_KIND[k][1] : '예: 국어';
     $('#c-kind-help').textContent = KIND_HELP[k];
   };
   $('#c-kind').onchange = upd; upd();
@@ -926,7 +941,7 @@ async function viewClasses() {
       <p class="muted small" style="margin:0">${termLabel(prevTerm(state.term))}의 학급 ${prevList.length}개(${prevList.slice(0, 4).map(c => esc(c.label)).join(', ')}${prevList.length > 4 ? ' …' : ''})를 ${termLabel(state.term)}로 복사해요. 학생 번호·이름·별칭만 옮기고 관찰기록은 옮기지 않아요.</p></div>` : ''}
     <div class="card">
       <h2>새 학급</h2>
-      <div class="row">${classFormFields({ year: y, semester: sem, kind: '교과' })}
+      <div class="row">${classFormFields({ year: y, semester: sem, kind: defaultKind() })}
         <button class="primary shrink" id="c-add">추가</button>
       </div>
       <p class="help" id="c-kind-help"></p>
@@ -934,7 +949,7 @@ async function viewClasses() {
     <div class="card">
       <div class="section-title"><h2>${termLabel(state.term)} 학급 ${list.length}개</h2>${others ? `<a class="small" href="#/archive">다른 학기 학급 ${others}개 보기 →</a>` : ''}</div>
       ${list.length ? `<div class="table-wrap"><table><thead><tr><th>학급</th><th>유형</th><th class="right">학생 수</th><th class="right">관찰기록</th><th></th></tr></thead><tbody>
-        ${list.map(c => `<tr class="clickable" data-href="#/class/${c.id}"><td><b>${esc(c.label)}</b></td><td><span class="badge ${{ '담임': 'violet', '동아리': 'green', '기타': 'amber' }[c.kind] || 'blue'}">${esc(c.kind || '교과')}</span></td>
+        ${list.map(c => `<tr class="clickable" data-href="#/class/${c.id}"><td><b>${esc(c.label)}</b></td><td><span class="badge ${{ '담임': 'violet', '동아리': 'green', '기타': 'amber', '유아반': 'amber', '학원·과외': 'violet', 'PT·필라테스': 'green' }[c.kind] || 'blue'}">${esc(c.kind || '교과')}</span></td>
           <td class="num">${c.students}</td><td class="num">${c.notes || 0}</td><td class="right"><a href="#/drafts/${c.id}" class="small">초안 →</a></td></tr>`).join('')}
       </tbody></table></div>` : '<p class="muted">이 학기 학급이 아직 없어요. 위에서 만들거나 지난 학기 명단을 가져오세요.</p>'}
     </div>`;
@@ -958,11 +973,11 @@ async function viewClass(id) {
   const c = d.class;
   const club = c.kind === '동아리';
   view.innerHTML = `
-    <div class="page-head"><div><a href="#/classes" class="back-btn" aria-label="학급 목록으로 돌아가기"><span aria-hidden="true">←</span> 학급 목록</a><h1>${esc(c.label)}</h1><div class="muted">${esc(c.kind || '교과')} · ${c.year}년 ${c.semester}학기 · 학생 ${d.students.length}명 · 기재 영역: ${d.areas.map(a => esc(a.name)).join(', ')}</div></div>
+    <div class="page-head"><div><a href="#/classes" class="back-btn" aria-label="학급 목록으로 돌아가기"><span aria-hidden="true">←</span> 학급 목록</a><h1>${esc(c.label)}</h1><div class="muted">${esc(c.kind || '교과')} · ${c.year}년 ${c.semester}학기 · ${whoWord(c.kind)} ${d.students.length}명 · ${NAME_KIND[c.kind] && c.kind !== '동아리' && c.kind !== '기타' ? '쓰는 글' : '기재 영역'}: ${d.areas.map(a => esc(a.name)).join(', ')}</div></div>
       <div class="actions"><button id="c-copy" title="이 명단으로 다른 학기 학급 만들기">다음 학기로 명단 복사</button><a class="btn" href="#/recordings/${c.id}">이 학급 녹음</a><a class="btn" href="#/drafts/${c.id}">초안</a></div></div>
     <div class="split">
       <div class="card">
-        <div class="section-title"><h2>학생 명단</h2><button class="sm" id="s-add">+ 학생 추가</button></div>
+        <div class="section-title"><h2>${whoWord(c.kind)} 명단</h2><button class="sm" id="s-add">+ ${whoWord(c.kind)} 추가</button></div>
         ${d.students.length ? `<div class="table-wrap"><table><thead><tr><th>${club ? '학번' : '번호'}</th><th>이름</th><th>별칭 (전사 오인식 대비)</th><th class="right">기록</th><th></th></tr></thead><tbody>
           ${d.students.map(s => `<tr class="clickable" data-href="#/student/${s.id}" data-sid="${s.id}">
             <td class="num">${s.number ?? ''}</td><td><b>${esc(s.name)}</b></td><td class="small muted">${esc(s.aliases)}</td>
@@ -1042,7 +1057,7 @@ function newTermModal(opt) {
       </div>
       <h3 style="margin-top:16px">가져올 학급</h3>
       ${src.length ? `<div class="table-wrap"><table><thead><tr><th style="width:36px"><span class="sr-only">선택</span></th><th>학급</th><th style="width:90px">학년</th><th style="width:90px">반</th><th>과목·이름</th><th class="right">학생</th></tr></thead><tbody>
-        ${src.map(c => { const named = c.kind === '동아리' || c.kind === '기타'; return `<tr data-cid="${c.id}">
+        ${src.map(c => { const named = !!NAME_KIND[c.kind]; return `<tr data-cid="${c.id}">
           <td><input type="checkbox" class="nt-on" aria-label="${esc(c.label)} 가져오기" ${!opt.only || opt.only === c.id ? 'checked' : ''}></td>
           <td><b>${esc(c.label)}</b><div class="small muted">${esc(c.kind || '교과')}</div></td>
           <td>${named ? '' : `<input type="number" class="nt-grade" min="1" max="6" value="${c.grade ?? ''}" aria-label="학년">`}</td>
@@ -2355,7 +2370,7 @@ function profileFields(s, p) {
   return `<div class="pf-grid">
       ${f('이름', inp('teacher_name', s.teacher_name, '예: 김쓰담'))}
       ${f('이메일', inp('contact_email', s.contact_email || s.plus_email, '안내를 받을 주소', 'type="email"'))}
-      ${f('소속 유형', sel('org_type', [['', '고르기'], ['학교', '학교'], ['유치원·어린이집', '유치원 · 어린이집'], ['학원·교습소', '학원 · 교습소'], ['방과후·돌봄', '방과후 · 돌봄'], ['기타 기관', '기타 기관']], s.org_type))}
+      ${f('소속 유형', sel('org_type', [['', '고르기'], ['학교', '학교'], ['유치원·어린이집', '유치원 · 어린이집'], ['학원·교습소', '학원 · 교습소'], ['과외', '과외 (개인)'], ['PT·필라테스', 'PT · 필라테스 · 운동'], ['방과후·돌봄', '방과후 · 돌봄'], ['기타 기관', '기타 기관']], s.org_type))}
       ${f('소속 이름', inp('school_name', s.school_name, '예: 쓰담고등학교 · 쓰담수학학원'))}
       ${f('지역 (시·도)', sel('region_sido', [['', '고르기']].concat(SIDO.map(x => [x, x])), s.region_sido))}
       ${f('시·군·구', inp('region_sigungu', s.region_sigungu, '예: 파주시'))}

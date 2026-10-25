@@ -117,15 +117,29 @@ AREAS = [
     {"id": "autonomy", "name": "자율·자치", "full": "자율·자치활동 특기사항", "bytes": 1500, "kinds": ["담임"]},
     {"id": "career", "name": "진로활동", "full": "진로활동 특기사항", "bytes": 2100, "kinds": ["담임"]},
     {"id": "club", "name": "동아리", "full": "동아리활동 특기사항", "bytes": 1500, "kinds": ["동아리"]},
+    # 학교 밖 선생님 (유치원 · 학원 · 과외 · PT · 필라테스): NEIS가 아니라 보내는 글이라 분량은 넉넉하게 기본값만
+    {"id": "kinder_obs", "name": "관찰 기록", "full": "유아 관찰 기록 (누리과정 5개 영역)", "bytes": 1500, "kinds": ["유아반"], "school": False},
+    {"id": "kinder_eval", "name": "발달 평가", "full": "학기말 유아 발달 종합 의견", "bytes": 1500, "kinds": ["유아반"], "school": False},
+    {"id": "kinder_home", "name": "가정 알림", "full": "학부모에게 보내는 알림장 글", "bytes": 900, "kinds": ["유아반"], "school": False},
+    {"id": "lesson_report", "name": "학습 리포트", "full": "학부모에게 보내는 학습 리포트", "bytes": 1500, "kinds": ["학원·과외"], "school": False},
+    {"id": "lesson_msg", "name": "수업 피드백", "full": "수업 뒤 학부모에게 보내는 피드백 문자", "bytes": 600, "kinds": ["학원·과외"], "school": False},
+    {"id": "fit_log", "name": "수업 일지", "full": "회원 수업 일지 (운동 · 자세 · 다음 목표)", "bytes": 1200, "kinds": ["PT·필라테스"], "school": False},
+    {"id": "fit_report", "name": "회원 리포트", "full": "회원에게 보내는 진행 리포트", "bytes": 1500, "kinds": ["PT·필라테스"], "school": False},
+    {"id": "fit_msg", "name": "회원 메시지", "full": "수업 뒤 회원에게 보내는 메시지", "bytes": 600, "kinds": ["PT·필라테스"], "school": False},
 ]
 AREA_IDS = [a["id"] for a in AREAS]
-CLASS_KINDS = ["교과", "담임", "동아리", "기타"]
+CLASS_KINDS = ["교과", "담임", "동아리", "유아반", "학원·과외", "PT·필라테스", "기타"]
+SCHOOL_AREA_IDS = [a["id"] for a in AREAS if a.get("school", True)]
+NAMED_KINDS = ["유아반", "학원·과외", "PT·필라테스"]   # 학년 · 반 없이 이름만 있는 학급
 
 
 def areas_for_kind(kind):
     """학급 유형별 영역. 첫 번째가 기본 영역."""
     order = {"담임": ["behavior", "autonomy", "career", "individual"],
-             "동아리": ["club"], "기타": AREA_IDS}.get(kind, ["subject"])
+             "동아리": ["club"], "기타": SCHOOL_AREA_IDS,
+             "유아반": ["kinder_obs", "kinder_eval", "kinder_home"],
+             "학원·과외": ["lesson_report", "lesson_msg"],
+             "PT·필라테스": ["fit_log", "fit_report", "fit_msg"]}.get(kind, ["subject"])
     return [next(a for a in AREAS if a["id"] == i) for i in order]
 
 
@@ -304,6 +318,11 @@ def note_area(note, class_kind):
     return areas_for_kind(class_kind or "교과")[0]["id"]
 
 
+def note_in_area(note, class_kind, area):
+    """이 영역 초안에 쓸 기록인지. 학교 밖 영역(수업 일지 · 리포트 · 문자)은 같은 관찰을 글 모양만 달리 쓰므로 모든 기록."""
+    return area not in SCHOOL_AREA_IDS or note_area(note, class_kind) == area
+
+
 def daily_backup():
     if not os.path.exists(DB_PATH):
         return
@@ -364,6 +383,8 @@ def class_label(c):
         return "동아리 %s" % (c.get("subject") or "")
     if kind == "기타" and not c.get("grade"):
         return c.get("subject") or "모둠"
+    if kind in NAMED_KINDS:   # 유치원 반 · 학원 반 · PT 수업은 이름 그대로
+        return c.get("subject") or kind
     label = "%s학년 %s반" % (c.get("grade") or "?", c.get("class_no") or "?")
     if kind == "담임":
         label += " (담임)"

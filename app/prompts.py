@@ -43,7 +43,7 @@ def transcribe(kind, class_label, students):
 """ % ("학교", context, class_label or "미지정", roster_text(students))
 
 
-SEGMENT_SYSTEM = "너는 한국 학교 교사의 학생 관찰기록을 정리하는 조수다. 반드시 지시된 JSON만 출력한다."
+SEGMENT_SYSTEM = "너는 한국의 선생님(학교 · 유치원 · 학원 · 과외 · PT · 필라테스 강사)이 말로 남긴 학생 · 회원 관찰기록을 정리하는 조수다. 반드시 지시된 JSON만 출력한다."
 
 
 def segment(kind, class_label, students, transcript, date):
@@ -105,6 +105,92 @@ AREA_GUIDE = {
 }
 
 
+# 학교 밖 선생님의 글 — (제목, 초점, 문체, 받는 사람에게 보내는 글인지)
+OTHER_GUIDE = {
+    "kinder_obs": ("유아 관찰 기록",
+                   "- 놀이와 일상에서 관찰된 유아의 말 · 행동 · 선택을 사실 그대로 쓰고, 누리과정 5개 영역(신체운동·건강, 의사소통, 사회관계, 예술경험, 자연탐구) 중 관련 영역을 괄호로 짚기.\n"
+                   "- 평가나 비교 대신 '무엇을 하며 어떤 모습을 보였는지' 중심으로.",
+                   "'~함', '~보임' 같은 관찰 기록 문체", False),
+    "kinder_eval": ("학기말 유아 발달 종합 의견",
+                    "- 한 학기 동안 관찰된 모습을 누리과정 5개 영역에 걸쳐 고르게 엮고, 유아가 즐겨 하는 놀이와 성장한 점, 앞으로 함께 지원할 점을 따뜻하게.\n"
+                    "- 부족한 점은 '~하는 경험이 늘면 좋겠음'처럼 성장 가능성으로.",
+                    "'~함', '~보임' 같은 기록 문체", False),
+    "kinder_home": ("학부모에게 보내는 알림장 글",
+                    "- 오늘(이번 주) 아이가 놀이하며 보인 구체적인 모습 한두 가지를 생생하게 전하고, 가정에서 함께 이야기 나눠 볼 거리를 한 줄 덧붙이기.",
+                    "학부모님께 쓰는 다정한 존댓말(~했어요, ~답니다)", True),
+    "lesson_report": ("학부모에게 보내는 학습 리포트",
+                      "- 이번 기간 배운 내용, 학생이 잘한 점(구체적인 문제 · 장면), 보완할 점, 다음 기간 학습 계획 순서로.\n"
+                      "- 성적 · 점수는 관찰기록에 있을 때만 쓰고, 다른 학생과 비교하지 말 것.",
+                      "학부모님께 쓰는 정중한 존댓말(~했습니다, ~할 예정입니다)", True),
+    "lesson_msg": ("수업 뒤 학부모에게 보내는 피드백 문자",
+                   "- 오늘 수업에서 한 것, 학생이 잘한 점 한 가지, 집에서 해 오면 좋을 것 한 가지를 짧게.",
+                   "학부모님께 보내는 짧은 문자 존댓말(~했어요)", True),
+    "fit_log": ("회원 수업 일지",
+                "- 오늘 한 운동 · 동작, 자세에서 좋아진 점과 교정한 점, 회원의 컨디션 · 불편함, 다음 수업 목표 순서로.\n"
+                "- 무게 · 횟수 · 세트 · 시간은 관찰기록에 있을 때만 숫자로 쓰기.",
+                "'~함', '~필요' 같은 기록 문체", False),
+    "fit_report": ("회원에게 보내는 진행 리포트",
+                   "- 그동안의 수업에서 좋아진 점(자세 · 가동 범위 · 체력 · 습관), 아직 신경 쓸 점, 다음 기간 목표와 집에서 할 운동 한두 가지를 구체적으로.\n"
+                   "- 진단 · 처방처럼 들리는 의학적 표현은 쓰지 말고, 통증이 있으면 '전문가 상담을 권함' 정도로.",
+                   "회원님께 쓰는 정중하고 응원하는 존댓말(~하셨어요)", True),
+    "fit_msg": ("수업 뒤 회원에게 보내는 메시지",
+                "- 오늘 수업에서 잘하신 점 한 가지, 다음에 신경 쓸 점 한 가지, 집에서 할 간단한 동작이나 회복 팁 한 가지를 짧게.",
+                "회원님께 보내는 짧은 메시지 존댓말(~하셨어요)", True),
+}
+
+
+def draft_system(area):
+    if area in OTHER_GUIDE:
+        return "너는 선생님 · 강사가 학생 · 회원에 대해 남긴 관찰기록으로 기록 · 리포트 · 메시지를 쓰는 조수다. 관찰기록에 없는 사실은 지어내지 않는다."
+    return DRAFT_SYSTEM
+
+
+def draft_other(student, class_info, notes, settings, extra, area, context, target):
+    """유치원 · 학원 · 과외 · PT · 필라테스 — 생기부 규칙(명사형 종결 · 사교육 금지 등) 없이 받는 사람에 맞춘 글."""
+    import db, pipeline
+    title, focus, tone, to_person = OTHER_GUIDE[area]
+    limit = int(target) if target else db.area_limit(area, settings)
+    approx = int(limit / 3 * 0.95)
+    who = "회원" if area.startswith("fit_") else ("유아" if area.startswith("kinder_") else "학생")
+    lines = []
+    for n in notes:
+        line = "%s" % strip_names(pipeline.strip_class_words(n["content"]), student)
+        if n.get("evidence"):
+            line += "  (원문: %s)" % strip_names(n["evidence"][:160], student)
+        lines.append("- [%s] %s" % (n.get("date") or "", line))
+    out = """%s 초안을 작성해 주세요.
+
+[이 글의 초점]
+%s
+
+[작성 원칙]
+- 아래 관찰기록에 있는 사실만 근거로. 기록에 없는 활동 · 성과 · 숫자 · 대화는 지어내지 말 것.
+- 문체: %s.
+- %s
+- 막연한 칭찬어만 늘어놓지 말고 관찰된 장면을 근거로.
+- 건강 · 가정사 같은 민감한 내용은 관찰기록에 있어도 꼭 필요한 만큼만, 조심스럽게.
+- 분량: 한글 약 %d자 이내(%d바이트). 기록이 적으면 그만큼 짧게.
+- 머리말 · 설명 · 따옴표 없이 본문만 출력.
+""" % (title, focus, tone,
+       ("받는 분을 부르는 말로 시작해도 되지만, 이름 자리는 'OO'으로 두기." if to_person
+        else "%s 이름이나 '%s은'이라는 주어는 쓰지 말 것." % (who, who)),
+       approx, limit)
+    ctx = context or {}
+    if (ctx.get("topic") or "").strip():
+        out += "\n[수업 정보] %s\n" % ctx["topic"].strip()
+    guidance = (settings.get("draft_guidance") or "").strip()
+    if guidance:
+        out += "\n[선생님의 추가 지침]\n%s\n" % guidance
+    if extra:
+        out += "\n[이번에 특히 강조할 점]\n%s\n" % extra
+    out += "\n[수업] %s\n" % (class_info.get("label") or class_info.get("subject") or "")
+    out += "[%s] %s (이름은 본문에 쓰지 말 것)\n" % (who, student.get("number") or "-")
+    if student.get("memo"):
+        out += "[메모] %s\n" % student["memo"]
+    out += "\n[관찰기록 %d건]\n%s\n" % (len(notes), "\n".join(lines) if lines else "(기록 없음)")
+    return out
+
+
 def strip_names(text, student):
     """관찰기록 속 학생 이름(성 뺀 이름 포함)을 지워서 AI가 본문에 이름을 쓰지 않게."""
     import re
@@ -137,6 +223,8 @@ def clean_draft(text, student=None):
 
 def draft(student, class_info, notes, settings, extra="", area="subject", context=None, target=None, deep=False):
     import db
+    if area in OTHER_GUIDE:
+        return draft_other(student, class_info, notes, settings, extra, area, context, target)
     limit = db.area_limit(area, settings)
     if target:   # 학생별로 정한 분량이 있으면 그걸 씀
         limit = int(target)
@@ -304,12 +392,12 @@ def draft_batch(class_info, items, settings, area="subject", context=None):
     items = [(학생, 관찰기록 목록, 목표 바이트)]"""
     import pipeline
     head = draft({"name": "", "number": None}, class_info, [], settings, "", area, context=context)
-    head = head.split("\n[학교급]")[0]
-    head = head.replace("초안을 작성해 주세요.", "초안을 아래 학생 %d명 각각 따로 작성해 주세요." % len(items), 1)
-    out = head + "\n[학교급] %s\n" % (settings.get("school_level") or "고등학교")
+    head = head.split("\n[학교급]")[0].split("\n[수업] ")[0]
+    head = head.replace("초안을 작성해 주세요.", "초안을 아래 %d명 각각 따로 작성해 주세요." % len(items), 1)
+    out = head + ("" if area in OTHER_GUIDE else "\n[학교급] %s\n" % (settings.get("school_level") or "고등학교"))
     out += """
 [출력 형식 — 꼭 지키기]
-학생마다 한 줄씩, 맨 앞에 [번호]를 붙이고 바로 초안 본문만 쓰기. 학생 사이에 다른 말 쓰지 않기.
+한 사람마다 한 줄씩, 맨 앞에 [번호]를 붙이고 바로 초안 본문만 쓰기. 사람 사이에 다른 말 쓰지 않기.
 [1번] 초안 본문…
 [2번] 초안 본문…
 """

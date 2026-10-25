@@ -113,7 +113,7 @@ def build_prompt(op, params):
             area = params.get("area") or db.areas_for_kind(kind)[0]["id"]
             notes = [n for n in db.rows(conn, "SELECT * FROM notes WHERE student_id=? AND use_in_draft=1 "
                                               "ORDER BY date, id", (s["id"],))
-                     if db.note_area(n, kind) == area]
+                     if db.note_in_area(n, kind, area)]
             if not notes:
                 raise ValueError("%s 학생의 '%s' 관찰기록이 없습니다." % (s["name"], db.area_name(area)))
             ctx = db.row(conn, "SELECT topic, competencies, philosophy FROM class_context WHERE class_id=? AND area=?",
@@ -121,7 +121,7 @@ def build_prompt(op, params):
             t = db.row(conn, "SELECT bytes FROM student_targets WHERE student_id=? AND area=?", (s["id"], area))
             return {"prompt": prompts.draft(s, c, notes, settings, params.get("extra", ""), area,
                                             context=ctx, target=(t or {}).get("bytes"), deep=bool(params.get("deep"))),
-                    "system": prompts.DRAFT_SYSTEM}
+                    "system": prompts.draft_system(area)}
         if op == "shorten":
             text = params.get("text", "")
             limit = db.area_limit(params.get("area") or "subject", settings)
@@ -946,7 +946,7 @@ def _run_api(op, params, job_id=None):
         p = build_prompt(op, params)
         text = localai.generate("local", settings, p.get("system"), p["prompt"])
         if op == "draft":
-            text = _expand_if_short(text, params, settings, lambda pr: localai.generate("local", settings, prompts.DRAFT_SYSTEM, pr))
+            text = _expand_if_short(text, params, settings, lambda pr: localai.generate("local", settings, p.get("system"), pr))
         return apply(op, params, text)
     import cloudai
     p = build_prompt(op, params)
@@ -998,7 +998,7 @@ def _run_api(op, params, job_id=None):
                                 deep=deep, cache=op == "draft")
         if op == "draft":
             text = _expand_if_short(text, params, settings, lambda pr: cloudai.generate(
-                settings, pr, system=prompts.DRAFT_SYSTEM, temperature=0.6, on_model_change=on_model, deep=deep))
+                settings, pr, system=p.get("system"), temperature=0.6, on_model_change=on_model, deep=deep))
     except cloudai.CloudError as e:
         raise ValueError(str(e))
     return apply(op, params, text)
@@ -1006,6 +1006,8 @@ def _run_api(op, params, job_id=None):
 
 def _expand_if_short(text, params, settings, gen):
     """초안이 목표 분량의 절반도 안 되면 한 번 더 — 사실은 그대로, 의미를 풀어 자세히."""
+    if (params.get("area") or "subject") in prompts.OTHER_GUIDE:   # 문자 · 리포트는 짧아도 괜찮음
+        return text
     conn = db.connect()
     try:
         area = params.get("area") or "subject"
