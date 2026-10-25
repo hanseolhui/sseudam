@@ -763,7 +763,7 @@ async function viewRecording(id) {
           <p class="help" style="margin-top:-6px">명단과 일치하지 않은 이름입니다. 학생을 골라 배정하거나 삭제하세요. 자주 틀리는 이름은 학생 '별칭'에 추가해 두면 다음부터 자동 배정됩니다.</p>
           ${d.unmatched.map(u => `<div class="note" data-un="${u.id}">
             <div class="meta"><span class="badge amber">들린 이름: ${esc(u.name_heard || '?')}</span>
-              <span class="tools"><select class="u-assign" style="width:auto;padding:2px 6px;font-size:12px">${studentOpts(null)}</select>
+              <span class="tools"><select class="u-assign" style="width:auto;padding:2px 6px;font-size:12px">${studentOpts(null)}<option value="new">➕ 새 학생으로 추가${u.name_heard ? ': ' + esc(u.name_heard) : ''}</option></select>
               <button class="sm danger u-del">삭제</button></span></div>
             <div class="content">${esc(u.content)}</div>${u.evidence ? `<div class="evidence">${esc(u.evidence)}</div>` : ''}</div>`).join('')}
         </div>` : ''}
@@ -826,8 +826,21 @@ async function viewRecording(id) {
     const uid = +el.dataset.un;
     $('.u-del', el).onclick = async () => { await api('/api/unmatched/delete', { id: uid }); reload(); };
     $('.u-assign', el).onchange = async e => {
-      if (!e.target.value) return;
-      await api('/api/unmatched/assign', { id: uid, student_id: +e.target.value }); toast('배정했습니다'); reload();
+      const v = e.target.value, u = d.unmatched.find(x => x.id === uid) || {};
+      if (!v) return;
+      const heard = (u.name_heard || '').trim();
+      if (v === 'new') {   // 명단에 없는 학생: 이 녹음의 반에 새로 넣고 배정
+        const name = (prompt('새 학생 이름 (이 녹음의 반에 추가돼요)', heard && heard !== '?' && !/반 전체|이름표/.test(heard) ? heard : '') || '').trim();
+        if (!name) { e.target.value = ''; return; }
+        try { await api('/api/unmatched/assign', { id: uid, new_name: name }); toast(name + ' 학생을 추가하고 배정했습니다'); reload(); }
+        catch (err) { e.target.value = ''; }
+        return;
+      }
+      const st = d.students.find(x => x.id === +v);
+      // 들린 이름이 명단 이름과 다르면 별칭으로 저장할지 (다음부터 자동 배정)
+      const alias = st && heard && heard !== '?' && heard !== st.name && !/반 전체|이름표/.test(heard) && /^[가-힣A-Za-z]{2,10}$/.test(heard)
+        && confirmBox(`'${heard}'을(를) ${st.name} 학생의 별칭으로 저장할까요?\n다음부터 이렇게 들려도 자동으로 ${st.name} 학생에게 담겨요.`);
+      await api('/api/unmatched/assign', { id: uid, student_id: +v, alias: alias ? heard : '' }); toast(alias ? '배정하고 별칭으로 저장했습니다' : '배정했습니다'); reload();
     };
   });
 }
@@ -1462,17 +1475,14 @@ async function viewSettings(section) {
     <div class="grid grid-2" id="settings-grid">
       <div class="card" data-pane="me" style="grid-column:1 / -1">
         <h2>👩‍🏫 선생님</h2>
-        <label class="field"><span>선생님 이름 (대시보드 인사·휴대폰 앱에 표시)</span><input id="teacher_name" value="${esc(s.teacher_name)}" placeholder="예: 김쓰담"></label>
-        <p class="help">휴대폰 앱과 대시보드 인사에 이 이름이 나와요.</p>
+        <p class="help" style="margin-top:-4px">이름은 대시보드 인사와 휴대폰 앱에 나와요. 나머지는 모두 선택이에요.</p>
+        ${profileFields(s, '')}
       </div>
       <div class="card" data-pane="data" id="help-card" style="grid-column:1 / -1;order:4">
         <div class="section-title"><h2>📮 도움 · 소식 받기</h2></div>
-        <p class="help" style="margin-top:-4px">문제가 생겼을 때 도와드리고 업데이트를 맞춰 드리려고, 하루 한 번 <b>컴퓨터 사양과 쓰담 사용 정보</b>를 보내요. <b>학생 이름·기록·녹음은 절대 보내지 않아요.</b> <a href="https://hanseolhui.github.io/sseudam/privacy.html" target="_blank">개인정보 처리방침</a></p>
+        <p class="help" style="margin-top:-4px">문제가 생겼을 때 도와드리고 업데이트를 맞춰 드리려고, 하루 한 번 <b>컴퓨터 사양과 쓰담 사용 정보</b>를 보내요. <b>학생 이름·기록·녹음은 절대 보내지 않아요.</b> <a href="${PRIVACY_URL}" target="_blank">개인정보 처리방침</a></p>
         <label class="check"><input type="checkbox" id="telemetry" ${s.telemetry !== '0' ? 'checked' : ''}> 사용 정보 보내기 (익명 · 컴퓨터 사양 · 버전 · 고른 AI · 학급·학생·기록 개수)</label>
-        <div class="row" style="margin-top:10px">
-          <label class="field"><span>이메일 (선택)</span><input id="contact_email" type="email" value="${esc(s.contact_email || '')}" placeholder="업데이트·문제 해결 안내를 받을 주소"></label>
-          <label class="field"><span>학교 (선택)</span><input id="school_name" value="${esc(s.school_name || '')}" placeholder="예: 쓰담고등학교"></label></div>
-        <label class="check" style="margin-top:8px"><input type="checkbox" id="share_info" ${s.share_info === '1' ? 'checked' : ''}> 이름(${esc(s.teacher_name || '선생님 탭의 이름')}) · 학교 · 이메일도 함께 보내기</label>
+        <p class="help" style="margin-top:8px">이름 · 학교 · 연락처 같은 선생님 정보는 <b>선생님</b> 탭에서 적고 동의한 경우에만 함께 보내요.</p>
         <div style="margin-top:8px"><button class="sm ghost" id="tm-preview">보내는 내용 그대로 보기</button></div>
         <pre id="tm-out" class="small hidden" style="white-space:pre-wrap;background:var(--bg-2, var(--panel));padding:10px;border-radius:10px;margin-top:8px"></pre>
       </div>
@@ -1496,10 +1506,7 @@ async function viewSettings(section) {
       </div>
       <div class="card" data-pane="me" style="grid-column:1 / -1">
         <h2>✍️ 작성 기준</h2>
-        <div class="row">
-          <label class="field"><span>학교급</span><select id="school_level">${['고등학교', '중학교', '초등학교'].map(x => `<option ${x === s.school_level ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
-          <label class="field"><span>기본 과목</span><input id="teacher_subject" value="${esc(s.teacher_subject)}" placeholder="학급에 과목이 없을 때 사용"></label>
-        </div>
+        <p class="help" style="margin-top:-4px">학교급과 기본 과목은 위 <b>선생님</b> 칸의 것을 써요.</p>
         <h3 style="margin-top:14px">영역별 NEIS 바이트 한도</h3>
         <div class="table-wrap"><table><tbody>${s.areas.map(a => `<tr><td>${esc(a.full)}</td>
           <td style="width:120px"><input type="number" class="area-limit" data-area="${a.id}" value="${a.limit}" style="padding:4px 8px"></td>
@@ -1628,7 +1635,7 @@ async function viewSettings(section) {
   const collect = () => ({
     [apiProv() + '_api_key']: $('#key').value, [apiProv() + '_model']: $('#model').value.trim(),
     area_limits: JSON.stringify(Object.fromEntries($$('.area-limit').map(i => [i.dataset.area, +i.value || 0]))),
-    byte_limit: ($('.area-limit[data-area=subject]') || {}).value || s.byte_limit, school_level: $('#school_level').value, teacher_subject: $('#teacher_subject').value,
+    byte_limit: ($('.area-limit[data-area=subject]') || {}).value || s.byte_limit, ...readProfile(document, ''),
     draft_guidance: $('#draft_guidance').value, style_examples: $('#style_examples').value,
     auto_process: $('#auto_process').checked ? '1' : '0',
     sheets_url: $('#sheets_url').value.trim(),
@@ -1636,11 +1643,10 @@ async function viewSettings(section) {
     stt_engine: ($('input[name=stt_engine]:checked') || {}).value || 'whisper',
     period_times: $('#period_times').value, timetable: JSON.stringify(timetable),
     update_check: $('#update_check').checked ? '1' : '0',
-    drive_inbox: $('#drive_inbox').checked ? '1' : '0', teacher_name: $('#teacher_name').value.trim(),
+    drive_inbox: $('#drive_inbox').checked ? '1' : '0',
     auto_update: $('#auto_update').checked ? '1' : '0',
     ...($('#draft_local') ? { draft_local: $('#draft_local').checked ? '1' : '0' } : {}),
-    telemetry: $('#telemetry').checked ? '1' : '0', share_info: $('#share_info').checked ? '1' : '0',
-    contact_email: $('#contact_email').value.trim(), school_name: $('#school_name').value.trim(),
+    telemetry: $('#telemetry').checked ? '1' : '0',
   });
   const save = async () => { await api('/api/settings', collect()); };
   // 자동 저장: 무엇이든 바꾸면 바로 저장하고, 바꾼 칸과 아래 표시가 초록으로 반짝
@@ -1961,7 +1967,6 @@ async function viewSettings(section) {
     const out = $('#tm-out'); out.classList.toggle('hidden');
     if (!out.classList.contains('hidden')) out.textContent = JSON.stringify(await api('/api/telemetry/preview'), null, 2);
   };
-  $('#contact_email').addEventListener('change', e => { if (e.target.value.trim() && !$('#share_info').checked) { $('#share_info').checked = true; } });
   $('#copy-gs').onclick = async () => { const t = await (await fetch('/google_apps_script.gs')).text(); copyText(t); };
   $('#backup').onclick = async () => { await api('/api/backup', {}); toast('백업했습니다'); renderBackups(); };
   $('#xlsx-all').onclick = () => exportXlsx(null);
@@ -2278,9 +2283,62 @@ async function viewPrompts() {
 
 // ───────────────────────── 첫 실행 안내 ─────────────────────────
 
+// ───────────────────────── 선생님 정보 (설정 · 첫 실행 · 이미 쓰던 분께 한 번) ─────────────────────────
+const SIDO = ['서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종', '경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주', '해외'];
+const PRIVACY_URL = 'https://apps.seoriarts.com/sseudam-privacy';
+/** p = id 앞에 붙일 말 (설정은 '' → id 가 곧 설정 이름) */
+function profileFields(s, p) {
+  const sel = (id, opts, v) => `<select id="${p}${id}">${opts.map(([k, n]) => `<option value="${esc(k)}" ${String(v || '') === k ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`;
+  return `<div class="row">
+      <label class="field"><span>이름</span><input id="${p}teacher_name" value="${esc(s.teacher_name || '')}" placeholder="예: 김쓰담"></label>
+      <label class="field"><span>이메일</span><input id="${p}contact_email" type="email" value="${esc(s.contact_email || s.plus_email || '')}" placeholder="안내를 받을 주소"></label></div>
+    <div class="row">
+      <label class="field"><span>학교</span><input id="${p}school_name" value="${esc(s.school_name || '')}" placeholder="예: 쓰담고등학교"></label>
+      <label class="field"><span>학교급</span>${sel('school_level', ['고등학교', '중학교', '초등학교', '특수학교', '기타'].map(x => [x, x]), s.school_level || '고등학교')}</label></div>
+    <div class="row">
+      <label class="field"><span>지역 (시·도)</span>${sel('region_sido', [['', '고르기']].concat(SIDO.map(x => [x, x])), s.region_sido)}</label>
+      <label class="field"><span>시·군·구</span><input id="${p}region_sigungu" value="${esc(s.region_sigungu || '')}" placeholder="예: 파주시"></label></div>
+    <div class="row">
+      <label class="field"><span>담당 과목</span><input id="${p}teacher_subject" value="${esc(s.teacher_subject || '')}" placeholder="예: 국어 (초안의 기본 과목)"></label>
+      <label class="field"><span>맡은 학년</span><input id="${p}teacher_grades" value="${esc(s.teacher_grades || '')}" placeholder="예: 2 또는 1, 3"></label>
+      <label class="field"><span>담임</span>${sel('homeroom', [['', '고르기'], ['1', '담임'], ['0', '비담임']], s.homeroom)}</label></div>
+    <div class="row"><label class="field"><span>휴대폰 (선택)</span><input id="${p}phone" inputmode="tel" value="${esc(s.phone || '')}" placeholder="연락이 필요할 때만 써요"></label><span></span></div>
+    <label class="check" style="margin-top:8px"><input type="checkbox" id="${p}share_info" ${s.share_info === '1' ? 'checked' : ''}> <span><b>개인정보 수집·이용 동의</b> — 위 정보를 쓰담 운영(문제 해결·안내, 쓰담 플러스 계정 연결, 사용자 통계)에 보내요. 지원사업 보고에는 이름 없이 합계 숫자로만 써요. <a href="${PRIVACY_URL}" target="_blank">자세히</a></span></label>
+    <label class="check" style="margin-top:4px"><input type="checkbox" id="${p}marketing_ok" ${s.marketing_ok === '1' ? 'checked' : ''}> <span>(선택) 새 기능 · 지원 사업 · 연수 소식 받기</span></label>
+    <p class="small muted" style="margin:4px 0 0">동의하지 않아도 쓰담은 똑같이 다 쓸 수 있어요. 학생 이름·기록·녹음은 보내지 않아요.</p>`;
+}
+function readProfile(root, p) {
+  const q = id => root.querySelector('#' + p + id);
+  if (!q('teacher_name')) return {};
+  const v = id => (q(id).value || '').trim();
+  return {
+    teacher_name: v('teacher_name'), contact_email: v('contact_email'), school_name: v('school_name'), school_level: v('school_level'),
+    region_sido: v('region_sido'), region_sigungu: v('region_sigungu'), teacher_subject: v('teacher_subject'), teacher_grades: v('teacher_grades'),
+    homeroom: v('homeroom'), phone: v('phone'), share_info: q('share_info').checked ? '1' : '0', marketing_ok: q('marketing_ok').checked ? '1' : '0',
+  };
+}
+/** 이미 쓰던 선생님께 한 번만: 정보 적기 (건너뛰면 다시 안 물음) */
+function askProfile(s) {
+  modal(`<h2>선생님 정보를 알려 주세요</h2>
+    <p class="muted" style="margin-top:-4px">쓰담을 더 잘 만들고, 문제가 생겼을 때 도와드리려고 여쭤요. 모두 선택이고, 나중에 설정 → 선생님에서 바꿀 수 있어요.</p>
+    ${profileFields(s, 'ap-')}
+    <div class="modal-actions"><button id="ap-skip" class="ghost">다음에 (다시 묻지 않기)</button><button class="primary" id="ap-save">저장</button></div>`, box => {
+    $('#ap-skip', box).onclick = async () => { await api('/api/settings', { profile_asked: '1' }); closeModal(); };
+    $('#ap-save', box).onclick = async () => {
+      await api('/api/settings', Object.assign(readProfile(box, 'ap-'), { profile_asked: '1' }));   // 저장하면 서버가 바로 한 번 보냄
+      closeModal(); toast('고맙습니다 ✓'); updateModeBadge();
+    };
+  });
+}
+
 async function maybeOnboard() {
   const s = await api('/api/settings', undefined, { silent: true }).catch(() => null);
-  if (!s || s.onboarded === '1') return;
+  if (s && s.onboarded === '1') {
+    // 이미 쓰던 선생님: 정보를 아직 안 적었으면 한 번만 물어봄
+    if (s.profile_asked !== '1' && s.share_info !== '1') setTimeout(() => { if ($('#modal').classList.contains('hidden')) askProfile(s); }, 2500);
+    return;
+  }
+  if (!s) return;
   await loadClasses();
   if (state.classes.length) { api('/api/settings', { onboarded: '1' }); return; }
   showOnboarding(s);
@@ -2292,10 +2350,8 @@ function showOnboarding(s) {
   const steps = {
     1: () => `<h2>👋 쓰담에 오신 것을 환영합니다</h2><p style="margin:-4px 0 8px;color:var(--accent);font-weight:600">말로 담고, 글로 씁니다</p>
       <p class="muted">수업·상담 중 말로 남긴 관찰을 학생별로 모아, 학기말 세특·행동특성·창체 초안을 빠르게 만드는 도구입니다. 1분이면 준비됩니다.</p>
-      <div class="row" style="margin-top:12px">
-        <label class="field"><span>학교급</span><select id="ob-level">${['고등학교', '중학교', '초등학교'].map(x => `<option ${x === s.school_level ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
-        <label class="field"><span>선생님 이름 (선택)</span><input id="ob-name" value="${esc(s.teacher_name || '')}" placeholder="예: 김쓰담"></label>
-      </div>`,
+      <h3 style="margin:14px 0 4px">선생님 정보 <span class="small muted">(모두 선택 · 비워 두고 넘어가도 돼요)</span></h3>
+      ${profileFields(s, 'ob-')}`,
     2: () => `<h2>어떤 기록을 쓰시나요?</h2><p class="muted">해당하는 것을 모두 고르세요. 학급이 자동으로 만들어집니다. (나중에 학급·학생 메뉴에서 더 추가 가능)</p>
       <div class="source"><label class="check"><input type="checkbox" id="ob-subj-on" checked> <b>교과 세특</b> — 수업하는 반</label>
         <div class="row" style="margin-top:8px"><label class="field"><span>과목</span><input id="ob-subj" value="${esc(s.teacher_subject || '')}" placeholder="예: 국어"></label>
@@ -2311,10 +2367,6 @@ function showOnboarding(s) {
         ✓ <b>학생 나누기·세특 초안 AI</b> — <span id="ob-ai-pick">이 컴퓨터에 맞는 모델 고르는 중…</span><br>
         ✓ <b>자동 업데이트</b> — 새 버전이 나오면 쉬는 틈에 알아서
       </div>
-      <div class="row" style="margin-top:12px">
-        <label class="field"><span>이메일 (선택)</span><input id="ob-email" type="email" placeholder="업데이트·문제 해결 안내를 받을 주소"></label>
-        <label class="field"><span>학교 (선택)</span><input id="ob-school" placeholder="예: 쓰담고등학교"></label></div>
-      <p class="small muted" style="margin:4px 0 0">적어 주시면 문제가 생겼을 때 도와드릴 수 있어요. 학생 정보는 보내지 않아요.</p>
       <details style="margin-top:10px"><summary class="small">Gemini API 키가 이미 있어요</summary>
         <input id="ob-key" type="password" placeholder="AIza로 시작하는 키" style="margin-top:8px">
         <p class="small muted">넣으면 학생 나누기·초안을 Gemini로 해요. 비워 두면 이 컴퓨터 안의 AI를 써요.</p></details>`,
@@ -2332,7 +2384,7 @@ function showOnboarding(s) {
       if ($('#ob-skip', box)) $('#ob-skip', box).onclick = async () => { await api('/api/settings', { onboarded: '1' }); closeModal(); };
       if ($('#ob-back', box)) $('#ob-back', box).onclick = () => { st.step--; render(); };
       $('#ob-next', box).onclick = async () => {
-        if (st.step === 1) { st.level = $('#ob-level', box).value; st.name = $('#ob-name', box).value.trim(); }
+        if (st.step === 1) { st.profile = readProfile(box, 'ob-'); st.level = st.profile.school_level; st.name = st.profile.teacher_name; }
         if (st.step === 2) {
           const mk = [];
           if ($('#ob-subj-on', box).checked) {
@@ -2351,9 +2403,10 @@ function showOnboarding(s) {
         if (st.step === 3) {
           const key = ($('#ob-key', box).value || '').trim();
           $('#ob-next', box).disabled = true; $('#ob-next', box).textContent = '준비하는 중…';
-          const email = ($('#ob-email', box).value || '').trim(), school = ($('#ob-school', box).value || '').trim();
-          const vals = { onboarded: '1', school_level: st.level, teacher_name: st.name || '', teacher_subject: st.subject || '', auto_update: '1', auto_process: '1',
-            contact_email: email, school_name: school, share_info: email || school ? '1' : '0' };
+          // 선생님 정보(1단계) + 2단계에서 고른 과목·담임
+          const pf = st.profile || {};
+          const vals = Object.assign({}, pf, { onboarded: '1', profile_asked: '1', teacher_subject: pf.teacher_subject || st.subject || '',
+            homeroom: pf.homeroom || (st.make.some(c => c.kind === '담임') ? '1' : ''), auto_update: '1', auto_process: '1' });
           if (key) vals.gemini_api_key = key;
           await api('/api/settings', vals);
           for (const c of st.make) await api('/api/classes/save', Object.assign({ year: y, semester: sem }, c));

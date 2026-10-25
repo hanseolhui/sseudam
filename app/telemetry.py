@@ -2,7 +2,8 @@
 
 늘 보내는 것(익명): 무작위 설치 번호, 버전, 운영체제, 컴퓨터 사양(칩·메모리·그래픽), 고른 AI, 받아쓰기 방식,
                   학급·학생·기록·녹음 '개수'(숫자만).
-선생님이 직접 적고 '함께 보내기'를 켠 경우만: 이메일, 이름, 학교.
+선생님이 직접 적고 '개인정보 수집·이용'에 동의한 경우만: 이름, 이메일, 학교, 지역, 학교급, 과목, 학년, 담임 여부,
+휴대폰(적은 경우), 소식 받기 동의.
 학생 이름·명단·녹음·관찰기록·초안 내용은 절대 보내지 않는다. 설정에서 끌 수 있다.
 """
 import json
@@ -19,6 +20,9 @@ import db
 import version
 
 URL = os.environ.get("SSEUDAM_PING_URL", "https://apps.seoriarts.com/api/ping")
+# 선생님 정보 (설정 이름) — 바뀌면 바로 보냄
+PROFILE_KEYS = ("share_info", "contact_email", "teacher_name", "school_name", "school_level", "region_sido", "region_sigungu",
+                "teacher_subject", "teacher_grades", "homeroom", "phone", "marketing_ok")
 EVERY = 20 * 3600          # 하루 한 번쯤 (켜 둔 채로 다음 날이 되면)
 _lock = threading.Lock()
 
@@ -92,8 +96,11 @@ def payload():
         "share": False,
     }
     if s.get("share_info") == "1":
-        body.update(share=True, email=(s.get("contact_email") or "").strip(),
-                    name=(s.get("teacher_name") or "").strip(), school=(s.get("school_name") or "").strip())
+        g = lambda k: (s.get(k) or "").strip()
+        body.update(share=True, email=g("contact_email"), name=g("teacher_name"), school=g("school_name"),
+                    region_sido=g("region_sido"), region_sigungu=g("region_sigungu"), school_level=g("school_level"),
+                    subjects=g("teacher_subject"), grades=g("teacher_grades"), homeroom=g("homeroom"), phone=g("phone"),
+                    marketing=s.get("marketing_ok") == "1")
     return body
 
 

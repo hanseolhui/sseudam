@@ -1,53 +1,10 @@
 <!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>쓰담 개인정보 처리방침</title>
-<style>
-:root{--bg:#fff;--text:#1d2330;--muted:#6b7384;--accent:#2f6fde;--line:#e2e5ea}
-@media (prefers-color-scheme:dark){:root{--bg:#15181e;--text:#e6e9ef;--muted:#9aa3b2;--accent:#6b9cf5;--line:#323843}}
-body{margin:0;background:var(--bg);color:var(--text);font:16px/1.7 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
-main{max-width:720px;margin:0 auto;padding:40px 16px 80px}h1{font-size:26px;margin:0 0 4px}h2{font-size:18px;margin:32px 0 8px}
-.muted{color:var(--muted);font-size:14px}a{color:var(--accent)}li{margin:4px 0}
-.box{border:1px solid var(--line);border-radius:12px;padding:14px 18px;margin:16px 0}
-</style></head><body><main>
-<h1>쓰담 개인정보 처리방침</h1>
-<p class="muted">적용 대상: 쓰담 (아이폰·안드로이드 녹음 앱, 맥·윈도우 프로그램) · 시행일 2026년 10월 24일</p>
-
-<div class="box"><b>요약</b> — 학생 정보와 기록 내용은 쓰담 개발자가 수집하지 않습니다. 녹음과 기록은 선생님의 <b>기기</b>와 선생님 본인 계정의 <b>iCloud·구글 드라이브</b>에만 저장됩니다. 맥·윈도우 프로그램은 문제 해결과 업데이트 지원을 위해 <b>익명 사용 정보와 컴퓨터 사양</b>을 하루 한 번 보냅니다(설정에서 끌 수 있음).</div>
-
-<h2>1. 처리하는 정보와 저장 위치</h2>
-<ul>
-<li><b>녹음 파일</b>: 휴대폰 앱 안에 저장되고, 선생님이 켠 경우 선생님 본인의 iCloud Drive('쓰담' 폴더) 또는 선생님 본인의 구글 드라이브('쓰담 녹음함' 폴더)로 전송됩니다.</li>
-<li><b>학생 명단·관찰기록·초안</b>: 선생님 컴퓨터의 쓰담 프로그램 안(맥: ~/Library/Application Support/쓰담, 윈도우: %APPDATA%\쓰담)에만 저장됩니다. 선생님이 연결한 경우 선생님 본인의 구글시트·구글 드라이브에 사본과 백업이 저장됩니다.</li>
-<li><b>연결 정보</b>: 휴대폰 앱은 컴퓨터와 연결할 때 받은 '녹음 올리기 전용' 주소와 열쇠만 기기 안에 보관합니다. 이 열쇠로는 기록을 읽을 수 없습니다.</li>
-</ul>
-
-<h2>2. 개발자가 수집하는 정보 (맥·윈도우 프로그램)</h2>
-<p>문제 해결과 업데이트 지원을 위해 하루 한 번 아래 정보를 서리아트 서버로 보냅니다. <b>학생 이름·명단·녹음·관찰기록·초안 내용은 보내지 않습니다.</b></p>
-<ul>
-<li><b>늘 보내는 정보 (익명)</b>: 무작위로 만든 설치 번호, 쓰담 버전, 운영체제 종류와 버전, 컴퓨터 사양(칩·메모리·그래픽), 고른 AI 종류와 모델 이름, 받아쓰기 방식, 학급·학생·기록·녹음의 <b>개수</b>(숫자만)</li>
-<li><b>선생님이 직접 적고 보내기로 한 경우만</b>: 이메일, 이름, 학교 — 업데이트·문제 해결 안내를 드리기 위해 씁니다.</li>
-</ul>
-<p>이 정보는 서리아트(쓰담 개발자)가 운영하는 서버(Supabase, 일본 도쿄)에 보관하며, 위 목적 밖으로 쓰거나 다른 곳에 넘기지 않습니다. 쓰담 <b>설정 → 백업·업데이트 → 사용 정보 보내기</b>에서 언제든 끌 수 있고, 지워 달라고 하시면 지웁니다. 휴대폰 앱은 이런 정보를 보내지 않습니다.</p>
-<h2>3. 외부 서비스</h2>
-<ul>
-<li><b>Apple iCloud, Google 드라이브·시트</b>: 선생님이 직접 켜고 본인 계정으로 연결한 경우에만 사용되며, 각 회사의 개인정보 처리방침이 적용됩니다.</li>
-<li><b>받아쓰기</b>: 기본값은 컴퓨터 안에서 동작하는 음성 인식(Whisper)이라 녹음이 외부로 나가지 않습니다. 선생님이 설정에서 Google Gemini를 고른 경우에만 선생님 본인의 API 키로 Google에 전송됩니다.</li>
-<li><b>학생 나누기·초안 AI</b>: 기본인 쓰담 AI 모델·기기 안 AI는 컴퓨터 안에서 동작합니다. 선생님이 본인의 Gemini API 키를 넣거나, 프롬프트를 직접 Gemini·ChatGPT 웹에 붙여넣는 경우에만 해당 서비스로 전송됩니다.</li>
-</ul>
-
-<h2>4. 기기 권한</h2>
-<ul>
-<li><b>마이크</b>: 녹음을 위해 사용합니다. 선생님이 녹음 버튼을 누른 동안에만 녹음합니다.</li>
-<li><b>카메라</b>: 컴퓨터 화면의 연결 QR을 찍을 때만 사용하며, 사진을 저장하지 않습니다.</li>
-<li><b>알림(안드로이드)</b>: 화면이 꺼진 상태에서 녹음 중임을 표시합니다.</li>
-</ul>
-
-<h2>5. 보관과 삭제</h2>
-<p>녹음은 학기말 학교생활기록부 작성까지 보관할 수 있도록 자동으로 지우지 않습니다. 선생님이 앱·프로그램에서 직접 지우거나 앱을 삭제하면 기기 안의 데이터가 삭제됩니다. iCloud·구글 드라이브에 저장된 사본은 선생님이 해당 서비스에서 직접 지울 수 있습니다.</p>
-
-<h2>6. 학생 개인정보 보호 안내</h2>
-<p>쓰담은 교사의 학교생활기록부 작성을 돕는 도구입니다. 학생 개인정보는 소속 학교와 교육청의 개인정보 보호 지침에 따라 다뤄 주세요.</p>
-
-<h2>7. 문의</h2>
-<p><a href="https://github.com/hanseolhui/sseudam/issues">github.com/hanseolhui/sseudam/issues</a></p>
-</main></body></html>
+<!-- 처리방침은 한곳(apps.seoriarts.com)에서만 고침 — 예전 주소(앱 스토어 등록 · 예전 버전 앱의 링크)는 그리로 보냄 -->
+<meta http-equiv="refresh" content="0; url=https://apps.seoriarts.com/sseudam-privacy">
+<link rel="canonical" href="https://apps.seoriarts.com/sseudam-privacy">
+<style>body{font:16px/1.7 -apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;max-width:640px;margin:60px auto;padding:0 16px}</style>
+</head><body>
+<p>쓰담 개인정보 처리방침은 <a href="https://apps.seoriarts.com/sseudam-privacy">apps.seoriarts.com/sseudam-privacy</a> 에 있어요. 잠시 뒤 자동으로 이동합니다.</p>
+</body></html>

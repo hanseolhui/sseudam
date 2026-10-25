@@ -783,14 +783,36 @@ def unmatched_assign(h, q, b):
     if not u:
         conn.close()
         raise ApiError("항목이 없습니다.")
+    sid = int(b.get("student_id") or 0)
+    new_name = (b.get("new_name") or "").strip()[:20]
+    if new_name:   # 명단에 없는 학생: 이 녹음의 반에 새로 넣음 (같은 이름이 있으면 그 학생)
+        cid = db.row(conn, "SELECT class_id FROM recordings WHERE id=?", (u["recording_id"],))["class_id"]
+        if not cid:
+            conn.close()
+            raise ApiError("이 녹음의 학급을 먼저 정해 주세요 (위의 학급 고르기).")
+        ex = db.row(conn, "SELECT id FROM students WHERE class_id=? AND name=?", (cid, new_name))
+        if ex:
+            sid = ex["id"]
+        else:
+            no = conn.execute("SELECT COALESCE(MAX(number), 0) + 1 FROM students WHERE class_id=?", (cid,)).fetchone()[0]
+            sid = conn.execute("INSERT INTO students(class_id, number, name) VALUES (?,?,?)", (cid, no, new_name)).lastrowid
+    if not sid:
+        conn.close()
+        raise ApiError("학생을 골라 주세요.")
+    alias = (b.get("alias") or "").strip()[:20]
+    if alias:   # 들린 이름을 별칭으로 — 다음부터 자동 배정
+        cur = db.row(conn, "SELECT aliases FROM students WHERE id=?", (sid,))
+        have = [x.strip() for x in re.split(r"[,，/]", (cur or {}).get("aliases") or "") if x.strip()]
+        if alias not in have:
+            conn.execute("UPDATE students SET aliases=? WHERE id=?", (", ".join(have + [alias]), sid))
     conn.execute("INSERT INTO notes(student_id, recording_id, date, kind, category, content, evidence) "
                  "VALUES (?,?,?,?,?,?,?)",
-                 (int(b["student_id"]), u["recording_id"], (u["recorded_at"] or "")[:10], u["kind"],
+                 (sid, u["recording_id"], (u["recorded_at"] or "")[:10], u["kind"],
                   u["category"], u["content"], u["evidence"]))
     conn.execute("DELETE FROM unmatched WHERE id=?", (u["id"],))
     # 학급을 안 정한 녹음이면 고른 학생의 반으로 정함 (남은 미배정 목록도 그 반 명단으로 좁혀짐)
     conn.execute("UPDATE recordings SET class_id=(SELECT class_id FROM students WHERE id=?) WHERE id=? AND class_id IS NULL",
-                 (int(b["student_id"]), u["recording_id"]))
+                 (sid, u["recording_id"]))
     left = conn.execute("SELECT COUNT(*) FROM unmatched WHERE recording_id=?", (u["recording_id"],)).fetchone()[0]
     if not left:
         conn.execute("UPDATE recordings SET status='완료' WHERE id=? AND status='확인필요'", (u["recording_id"],))
@@ -1035,9 +1057,11 @@ def settings_save(h, q, b):
         vals.pop("api_provider")
     if (vals.get("local_ai_url") or "").strip() and not localai.is_local_url(vals["local_ai_url"]):
         raise ApiError("내 맥 AI 주소는 이 맥(127.0.0.1 또는 localhost)만 넣을 수 있어요. 학생 기록이 밖으로 나가지 않게요.")
+    before = db.get_settings()
     db.set_settings(vals)
-    if any(k in vals for k in ("share_info", "contact_email", "school_name", "telemetry")):
-        telemetry.send_async(force=True)   # 선생님이 정보를 바꾸면 바로 반영
+    # 선생님 정보·동의를 실제로 바꿨을 때만 바로 한 번 보냄 (관리자 쪽에 바로 보이게)
+    if any(k in vals and str(vals[k]) != str(before.get(k, "")) for k in telemetry.PROFILE_KEYS + ("telemetry",)):
+        telemetry.send_async(force=True)
     return {"ok": True}
 
 

@@ -68,9 +68,16 @@ DEFAULT_SETTINGS = {
     "relay_doc_sig": "",
     "install_id": "",
     "last_ping": "",
-    "share_info": "0",
+    "share_info": "0",              # 선생님 정보 보내기 = 개인정보 수집·이용 동의
     "contact_email": "",
     "school_name": "",
+    "region_sido": "",
+    "region_sigungu": "",
+    "teacher_grades": "",           # 맡은 학년 (예: 1, 2)
+    "homeroom": "",                 # 1 담임 · 0 비담임 · 빈칸 모름
+    "phone": "",
+    "marketing_ok": "0",            # (선택) 새 기능·지원 사업·연수 소식 받기
+    "profile_asked": "0",           # 이미 쓰던 선생님께 정보 적기를 한 번 물어봤는지
     "ai_choice": "",                # 설정의 AI 고르기: builtin | apple | gemini | external | manual (비면 기존 설정으로 추정)
     "local_ai_url": "",             # 예: http://127.0.0.1:11434/v1 (Ollama), http://127.0.0.1:1234/v1 (LM Studio)
     "local_ai_model": "",
