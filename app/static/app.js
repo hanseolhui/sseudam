@@ -1373,16 +1373,19 @@ async function viewDrafts(classId, areaParam) {
       <div class="actions"><select id="dc" style="width:auto">${classOptions(classId)}</select></div></div>
     ${areas.length > 1 ? `<div class="tabs">${areas.map(a => `<button class="${a.id === area.id ? 'on' : ''}" data-area="${a.id}">${esc(a.name)}</button>`).join('')}</div>` : ''}
     <div class="card">
-      <div class="section-title"><h2>${esc(c.label)} · ${esc(area.full)} <span class="muted small">확정 ${done}/${d.students.length}</span></h2>
-        <span class="actions" style="display:flex;gap:6px;flex-wrap:wrap">
-          ${isApi ? `<button class="primary" id="g-missing" ${missing ? '' : 'disabled'}>✨ 초안 없는 학생 생성 (${missing})</button>
-          <button id="g-all" ${withNotes ? '' : 'disabled'}>기록 있는 학생 전체 생성 (${withNotes})</button>` : ''}
+      <div class="section-title"><h2>${esc(c.label)} · ${esc(area.full)} <span class="muted small">확정 ${done}/${d.students.length}</span></h2></div>
+      <!-- 버튼은 할 일별로 세 묶음: 만들기 · 외부 AI · 내보내기 -->
+      <div class="act-groups">
+        ${isApi ? `<div class="act-group"><span class="act-label">만들기</span>
+          <button class="primary" id="g-missing" ${missing ? '' : 'disabled'}>✨ 초안 없는 학생 (${missing})</button>
+          <button id="g-all" ${withNotes ? '' : 'disabled'}>기록 있는 학생 전체 (${withNotes})</button></div>` : ''}
+        <div class="act-group"><span class="act-label">ChatGPT · Gemini</span>
           <button class="${isApi ? '' : 'primary'}" id="g-prompt" ${withNotes ? '' : 'disabled'} title="ChatGPT·Gemini 앱에 붙여넣을 반 전체 프롬프트">📋 반 전체 프롬프트 복사 (${missing || withNotes}명)</button>
-          <button id="g-paste" ${withNotes ? '' : 'disabled'}>📥 AI 답 붙여넣기</button>
-          <button id="x-copy">표 복사</button>
-          <button id="x-csv">CSV</button>
-          <button id="x-xlsx">엑셀로 저장</button>
-          <button class="primary" id="x-sheet">구글시트 지금 반영</button></span></div>
+          <button id="g-paste" ${withNotes ? '' : 'disabled'}>📥 AI 답 붙여넣기</button></div>
+        <div class="act-group"><span class="act-label">내보내기</span>
+          <button id="x-copy">표 복사</button><button id="x-csv">CSV</button><button id="x-xlsx">엑셀</button>
+          <button id="x-sheet">구글시트 반영</button></div>
+      </div>
       <p class="help">${isApi ? '<b>✨</b>는 이 컴퓨터의 AI로 바로 만들어요. 더 다듬고 싶으면 ' : ''}<b>📋 반 전체 프롬프트 복사</b> → ChatGPT·Gemini 앱에 붙여넣기 → 나온 답을 통째로 <b>📥 AI 답 붙여넣기</b>에 넣으면 학생마다 초안이 한꺼번에 들어가요.</p>
       <details class="lesson-ctx" id="lesson-ctx" ${ctxPreview ? '' : 'open'}>
         <summary class="ctx-toggle"><span class="ctx-title">📚 수업 정보</span>

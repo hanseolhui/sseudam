@@ -549,3 +549,9 @@ audio { width: 100%; margin: 8px 0; }
 .bulk-plan .bp small { color: var(--muted); font-size: 11px; }
 .bulk-plan .bp.skip { opacity: .5; }
 .bulk-plan .bp.update small, .bulk-plan .bp.renumber small { color: var(--amber); }
+
+/* 초안 화면 버튼 묶음: 묶음마다 이름표 + 같은 높이 버튼, 좁으면 묶음째 줄바꿈 */
+.act-groups { display: flex; flex-wrap: wrap; gap: 10px 14px; margin: 4px 0 10px; }
+.act-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 14px; }
+.act-group .act-label { font-size: 11px; font-weight: 700; color: var(--muted); margin-right: 2px; white-space: nowrap; }
+.act-group button { height: 34px; padding: 0 14px; white-space: nowrap; }
