@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 앱 아이콘을 길게 누르면 나오는 '녹음 시작' + 구글 어시스턴트 앱 기능 열기(App Actions, OPEN_APP_FEATURE).
+     어시스턴트가 이 바로가기를 고르면 아래 capability 인텐트에 feature=record 를 붙여 MainActivity 를 연다 → 손 없이 녹음 -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <capability android:name="actions.intent.OPEN_APP_FEATURE">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="kr.sseudam.app"
+            android:targetClass="kr.sseudam.app.MainActivity">
+            <parameter
+                android:name="feature"
+                android:key="feature" />
+        </intent>
+    </capability>
+
+    <shortcut
+        android:shortcutId="record"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_record"
+        android:shortcutLongLabel="@string/shortcut_record_long">
+        <intent
+            android:action="kr.sseudam.app.RECORD"
+            android:targetPackage="kr.sseudam.app"
+            android:targetClass="kr.sseudam.app.MainActivity" />
+        <capability-binding android:key="actions.intent.OPEN_APP_FEATURE">
+            <parameter-binding
+                android:key="feature"
+                android:value="@array/record_synonyms" />
+        </capability-binding>
+    </shortcut>
+</shortcuts>

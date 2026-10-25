@@ -1,3 +1,13 @@
 <resources>
     <string name="app_name">쓰담</string>
+    <string name="shortcut_record">녹음 시작</string>
+    <string name="shortcut_record_long">손 없이 녹음 시작</string>
+    <!-- 구글 어시스턴트 "쓰담에서 ○○ 열어 줘/시작" 에 맞출 말 -->
+    <string-array name="record_synonyms">
+        <item>녹음 시작</item>
+        <item>녹음</item>
+        <item>녹음하기</item>
+        <item>start recording</item>
+        <item>record</item>
+    </string-array>
 </resources>

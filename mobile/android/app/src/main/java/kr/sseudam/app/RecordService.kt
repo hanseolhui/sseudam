@@ -30,6 +30,12 @@ class RecordService : Service() {
         val currentStudent = MutableStateFlow<String?>(null)
         val pickedClass = MutableStateFlow<String?>(null)
         val period = MutableStateFlow<Int?>(null)
+        /** 손 없이 시작한 녹음(어시스턴트·바로가기·얼굴 가까이) · 근접 센서로 시작했는지 · 말을 멈추면 저절로 끝내는지 */
+        val handsFree = MutableStateFlow(false)
+        val byProximity = MutableStateFlow(false)
+        val autoEnds = MutableStateFlow(false)
+        /** 손 없이 녹음을 확인 창 없이 담았을 때 (홈에서 '담았어요' 카드를 띄움) */
+        val lastSavedId = MutableStateFlow<String?>(null)
         fun mark(student: String) {
             if (!recording.value) return
             currentStudent.value = student
@@ -39,15 +45,29 @@ class RecordService : Service() {
         fun elapsedMs(): Long = if (!recording.value) 0 else if (paused.value) pausedAt - base else SystemClock.elapsedRealtime() - base
 
         fun start(c: Context) = c.startForegroundService(Intent(c, RecordService::class.java).setAction("start"))
+        /** 손 없이 녹음 시작 (stopDelayMs = 0 이면 저절로 끝내지 않음) */
+        fun startHandsFree(c: Context, proximity: Boolean, stopDelayMs: Long) = c.startForegroundService(
+            Intent(c, RecordService::class.java).setAction("start").putExtra("handsFree", true)
+                .putExtra("proximity", proximity).putExtra("stopDelay", stopDelayMs))
+        /** 손 없이 녹음 끝내고 확인 창 없이 바로 담기 */
+        fun finishHandsFree(c: Context) = c.startService(Intent(c, RecordService::class.java).setAction("finish"))
         fun stop(c: Context) = c.startService(Intent(c, RecordService::class.java).setAction("stop"))
         fun togglePause(c: Context) = c.startService(Intent(c, RecordService::class.java).setAction("pause"))
     }
 
     private var recorder: MediaRecorder? = null
+    private var detector: EndDetector? = null
     private val meter = object : Runnable {
         override fun run() {
-            recorder?.let { if (!paused.value) level.value = (it.maxAmplitude / 20000f).coerceIn(0f, 1f) }
-            if (recording.value) android.os.Handler(mainLooper).postDelayed(this, 120)
+            recorder?.let {
+                if (!paused.value) {
+                    val amp = it.maxAmplitude
+                    level.value = (amp / 20000f).coerceIn(0f, 1f)
+                    // 손 없이 녹음: 0.1초마다 소리 크기를 보고 말이 멈추면 끝내고 담는다
+                    if (detector?.feed(EndDetector.dbfs(amp)) == true) { detector = null; endAndSave(); return }
+                }
+            }
+            if (recording.value) android.os.Handler(mainLooper).postDelayed(this, 100)
         }
     }
 
@@ -55,8 +75,9 @@ class RecordService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            "start" -> begin()
+            "start" -> begin(intent)
             "stop" -> end()
+            "finish" -> if (recording.value && handsFree.value) endAndSave()
             "pause" -> pauseResume()
         }
         return START_NOT_STICKY
@@ -70,7 +91,7 @@ class RecordService : Service() {
             .setSmallIcon(android.R.drawable.ic_btn_speak_now).setOngoing(true).setContentIntent(open).build()
     }
 
-    private fun begin() {
+    private fun begin(intent: Intent) {
         if (recording.value) return
         if (Build.VERSION.SDK_INT >= 30) startForeground(1, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         else startForeground(1, notification())
@@ -85,6 +106,11 @@ class RecordService : Service() {
         recorder = r; lastFile = f
         startedAt = System.currentTimeMillis(); base = SystemClock.elapsedRealtime()
         markers.value = emptyList(); currentStudent.value = null; pickedClass.value = null; period.value = null
+        val hf = intent.getBooleanExtra("handsFree", false)
+        val delay = intent.getLongExtra("stopDelay", 0)
+        handsFree.value = hf; byProximity.value = hf && intent.getBooleanExtra("proximity", false)
+        detector = if (hf && delay > 0) EndDetector(delay) else null
+        autoEnds.value = detector != null
         recording.value = true; paused.value = false
         android.os.Handler(mainLooper).post(meter)
     }
@@ -95,7 +121,21 @@ class RecordService : Service() {
         else { r.pause(); pausedAt = SystemClock.elapsedRealtime(); paused.value = true; level.value = 0f }
     }
 
+    /** 손 없이 녹음 끝: 버튼 녹음과 같은 Store.add 로 바로 담는다 (1초 미만은 버림) */
+    private fun endAndSave() {
+        val dur = elapsedMs(); val at = startedAt; val f = lastFile
+        val marks = markers.value; val cls = pickedClass.value; val p = period.value
+        end()
+        if (f == null) return
+        if (dur < 1000) { f.delete(); return }
+        Store.init(this)
+        runCatching { Store.add(f, dur / 1000.0, "수업", "", at, marks, cls, p) }
+            .onSuccess { lastSavedId.value = Store.items.value.firstOrNull()?.id }
+    }
+
     private fun end() {
+        detector = null
+        handsFree.value = false; byProximity.value = false; autoEnds.value = false
         runCatching { recorder?.stop() }
         recorder?.release(); recorder = null
         recording.value = false; paused.value = false; level.value = 0f

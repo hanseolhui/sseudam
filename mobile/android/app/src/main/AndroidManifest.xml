@@ -51,6 +51,10 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="audio/*" />
             </intent-filter>
+            <!-- 앱 아이콘 길게 누르기 '녹음 시작' + 구글 어시스턴트 '앱 기능 열기' -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
         <service
             android:name=".RecordService"

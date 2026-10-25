@@ -59,6 +59,8 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); handleLink(intent) }
 
     private fun handleLink(i: Intent?) {
+        // 앱 아이콘 길게 눌러 '녹음 시작' · "헤이 구글, 쓰담에서 녹음 시작" → 손 없이 녹음
+        if (HandsFree.isRecordIntent(i)) { HandsFree.request.value = true; return }
         if (i?.action == Intent.ACTION_SEND || i?.action == Intent.ACTION_SEND_MULTIPLE) { handleShare(i); return }
         val data = i?.data?.toString() ?: return
         Relay.parse(data)?.let { Store.pairRelay(it); return }
@@ -104,6 +106,8 @@ fun App(startTab: Int = 0, startRoute: Route? = null) {
     val stacks = remember { List(4) { i -> mutableStateListOf<Route>().apply { if (i == startTab && startRoute != null) add(startRoute) } } }
     val nav = remember { Nav(tab, stacks) }
     LaunchedEffect(Unit) { Distribution.onLaunch(ctx) }
+    val hfReq by HandsFree.request.collectAsStateWithLifecycle()
+    LaunchedEffect(hfReq) { if (hfReq) { tab.intValue = 0; stacks[0].clear() } }   // 손 없이 녹음은 담기 탭에서 시작
     BackHandler(enabled = nav.stack.isNotEmpty()) { nav.back() }
 
     Scaffold(containerColor = T.bg, bottomBar = {
@@ -163,8 +167,11 @@ fun HomeScreen(nav: Nav) {
     var pending by remember { mutableStateOf<Triple<File, Long, Long>?>(null) }
     var savedId by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(recording) { while (recording) { elapsed = RecordService.elapsedMs(); delay(100) } }
-    // 말하면 담기: 손녹음 중이거나 '담을까요?' 창이 떠 있으면 쉰다
-    AutoRecordEffect(active = !recording && pending == null)
+    // 손 없이 녹음: 어시스턴트·바로가기 요청, 얼굴 가까이 대기(근접 센서) · 손 없이 담은 녹음은 바로 '담았어요' 카드로
+    HandsFreeEffect(active = pending == null)
+    val hfSaved by RecordService.lastSavedId.collectAsStateWithLifecycle()
+    LaunchedEffect(hfSaved) { hfSaved?.let { savedId = it; RecordService.lastSavedId.value = null } }
+    val handsFree by RecordService.handsFree.collectAsStateWithLifecycle()
 
     val perm = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
         // 알림을 거절해도 녹음은 된다 (알림 막대에 '녹음 중'이 안 보일 뿐)
@@ -177,7 +184,6 @@ fun HomeScreen(nav: Nav) {
             RecordService.lastFile?.let { f -> if (dur >= 1000) pending = Triple(f, dur, at) else f.delete() }
             elapsed = 0
         } else {
-            AutoRecorder.stop()   // 말하면 담기가 듣던 중이면 담던 것을 저장하고 마이크를 넘긴다
             val ask = recordPermissionsToAsk(ctx)
             if (ask.isEmpty()) { savedId = null; RecordService.start(ctx) } else perm.launch(ask)
         }
@@ -216,7 +222,8 @@ fun HomeScreen(nav: Nav) {
                 fontWeight = if (recording) FontWeight.Light else FontWeight.SemiBold, color = T.ink)
             Spacer(Modifier.height(8.dp))
             Text(if (!recording) "학년·반·이름부터 말하면 학생별로 쏙쏙 담겨요 ✨\n“2학년 3반 김민수! 친구 의견 모아 멋지게 발표 🌟”"
-                else if (paused) "잠깐 멈췄어요" else "화면을 꺼도 계속 녹음돼요 · 끝나면 한 번 더 누르세요",
+                else if (paused) "잠깐 멈췄어요" else if (handsFree) handsFreeHint()
+                else "화면을 꺼도 계속 녹음돼요 · 끝나면 한 번 더 누르세요",
                 fontSize = 14.sp, color = T.soft, textAlign = TextAlign.Center)
             if (recording && db.hasRoster) {
                 Spacer(Modifier.height(12.dp))
@@ -231,7 +238,7 @@ fun HomeScreen(nav: Nav) {
             }
             if (!recording) {
                 Spacer(Modifier.height(14.dp))
-                AutoRecordPanel()
+                HandsFreePanel()
             }
             Spacer(Modifier.height(10.dp))
             Text("🖥️ 녹음은 컴퓨터의 쓰담이 글자로 바꾸고 학생별로 정리해요", fontSize = 12.sp, color = T.soft, textAlign = TextAlign.Center)
@@ -400,7 +407,6 @@ fun MemoCard(recording: Boolean, onSaved: (Recording) -> Unit) {
     DisposableEffect(Unit) { onDispose { dict.destroy() } }
     val listening by dict.listening.collectAsStateWithLifecycle()
     val err by dict.error.collectAsStateWithLifecycle()
-    LaunchedEffect(listening) { AutoRecorder.dictating.value = listening }
     val perm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> if (ok) { base = memo; dict.start() } }
 
     Column(Modifier.fillMaxWidth().card(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -415,7 +421,7 @@ fun MemoCard(recording: Boolean, onSaved: (Recording) -> Unit) {
                 Box(Modifier.size(40.dp).clip(CircleShape).background(if (listening) T.coral else T.blue.copy(alpha = 0.12f))
                     .clickable(enabled = !recording) {
                         if (listening) dict.stop()
-                        else if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) { AutoRecorder.stop(); base = memo; dict.start() }
+                        else if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) { base = memo; dict.start() }
                         else perm.launch(Manifest.permission.RECORD_AUDIO)
                     }, contentAlignment = Alignment.Center) {
                     Icon(if (listening) Icons.Filled.Stop else Icons.Filled.Mic, "말로 받아쓰기", tint = if (listening) Color.White else T.blue)
