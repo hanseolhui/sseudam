@@ -89,6 +89,24 @@ final class Plus: ObservableObject {
         }
         await run { try await self.post(["action": "social", "provider": "apple", "idToken": id, "installId": self.installId,
                                          "phone": true, "deviceName": self.device]) }
+        if loggedIn { UserDefaults.standard.set("apple", forKey: "plusProvider") }
+    }
+
+    var appleLogin: Bool { UserDefaults.standard.string(forKey: "plusProvider") == "apple" }
+
+    /// 계정 삭제 — 로그인 · 기기 · 선생님 정보를 서버에서 지운다. 애플로 로그인했다면 애플 로그인 연결도 끊는다(authorizationCode).
+    func deleteAccount(appleCode: String? = nil) async -> Bool {
+        guard let t = token else { return false }
+        busy = true; defer { busy = false }
+        do {
+            var body: [String: Any] = ["action": "delete-account", "token": t]
+            if let c = appleCode { body["appleCode"] = c }
+            _ = try await post(body)
+            token = nil; email = nil; status = Status(); accountToken = nil
+            UserDefaults.standard.removeObject(forKey: "plusEmail"); UserDefaults.standard.removeObject(forKey: "plusProvider")
+            message = "계정을 지웠어요."
+            return true
+        } catch { message = error.localizedDescription; return false }
     }
 
     func sendCode(_ mail: String) async -> Bool {
@@ -110,7 +128,7 @@ final class Plus: ObservableObject {
     func logout() async {
         if let t = token { _ = try? await post(["action": "logout", "token": t]) }
         token = nil; email = nil; status = Status(); accountToken = nil
-        UserDefaults.standard.removeObject(forKey: "plusEmail")
+        UserDefaults.standard.removeObject(forKey: "plusEmail"); UserDefaults.standard.removeObject(forKey: "plusProvider")
     }
 
     private func run(_ f: @escaping () async throws -> [String: Any]) async {
@@ -181,6 +199,7 @@ struct PlusCard: View {
     @State private var code = ""
     @State private var codeSent = false
     @State private var showEmail = false
+    @State private var confirmDelete = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -255,7 +274,43 @@ struct PlusCard: View {
             HStack(spacing: 14) {
                 Link("이용약관", destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)
                 Link("개인정보 처리방침", destination: URL(string: "https://apps.seoriarts.com/sseudam-privacy")!)
+                Spacer()
+                Button("계정 삭제", role: .destructive) { confirmDelete = true }
             }.font(Theme.font(11, .semibold))
         }
+        .confirmationDialog("쓰담 플러스 계정을 지울까요?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            if plus.appleLogin {
+                Button("애플 로그인 확인하고 지우기", role: .destructive) { AppleReauth.shared.run { code in Task { _ = await plus.deleteAccount(appleCode: code) } } }
+            } else {
+                Button("계정 지우기", role: .destructive) { Task { _ = await plus.deleteAccount() } }
+            }
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("로그인 정보와 등록된 기기, 선생님 정보가 지워지고 되돌릴 수 없어요. 휴대폰과 컴퓨터에 있는 학생 기록은 그대로예요. App Store 구독은 계정을 지워도 자동으로 해지되지 않으니, 먼저 ‘구독 관리’에서 해지해 주세요.")
+        }
+    }
+}
+
+/// 계정 삭제 전 애플 로그인을 한 번 더 받아 authorizationCode를 얻는다 (서버가 애플 로그인 연결을 끊는 데 씀)
+final class AppleReauth: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
+    static let shared = AppleReauth()
+    private var done: ((String?) -> Void)?
+
+    func run(_ f: @escaping (String?) -> Void) {
+        done = f
+        let req = ASAuthorizationAppleIDProvider().createRequest()
+        let c = ASAuthorizationController(authorizationRequests: [req])
+        c.delegate = self; c.presentationContextProvider = self
+        c.performRequests()
+    }
+    func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization a: ASAuthorization) {
+        let code = (a.credential as? ASAuthorizationAppleIDCredential)?.authorizationCode.flatMap { String(data: $0, encoding: .utf8) }
+        done?(code); done = nil
+    }
+    func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
+        done = nil   // 취소하면 지우지 않음
+    }
+    func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
+        UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first ?? ASPresentationAnchor()
     }
 }
