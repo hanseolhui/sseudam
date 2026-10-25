@@ -2268,6 +2268,20 @@ async function checkPlusRenew() {
   } catch (e) { /* 로그인 안 함 · 인터넷 없음 */ }
 }
 
+// 업데이트 안내 문구에 나온 '설정 → ○○'를 찾아 그 설정 칸으로 바로 가는 버튼을 단다
+const SET_TAB = { me: '선생님', ai: 'AI', phone: '휴대폰', data: '백업·업데이트' };
+function settingsTabsIn(notes) {
+  const m = String(notes || '').match(/설정\s*→\s*[^:·,\n]+/g) || [];
+  const tabs = m.map(x => /선생님/.test(x) ? 'me' : /AI/.test(x) ? 'ai' : /휴대폰/.test(x) ? 'phone' : /백업|업데이트/.test(x) ? 'data' : '').filter(Boolean);
+  return [...new Set(tabs)].slice(0, 3);
+}
+function openSettingsTab(tab) {
+  store('local', 'sseudam.settingsTab', tab);
+  const b = $(`[data-stab="${tab}"]`);
+  if (b) b.click(); else location.hash = '#/settings';
+}
+
+let updLater = '';   // '나중에'를 누른 버전은 이번에 켜 둔 동안 다시 띄우지 않음
 async function checkUpdateBanner() {
   try {
     const v = await api('/api/version?notice=1', undefined, { silent: true });
@@ -2275,15 +2289,18 @@ async function checkUpdateBanner() {
     if (v.just_updated) {
       const j = v.just_updated, b0 = $('#update-banner');
       b0.innerHTML = `<b>${j.app ? '쓰담 앱이 새 버전으로 바뀌었어요 ✨' : `쓰담이 ${esc(j.from)} → ${esc(j.to)}으로 업데이트됐어요 ✨`}</b>
-        ${j.url ? `<a href="${esc(j.url)}" target="_blank" rel="noopener">무엇이 바뀌었나요?</a>` : ''} <button class="sm ghost" id="ub-x">닫기</button>
+        ${j.url ? `<a href="${esc(j.url)}" target="_blank" rel="noopener">무엇이 바뀌었나요?</a>` : ''}
+        ${settingsTabsIn(j.notes).map(t => `<button class="sm primary ub-tab" data-t="${t}">${SET_TAB[t]} 설정 열기</button>`).join(' ')} <button class="sm ghost" id="ub-x">닫기</button>
         ${j.notes ? `<div class="notes">${esc(j.notes)}</div>` : ''}`;
-      b0.classList.remove('hidden');
+      b0.dataset.kind = 'done'; b0.classList.remove('hidden');
+      $$('.ub-tab').forEach(x => x.onclick = () => { b0.classList.add('hidden'); openSettingsTab(x.dataset.t); });
       $('#ub-x').onclick = () => b0.classList.add('hidden');
       toast(j.app ? '새 버전으로 업데이트됐어요 ✨' : `새 버전 ${j.to}으로 업데이트됐어요 ✨`);
       return;
     }
     const u = await api('/api/update/check', undefined, { silent: true });
     const b = $('#update-banner');
+    if (!u.available && b.dataset.kind === 'avail') b.classList.add('hidden');   // 그 사이 새 버전이 깔렸으면 '새 버전 나옴' 알림은 내림
     if (v.shell_outdated && !u.available) {
       b.innerHTML = `<b>새 쓰담 앱이 나왔어요 ✨</b> 키 없이 맥 안에서 학생을 나누는 AI가 들어 있어요. 기록은 그대로예요.
         <button class="sm primary" id="ub-app">지금 바꾸기</button> <button class="sm ghost" id="ub-x">나중에</button>`;
@@ -2295,12 +2312,13 @@ async function checkUpdateBanner() {
       };
       return;
     }
-    if (u.available) {
-      b.innerHTML = `<b>새 버전 ${esc(u.latest)}이(가) 나왔습니다.</b> <button class="sm primary" id="ub-go">지금 업데이트</button> <button class="sm ghost" id="ub-x">나중에</button>
+    if (u.available && u.latest !== updLater) {
+      b.innerHTML = `<b>새 버전 ${esc(u.latest)}이(가) 나왔습니다.</b> <button class="sm primary" id="ub-go">지금 업데이트</button> <button class="sm" id="ub-set">업데이트 설정 열기</button> <button class="sm ghost" id="ub-x">나중에</button>
         ${u.notes ? `<div class="notes">${esc(u.notes)}</div>` : ''}`;
-      b.classList.remove('hidden');
+      b.dataset.kind = 'avail'; b.classList.remove('hidden');
       $('#ub-go').onclick = () => runUpdate(u);
-      $('#ub-x').onclick = () => b.classList.add('hidden');
+      $('#ub-set').onclick = () => openSettingsTab('data');
+      $('#ub-x').onclick = () => { updLater = u.latest; b.classList.add('hidden'); };
     }
   } catch (e) { /* 오프라인 */ }
 }
@@ -2519,6 +2537,7 @@ window.addEventListener('drop', e => e.preventDefault());
 
 updateModeBadge();
 checkUpdateBanner();
+setInterval(checkUpdateBanner, 30 * 60 * 1000);   // 켜 둔 채로 업데이트돼도 알림이 맞게 바뀌게
 checkPlusRenew();
 setInterval(checkPlusRenew, 6 * 3600 * 1000);
 maybeOnboard();
