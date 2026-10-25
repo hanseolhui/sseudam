@@ -385,7 +385,7 @@ document.addEventListener('click', e => {
 
 // ───────────────────────── 대시보드 ─────────────────────────
 
-const MASCOT = `<svg class="mascot-big" viewBox="0 0 48 48" aria-hidden="true"><defs><linearGradient id="mg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5B7CFA"/><stop offset="1" stop-color="#9B8CF5"/></linearGradient></defs>
+const MASCOT = `<svg class="mascot-big" viewBox="0 0 48 48" aria-hidden="true"><defs><linearGradient id="mg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2E3A8C"/><stop offset="1" stop-color="#4B58B5"/></linearGradient></defs>
   <path d="M24 5c10.5 0 19 7.2 19 16.2S34.5 37.4 24 37.4c-1.6 0-3.1-.2-4.6-.5L11 42.6c-.9.6-2-.2-1.7-1.2l1.8-6.3C7.4 32.2 5 27 5 21.2 5 12.2 13.5 5 24 5z" fill="url(#mg2)"/>
   <circle cx="17.5" cy="20.5" r="2.6" fill="#fff"/><circle cx="30.5" cy="20.5" r="2.6" fill="#fff"/><path d="M19.5 27c2.6 2.4 6.4 2.4 9 0" stroke="#fff" stroke-width="2.4" stroke-linecap="round" fill="none"/>
   <circle cx="13" cy="26" r="2" fill="#FF8A73" opacity=".75"/><circle cx="35" cy="26" r="2" fill="#FF8A73" opacity=".75"/></svg>`;
@@ -493,8 +493,8 @@ function animateIn(root) {
   requestAnimationFrame(() => requestAnimationFrame(() => root.classList.add('animated')));
 }
 
-const SVG_DEFS = `<defs><linearGradient id="gradBrand" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5B7CFA"/><stop offset="1" stop-color="#9B8CF5"/></linearGradient>
-  <linearGradient id="gradCol" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#5B7CFA"/><stop offset="1" stop-color="#9B8CF5"/></linearGradient></defs>`;
+const SVG_DEFS = `<defs><linearGradient id="gradBrand" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2E3A8C"/><stop offset="1" stop-color="#4B58B5"/></linearGradient>
+  <linearGradient id="gradCol" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#2E3A8C"/><stop offset="1" stop-color="#4B58B5"/></linearGradient></defs>`;
 
 /** 도넛 링: 가운데 % 가 함께 올라감 */
 function donut(p, color, label, sub) {
