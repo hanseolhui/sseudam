@@ -28,7 +28,7 @@ android {
         versionName = sseudamVersion
         // 쓰담 플러스 구글 로그인: 구글 클라우드 콘솔의 웹 클라이언트 ID (서버 SSEUDAM_GOOGLE_CLIENT_IDS에도 같은 값)
         // 비어 있으면 '구글로 로그인' 버튼을 숨긴다
-        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"\"")
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"657047512123-bg9e64encuml9hsskioentr0cup4mb0v.apps.googleusercontent.com\"")
     }
 
     // play: 플레이 스토어용 (자체 업데이트·REQUEST_INSTALL_PACKAGES 없음) → bundlePlayRelease (.aab)
