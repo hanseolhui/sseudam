@@ -86,6 +86,9 @@ fun ConnectScreen() {
                 fontSize = 12.sp, color = T.ink)
         }
 
+        // 쓰담 플러스: 계정 · 구독 (컴퓨터 쓰담의 AI 정리·초안)
+        PlusCard()
+
         // 학생 기록(글) 주고받기 — 구글 연결은 '올리기 전용'이라 파일로 옮긴다
         Column(Modifier.fillMaxWidth().card(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("📁 학생 기록 파일 (연결 없이 옮길 때)", fontWeight = FontWeight.Bold, color = T.ink, fontSize = 16.sp)

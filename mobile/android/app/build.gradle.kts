@@ -26,6 +26,9 @@ android {
         // 버전은 컴퓨터 쓰담(app/version.py)과 같게 — GitHub 릴리스 태그와 비교해 자동 업데이트하므로
         versionCode = sseudamVersion.split(".").map { it.toInt() }.let { (a, b, c) -> a * 10000 + b * 100 + c }
         versionName = sseudamVersion
+        // 쓰담 플러스 구글 로그인: 구글 클라우드 콘솔의 웹 클라이언트 ID (서버 SSEUDAM_GOOGLE_CLIENT_IDS에도 같은 값)
+        // 비어 있으면 '구글로 로그인' 버튼을 숨긴다
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"\"")
     }
 
     // play: 플레이 스토어용 (자체 업데이트·REQUEST_INSTALL_PACKAGES 없음) → bundlePlayRelease (.aab)
@@ -67,7 +70,7 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     testOptions {
         unitTests {
             isIncludeAndroidResources = true   // Robolectric 스토어 스크린샷용
@@ -104,6 +107,12 @@ dependencies {
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     // 사진·활동지 글자 읽기: 기기 안 한국어 모델 (앱에 포함, 오프라인)
     implementation("com.google.mlkit:text-recognition-korean:16.0.1")
+    // 쓰담 플러스: 구글 로그인 (Credential Manager)
+    implementation("androidx.credentials:credentials:1.6.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.6.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.2.1")
+    // 쓰담 플러스 구독 결제: 플레이판에만 (직접 설치판은 결제 없이 로그인·구독 상태만)
+    "playImplementation"("com.android.billingclient:billing-ktx:8.3.0")
     testImplementation("junit:junit:4.13.2")
     // 스토어 스크린샷 (Robolectric + Roborazzi) — 앱에는 들어가지 않음
     testImplementation(composeBom)
