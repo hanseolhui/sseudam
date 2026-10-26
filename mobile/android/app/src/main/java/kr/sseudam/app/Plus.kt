@@ -232,7 +232,11 @@ object Plus {
 
     suspend fun restore() {
         busy.value = true
-        try { PlusBilling.resendPurchases(all = true); refresh() } finally { busy.value = false }
+        message.value = ""   // 지난 오류 문구가 남아 있지 않게
+        try {
+            PlusBilling.resendPurchases(all = true); refresh()
+            if (message.value.isEmpty() && !status.value.active) message.value = "복원할 구독이 없어요."
+        } finally { busy.value = false }
     }
 }
 
