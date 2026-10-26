@@ -13,7 +13,7 @@ final class Plus: ObservableObject {
 
     struct Status { var active = false; var planName = ""; var endsAt: Date?; var daysToEnd = 0; var autoRenew = false }
 
-    @Published private(set) var email: String? = UserDefaults.standard.string(forKey: "plusEmail")
+    @Published private(set) var email: String? = Plus.preview ? "teacher@example.com" : UserDefaults.standard.string(forKey: "plusEmail")
     @Published private(set) var status = Status()
     @Published private(set) var products: [Product] = []
     @Published var busy = false
@@ -21,7 +21,13 @@ final class Plus: ObservableObject {
     private var accountToken: UUID?
     private var listener: Task<Void, Never>?
 
-    var loggedIn: Bool { token != nil }
+    var loggedIn: Bool { token != nil || Plus.preview }
+    /// 심사용 스크린샷: 디버그 빌드에서 -plusPreview 로 켜면 로그인된 화면(구독 상품)을 보여 준다
+    #if DEBUG
+    static let preview = ProcessInfo.processInfo.arguments.contains("-plusPreview")
+    #else
+    static let preview = false
+    #endif
 
     private var installId: String {
         if let v = UserDefaults.standard.string(forKey: "plusInstall") { return v }
