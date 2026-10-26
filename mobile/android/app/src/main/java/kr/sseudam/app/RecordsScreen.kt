@@ -58,8 +58,8 @@ fun RecordsScreen(nav: Nav) {
         }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
             if (!paired) item {
-                Text("🔗 ‘연결’ 탭에서 컴퓨터와 연결하면 녹음·메모가 컴퓨터로 자동으로 가요", fontSize = 13.sp, color = T.coral,
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(T.coral.copy(alpha = 0.1f))
+                Text("🔗 ‘연결’ 탭에서 컴퓨터와 연결하면 녹음·메모가 컴퓨터로 자동으로 가요", fontSize = 13.sp, color = T.blue,
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(T.blue.copy(alpha = 0.08f))
                         .clickable { nav.switch(3) }.padding(12.dp))
             }
             val groups = items.groupBy { dayKey(it.createdAt) }
