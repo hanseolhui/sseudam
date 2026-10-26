@@ -1733,7 +1733,7 @@ async function viewSettings(section) {
       <span class="ai-tile-icon">${icon}</span><b>${title}</b><span class="small muted">${sub}</span>
       <span class="ai-tile-status small">${status}</span></button>`;
   const modelName = id => ((aiSt.builtin.models.find(m => m.id === id) || {}).model || id);
-  let plusSt = { loggedIn: false }, plusFresh = false;
+  let plusSt = { loggedIn: false }, plusFresh = false, plusWait = null;
   const dlPct = dd => Math.floor(100 * dd.done / Math.max(1, dd.total));
   const dlAct = (m) => {
     const dd = m.download || {}, pct = dlPct(dd);
@@ -1789,6 +1789,7 @@ async function viewSettings(section) {
       if (!plusSt.loggedIn) {
         d = `<div class="spec">💜 <b>쓰담 플러스</b> — 녹음만 하면 받아쓰기 → 학생별 분리 → 세특 초안까지 앱이 한 번에 해요. API 키도 모델 설치도 필요 없어요.
           <div class="small muted" style="margin-top:4px">학생 이름은 이 컴퓨터에서 '학생1'처럼 가린 뒤 보내요. 서리아트 서버는 내용을 저장하지 않아요.</div>
+          ${plusSt.googleUrl ? `<div class="row" style="margin-top:10px"><a class="btn sm primary shrink" id="plus-google" href="${esc(plusSt.googleUrl)}" target="_blank">구글로 로그인 ↗</a><span class="small muted">브라우저에서 로그인하면 여기로 돌아와요 · 또는 아래 이메일 인증번호로</span></div>` : ''}
           <div class="row" style="margin-top:10px"><input id="plus-email" type="email" placeholder="이메일 주소" value="${esc(plusEmail)}" style="max-width:260px"><button class="sm primary shrink" id="plus-send">인증번호 받기</button></div>
           <div class="row${plusCodeSent ? '' : ' hidden'}" id="plus-code-row" style="margin-top:8px"><input id="plus-code" inputmode="numeric" placeholder="메일로 온 인증번호" style="max-width:180px"><button class="sm primary shrink" id="plus-login">로그인</button></div>
           <div id="plus-r" class="small" style="margin-top:6px">${plusSt.error ? esc(plusSt.error) : ''}</div></div>`;
@@ -1867,6 +1868,18 @@ async function viewSettings(section) {
         toast(r.sub && r.sub.active ? '쓰담 플러스로 바꿨어요 ✓ 이제 녹음만 하면 돼요' : '로그인했어요 ✓');
         flashSaved($('#ai-tiles')); aiLoad(); updateModeBadge();
       } catch (e) { say(`<span class="bad-text">${esc(e.message)}</span>`); }
+    };
+    // 구글로 로그인: 브라우저에서 끝나면 plus-done.html 이 토큰을 저장 → 여기서는 로그인됐는지 2초마다 확인 (5분까지)
+    if ($('#plus-google')) $('#plus-google').onclick = () => {
+      clearInterval(plusWait); let n = 0;
+      plusWait = setInterval(async () => {
+        if (++n > 150 || !document.body.contains($('#ai-tiles'))) return clearInterval(plusWait);
+        const s = await api('/api/plus?refresh=0', undefined, { silent: true }).catch(() => ({}));
+        if (!s.loggedIn) return;
+        clearInterval(plusWait); plusFresh = false;
+        toast(s.sub && s.sub.active ? '쓰담 플러스로 바꿨어요 ✓ 이제 녹음만 하면 돼요' : '로그인했어요 ✓');
+        flashSaved($('#ai-tiles')); aiLoad(); updateModeBadge();
+      }, 2000);
     };
     if ($('#plus-use')) $('#plus-use').onclick = () => aiChoose('plus', $('.ai-tile[data-choice=plus]'));
     if ($('#plus-refresh')) $('#plus-refresh').onclick = () => { plusFresh = false; aiLoad(); };

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>쓰담 로그인</title>
+<link rel="stylesheet" href="/style.css">
+<style>main{max-width:480px;margin:80px auto;padding:0 16px;text-align:center;line-height:1.7}</style>
+</head><body><main>
+<h2 id="t">로그인하는 중이에요</h2>
+<p id="m" class="muted"></p>
+</main>
+<script>
+// 서리아트 로그인 페이지(구글 로그인)가 #t=토큰&s=확인값 을 붙여 여기로 보낸다
+(async () => {
+  const h = new URLSearchParams(location.hash.slice(1));
+  history.replaceState(null, '', location.pathname);   // 토큰을 주소창·방문 기록에 남기지 않음
+  const say = (t, m) => { document.getElementById('t').textContent = t; document.getElementById('m').textContent = m || ''; };
+  try {
+    const r = await fetch('/api/plus/adopt', { method: 'POST', headers: { 'X-Seteuk': '1', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: h.get('t') || '', state: h.get('s') || '' }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || '로그인하지 못했어요.');
+    say('로그인했어요 ✓', (d.email || '') + ' · 이 창은 닫아도 돼요. 쓰담 화면은 저절로 바뀌어요.');
+    setTimeout(() => window.close(), 1500);
+  } catch (e) {
+    say('로그인하지 못했어요', e.message);
+  }
+})();
+</script>
+</body></html>

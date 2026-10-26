@@ -1241,7 +1241,24 @@ def feedback_preview(h, q, b):
 def plus_status(h, q, b):
     if not plus.ENABLED:
         return {"loggedIn": False, "enabled": False}
-    return plus.status(refresh=q.get("refresh", "1") == "1")
+    d = plus.status(refresh=q.get("refresh", "1") == "1")
+    if not d.get("loggedIn"):
+        d = dict(d, googleUrl=plus.login_url(PORT))
+    return d
+
+
+@route("POST", "/api/plus/adopt")
+def plus_adopt(h, q, b):
+    """구글 로그인 페이지 → plus-done.html → 여기로 토큰이 옴"""
+    if not plus.ENABLED:
+        raise ApiError("쓰담 플러스는 아직 열리지 않았어요.")
+    try:
+        d = plus.adopt(b.get("token") or "", b.get("state") or "")
+    except plus.PlusError as e:
+        raise ApiError(str(e))
+    if (d.get("sub") or {}).get("active"):
+        ai_choose(h, q, {"choice": "plus"})
+    return dict(d, token=None, loggedIn=True)
 
 
 @route("POST", "/api/plus/start")

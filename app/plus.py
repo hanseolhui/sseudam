@@ -3,6 +3,7 @@
 학생 이름은 보내기 전에 가린다(namemask). 서버는 내용을 저장하지 않고 횟수만 센다."""
 import json
 import os
+import secrets
 import socket
 import time
 import urllib.error
@@ -16,6 +17,9 @@ URL = os.environ.get("SSEUDAM_PLUS_URL", "https://apps.seoriarts.com/api/sseudam
 # 베타로 열어 둠: 로그인 → 베타 신청 → 관리자가 고른 선생님께 1달 시험 구독. 정식 결제는 서버가 열면(pay) 보임.
 # 급히 숨겨야 하면 SSEUDAM_PLUS=0
 ENABLED = os.environ.get("SSEUDAM_PLUS", "1") != "0"
+# 구글 로그인: 브라우저에서 이 페이지로 로그인하면 127.0.0.1 의 쓰담(plus-done.html)으로 토큰을 돌려준다
+LOGIN_PAGE = os.environ.get("SSEUDAM_LOGIN_URL", "https://apps.seoriarts.com/sseudam/login")
+_STATE = secrets.token_urlsafe(18)   # 이 쓰담이 연 로그인인지 확인 (켤 때마다 바뀜)
 
 
 class PlusError(Exception):
@@ -65,11 +69,32 @@ def start(email):
     return _call("start", email=email)
 
 
-def verify(email, code):
+def _device_name():
     name = (db.get_settings().get("teacher_name") or "").strip()
     host = socket.gethostname().replace(".local", "")
-    d = _call("verify", email=email, code=str(code).strip(), deviceName=(host + (" · " + name if name else ""))[:60])
+    return (host + (" · " + name if name else ""))[:60]
+
+
+def verify(email, code):
+    d = _call("verify", email=email, code=str(code).strip(), deviceName=_device_name())
     db.set_settings({"plus_token": d["token"]})
+    _remember(d)
+    return d
+
+
+def login_url(port):
+    """구글로 로그인 — 브라우저로 여는 서리아트 로그인 페이지 주소"""
+    import telemetry
+    import urllib.parse
+    return LOGIN_PAGE + "?" + urllib.parse.urlencode({"i": telemetry.install_id(), "n": _device_name(), "p": port, "s": _STATE})
+
+
+def adopt(tok, state):
+    """로그인 페이지가 돌려준 토큰을 이 컴퓨터에 저장"""
+    if not tok or not secrets.compare_digest(str(state or ""), _STATE):
+        raise PlusError("로그인 요청이 맞지 않아요. 쓰담 설정 → AI에서 '구글로 로그인'을 다시 눌러 주세요.")
+    d = _call("status", token=str(tok))
+    db.set_settings({"plus_token": str(tok)})
     _remember(d)
     return d
 
