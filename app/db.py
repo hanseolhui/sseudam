@@ -309,6 +309,8 @@ def _migrate_columns(conn):
                  (old, new, "%" + old + "%"))
     import sync_text  # 텍스트 동기화용 uid·source 컬럼
     sync_text.migrate(conn)
+    import quality  # 초안 통계 (숫자만)
+    quality.migrate(conn)
 
 
 def note_area(note, class_kind):

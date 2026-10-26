@@ -1290,6 +1290,7 @@ async function viewStudent(id, areaParam) {
             <button class="shrink" id="d-ext" ${notesInArea.length ? '' : 'disabled'} title="프롬프트를 복사해서 ChatGPT·Gemini 앱에서 쓰고, 답을 붙여넣어 저장">📋 ChatGPT·Gemini로 쓰기</button><span id="d-deep-left" class="small muted"></span></div>
           <textarea id="d-text" rows="12" style="margin-top:12px" placeholder="AI 초안이 여기에 표시됩니다. 직접 작성·수정해도 됩니다.">${esc(current ? current.content : '')}</textarea>
           <div class="row" style="margin-top:6px;align-items:center"><span class="counter" id="d-count"></span><span></span>
+            ${current && current.ai_text ? `<span class="small muted" id="d-rate">AI 초안 어땠나요? <button class="shrink sm ghost" data-rate="1" title="좋아요">👍</button><button class="shrink sm ghost" data-rate="0" title="아쉬워요">👎</button></span>` : ''}
             <button class="shrink sm" id="d-short">AI로 줄이기</button><button class="shrink sm" id="d-copy">복사</button></div>
           <div id="d-warn"></div>
           <div class="row" style="margin-top:12px"><span></span><button class="shrink" id="d-save">새 버전으로 저장</button><button class="shrink primary" id="d-final">확정</button></div>
@@ -1345,6 +1346,11 @@ async function viewStudent(id, areaParam) {
     runAI('shorten', { student_id: s.id, text: text.value, area: area.id }, `${area.name} ${s.name}`, reload);
   };
   $('#d-copy').onclick = () => copyText(text.value);
+  // 👍👎: 숫자만 남겨서 초안 품질을 살핌 (내용은 보내지 않음)
+  $$('[data-rate]').forEach(b => b.onclick = async () => {
+    await api('/api/drafts/rate', { id: current.id, up: b.dataset.rate === '1' });
+    $('#d-rate').innerHTML = '<span class="ok-text">고맙습니다 ✓</span>';
+  });
   $('#d-save').onclick = async () => {
     await api('/api/drafts/save', { student_id: s.id, content: text.value, status: '초안', area: area.id });
     delete text.dataset.dirty; toast('저장했습니다'); reload();

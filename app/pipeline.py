@@ -9,6 +9,7 @@ import json
 import os
 import re
 import threading
+import time
 import traceback
 
 import db
@@ -145,7 +146,8 @@ def apply(op, params, text):
     if op == "segment":
         return apply_segment(params["recording_id"], text)
     if op in ("draft", "shorten"):
-        return apply_draft(params["student_id"], text, params.get("area") or "subject")
+        return apply_draft(params["student_id"], text, params.get("area") or "subject",
+                           op=op, engine=params.get("_engine") or "manual", t0=params.get("_t0"))
     raise ValueError("알 수 없는 작업: %s" % op)
 
 
@@ -227,15 +229,22 @@ def apply_segment(rid, text):
         conn.close()
 
 
-def apply_draft(student_id, text, area="subject"):
+def apply_draft(student_id, text, area="subject", op="draft", engine="manual", t0=None):
+    import quality
     conn = db.connect()
     st = db.row(conn, "SELECT * FROM students WHERE id=?", (student_id,))
     text = prompts.clean_draft(text, st)   # 날짜·'학생은'·학생 이름 같은 군더더기 걸러내기
     if not text:
         conn.close()
         raise ValueError("초안이 비어 있습니다.")
-    conn.execute("INSERT INTO drafts(student_id, content, bytes, area) VALUES (?,?,?,?)",
-                 (student_id, text, db.neis_bytes(text), area))
+    if op == "shorten":
+        event = "shorten"
+    else:   # 이 학생 · 영역에 AI 초안이 이미 있으면 '다시 뽑기'
+        event = "regen" if db.row(conn, "SELECT id FROM drafts WHERE student_id=? AND area=? AND ai_text<>''",
+                                  (student_id, area)) else "draft"
+    conn.execute("INSERT INTO drafts(student_id, content, bytes, area, ai_text, origin) VALUES (?,?,?,?,?,?)",
+                 (student_id, text, db.neis_bytes(text), area, text, engine))
+    quality.record(conn, event, engine, area, ms=(time.time() - t0) * 1000 if t0 else None)
     conn.commit()
     conn.close()
     return {"ok": True, "bytes": db.neis_bytes(text)}
@@ -937,6 +946,9 @@ def _run_whisper(params, job_id=None):
 
 def _run_api(op, params, job_id=None):
     settings = db.get_settings()
+    if op in ("draft", "shorten"):   # 초안 통계: 어느 엔진 · 걸린 시간 (숫자만)
+        import quality
+        params = dict(params, _engine=quality.engine_of(settings, params), _t0=time.time())
     if op == "transcribe" and use_whisper(settings):
         return _run_whisper(params, job_id)
     if op == "segment_local":

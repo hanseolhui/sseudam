@@ -1,7 +1,7 @@
 """사용 정보 보내기 — 문제 해결·업데이트 지원용 (하루 한 번).
 
 늘 보내는 것(익명): 무작위 설치 번호, 버전, 운영체제, 컴퓨터 사양(칩·메모리·그래픽), 고른 AI, 받아쓰기 방식,
-                  학급·학생·기록·녹음 '개수'(숫자만).
+                  학급·학생·기록·녹음 '개수'(숫자만), 초안 통계(엔진별 초안·다시 뽑기·확정 횟수, 고친 비율, 걸린 시간 — 숫자만).
 선생님이 직접 적고 '개인정보 수집·이용'에 동의한 경우만: 이름, 이메일, 학교, 지역, 학교급, 과목, 학년, 담임 여부,
 휴대폰(적은 경우), 소식 받기 동의.
 학생 이름·명단·녹음·관찰기록·초안 내용은 절대 보내지 않는다. 설정에서 끌 수 있다.
@@ -95,6 +95,8 @@ def payload():
         **counts,
         "share": False,
     }
+    import quality   # 초안 품질 통계 (엔진별 횟수 · 고친 비율 · 걸린 시간 — 숫자만)
+    body["quality"], body["_quality_last"] = quality.summary()
     if s.get("share_info") == "1":
         g = lambda k: (s.get(k) or "").strip()
         body.update(share=True, email=g("contact_email"), name=g("teacher_name"), school=g("school_name"),
@@ -113,12 +115,16 @@ def send(force=False):
         if not force and time.time() - last < EVERY:
             return False
         try:
-            data = json.dumps(payload(), ensure_ascii=False).encode("utf-8")
+            body = payload()
+            qlast = body.pop("_quality_last", 0)
+            data = json.dumps(body, ensure_ascii=False).encode("utf-8")
             req = urllib.request.Request(URL, data=data, headers={"Content-Type": "application/json", "User-Agent": "sseudam/" + version.VERSION})
             import gemini
             with urllib.request.urlopen(req, timeout=15, context=gemini._CTX) as r:
                 r.read()
             db.set_settings({"last_ping": str(int(time.time()))})
+            import quality
+            quality.mark_sent(qlast)
             return True
         except Exception as e:  # noqa — 인터넷이 안 돼도 쓰담은 그대로
             print("[사용 정보] 보내지 못함:", e)

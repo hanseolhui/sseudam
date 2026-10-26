@@ -996,14 +996,36 @@ def drafts_save(h, q, b):
     if status == "확정":
         conn.execute("UPDATE drafts SET status='초안' WHERE student_id=? AND area=? AND status='확정'",
                      (int(b["student_id"]), area))
+        import quality
+        quality.on_confirm(conn, int(b["student_id"]), area, content)
     if b.get("id") and not b.get("as_new"):
         conn.execute("UPDATE drafts SET content=?, bytes=?, status=? WHERE id=?",
                      (content, db.neis_bytes(content), status, int(b["id"])))
     else:
-        conn.execute("INSERT INTO drafts(student_id, content, bytes, status, area) VALUES (?,?,?,?,?)",
-                     (int(b["student_id"]), content, db.neis_bytes(content), status, area))
+        # 선생님이 고쳐 저장한 버전도 어느 AI 초안에서 나왔는지 이어 둠 (초안 통계 · 👍👎용)
+        src = db.row(conn, "SELECT ai_text, origin FROM drafts WHERE student_id=? AND area=? AND ai_text<>'' "
+                           "ORDER BY id DESC LIMIT 1", (int(b["student_id"]), area)) or {}
+        conn.execute("INSERT INTO drafts(student_id, content, bytes, status, area, ai_text, origin) VALUES (?,?,?,?,?,?,?)",
+                     (int(b["student_id"]), content, db.neis_bytes(content), status, area,
+                      src.get("ai_text") or "", src.get("origin") or ""))
     conn.commit()
     conn.close()
+    return {"ok": True}
+
+
+@route("POST", "/api/drafts/rate")
+def drafts_rate(h, q, b):
+    """초안 👍 / 👎 — 숫자만 남김 (내용은 보내지 않음)"""
+    import quality
+    conn = db.connect()
+    try:
+        d = db.row(conn, "SELECT area, origin FROM drafts WHERE id=?", (int(b["id"]),))
+        if not d:
+            raise ApiError("초안을 찾지 못했어요.")
+        quality.record(conn, "up" if b.get("up") else "down", d["origin"] or "none", d["area"])
+        conn.commit()
+    finally:
+        conn.close()
     return {"ok": True}
 
 
