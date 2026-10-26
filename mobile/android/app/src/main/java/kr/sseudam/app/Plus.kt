@@ -3,6 +3,7 @@ package kr.sseudam.app
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.widget.Toast
 import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.background
@@ -162,7 +163,7 @@ object Plus {
         busy.value = true
         return try {
             post(JSONObject().put("action", "start").put("email", mail.trim().lowercase()).put("installId", installId))
-            message.value = "메일로 온 인증번호를 넣어 주세요."; true
+            message.value = "✓ 메일로 온 인증번호를 넣어 주세요."; true
         } catch (e: Exception) { message.value = e.message ?: ""; false }
         finally { busy.value = false }
     }
@@ -225,7 +226,7 @@ object Plus {
         val t = token ?: return false
         return try {
             apply(post(JSONObject().put("action", "iap-google").put("token", t).put("purchaseToken", purchaseToken)))
-            message.value = "쓰담 플러스가 시작됐어요. 컴퓨터 쓰담에서 같은 계정으로 로그인하세요."
+            message.value = "✓ 쓰담 플러스가 시작됐어요. 컴퓨터 쓰담에서 같은 계정으로 로그인하세요."
             true
         } catch (e: Exception) { message.value = e.message ?: "서버에 연결하지 못했어요."; false }
     }
@@ -255,13 +256,17 @@ fun PlusCard() {
     val loggedIn by Plus.loggedIn.collectAsStateWithLifecycle()
     val message by Plus.message.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { Plus.refresh(); Plus.loadProducts() }
+    // 결제가 끝나면 카드를 안 보고 있어도 알 수 있게
+    LaunchedEffect(message) { if (message.startsWith("✓ 쓰담 플러스")) Toast.makeText(ctx, message.removePrefix("✓ "), Toast.LENGTH_LONG).show() }
 
     Column(Modifier.fillMaxWidth().card(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("✨ 쓰담 플러스", fontWeight = FontWeight.Bold, color = T.lavender, fontSize = 17.sp)
         Text("컴퓨터 쓰담이 녹음을 학생별로 나누고 생기부 초안까지 AI로 써 줘요. 키나 설치 없이, 같은 계정으로 컴퓨터에서 로그인하면 돼요.",
             fontSize = 12.sp, color = T.soft)
+        // 알림 문구는 위쪽에 (✓ 로 시작하면 성공 = 초록, 아니면 빨강)
+        if (message.isNotEmpty()) Text(message, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+            color = if (message.startsWith("✓")) T.mint else T.coral)
         if (loggedIn) PlusAccount() else PlusLogin()
-        if (message.isNotEmpty()) Text(message, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = T.coral)
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("이용약관", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = T.blue,
                 modifier = Modifier.padding(vertical = 4.dp).clickable { openUrl(ctx, Plus.TERMS_URL) })
