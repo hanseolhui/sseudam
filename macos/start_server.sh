@@ -6,6 +6,8 @@ mkdir -p "$SUPPORT"
 LOG="$SUPPORT/server.log"
 # 로그가 너무 커지면 정리
 [ -f "$LOG" ] && [ "$(stat -f%z "$LOG")" -gt 5000000 ] && mv -f "$LOG" "$LOG.old"
+# 파이썬 캐시(.pyc)는 앱 밖에 — 앱 안에 쓰면 코드 서명이 깨짐 (마이크 권한 등이 풀릴 수 있음)
+export PYTHONPYCACHEPREFIX="$HOME/Library/Caches/쓰담/pycache"
 
 PY=""
 for c in /usr/local/bin/python3 /opt/homebrew/bin/python3 /usr/bin/python3; do
