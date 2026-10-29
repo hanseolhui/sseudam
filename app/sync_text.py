@@ -27,7 +27,7 @@ FIELDS = {
     "classes": ("year", "semester", "grade", "class_no", "subject", "kind", "label"),
     "students": ("class_uid", "number", "name", "aliases"),
     "notes": ("student_uid", "date", "kind", "area", "category", "content", "source", "use_in_draft"),
-    "drafts": ("student_uid", "area", "content", "status"),
+    "drafts": ("student_uid", "area", "content", "status", "sources"),
 }
 
 _lock = threading.Lock()
@@ -269,11 +269,11 @@ def _upsert(conn, t, u, rec):
     if t == "drafts":
         content = rec["content"] or ""
         vals = (s["id"], rec["area"] or "subject", content, db.neis_bytes(content) if hasattr(db, "neis_bytes") else len(content.encode("utf-8")),
-                rec["status"] or "초안")
+                rec["status"] or "초안", rec.get("sources") or (row.get("sources") if row else None) or "[]")
         if row:
-            conn.execute("UPDATE drafts SET student_id=?, area=?, content=?, bytes=?, status=? WHERE id=?", vals + (row["id"],))
+            conn.execute("UPDATE drafts SET student_id=?, area=?, content=?, bytes=?, status=?, sources=? WHERE id=?", vals + (row["id"],))
         else:
-            conn.execute("INSERT INTO drafts(student_id, area, content, bytes, status, uid) VALUES (?,?,?,?,?,?)", vals + (u,))
+            conn.execute("INSERT INTO drafts(student_id, area, content, bytes, status, sources, uid) VALUES (?,?,?,?,?,?,?)", vals + (u,))
         return True
     return False
 

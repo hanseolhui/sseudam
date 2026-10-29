@@ -311,6 +311,8 @@ def _migrate_columns(conn):
     sync_text.migrate(conn)
     import quality  # 초안 통계 (숫자만)
     quality.migrate(conn)
+    if "sources" not in cols("drafts"):
+        conn.execute("ALTER TABLE drafts ADD COLUMN sources TEXT DEFAULT '[]'")
 
 
 def note_area(note, class_kind):

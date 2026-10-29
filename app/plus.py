@@ -6,6 +6,7 @@ import os
 import secrets
 import socket
 import time
+import threading
 import urllib.error
 import urllib.request
 
@@ -19,6 +20,8 @@ URL = os.environ.get("SSEUDAM_PLUS_URL", "https://apps.seoriarts.com/api/sseudam
 ENABLED = os.environ.get("SSEUDAM_PLUS", "1") != "0"
 # 구글 로그인: 브라우저에서 이 페이지로 로그인하면 127.0.0.1 의 쓰담(plus-done.html)으로 토큰을 돌려준다
 LOGIN_PAGE = os.environ.get("SSEUDAM_LOGIN_URL", "https://apps.seoriarts.com/sseudam/login")
+_REFRESH_LOCK = threading.Lock()
+STATUS_TTL_SECONDS = 6 * 3600
 _STATE = secrets.token_urlsafe(18)   # 이 쓰담이 연 로그인인지 확인 (켤 때마다 바뀜)
 
 
@@ -46,6 +49,8 @@ def _call(action, timeout=30, **body):
         if d.get("expired"):
             db.set_settings({"plus_active": "0"})
         raise PlusError(d.get("error") or "쓰담 플러스 서버 오류 (%d)" % e.code, d.get("loggedOut", False), d.get("expired", False))
+    except (socket.timeout, TimeoutError):
+        raise PlusError("쓰담 플러스 응답이 늦어지고 있어요. 잠시 뒤 다시 시도해 주세요.")
     except urllib.error.URLError as e:
         raise PlusError("쓰담 플러스 서버에 연결하지 못했어요 — 인터넷 연결을 확인해 주세요 (%s)" % e.reason)
 
@@ -55,8 +60,23 @@ def token():
 
 
 def active(settings=None):
-    s = settings or db.get_settings()
+    s = db.get_settings() if settings is None else settings
     return bool(s.get("plus_token")) and s.get("plus_active") == "1"
+
+
+def _cached_status(settings):
+    try:
+        cached = json.loads(settings.get("plus_status") or "{}")
+    except (ValueError, TypeError):
+        return {}
+    if not isinstance(cached, dict):
+        return {}
+    sub = cached.get("sub")
+    if isinstance(sub, dict):
+        # 서버가 만료를 알려 줬다면 오래된 캐시가 다시 활성으로 보이면 안 된다.
+        if settings.get("plus_active") != "1":
+            sub["active"] = False
+    return cached
 
 
 def _remember(d):
@@ -111,9 +131,12 @@ def status(refresh=True):
         except PlusError as e:
             if e.logged_out:
                 return {"loggedIn": False, "error": str(e)}
-            cached = json.loads(s.get("plus_status") or "{}")
+            if e.expired:
+                cached = _cached_status(db.get_settings())
+                return dict(cached, loggedIn=True, error=str(e))
+            cached = _cached_status(s)
             return dict(cached, loggedIn=True, offline=str(e))
-    return dict(json.loads(s.get("plus_status") or "{}"), loggedIn=True)
+    return dict(_cached_status(s), loggedIn=True)
 
 
 def beta_request(message=""):
@@ -164,7 +187,17 @@ def generate(prompt, system=None, deep=False, cache=False):
 
 
 def refresh_if_stale():
-    """하루 한 번 구독 상태 확인 (끝났으면 자동으로 다른 AI로 넘어가게)."""
-    s = db.get_settings()
-    if s.get("plus_token") and time.time() - int(s.get("plus_checked") or 0) > 6 * 3600:
-        status(True)
+    """Refresh at most once per six hours; concurrent callers share the cached state."""
+    if not _REFRESH_LOCK.acquire(blocking=False):
+        return
+    try:
+        s = db.get_settings()
+        try:
+            checked = int(s.get("plus_checked") or 0)
+        except (ValueError, TypeError, OverflowError):
+            checked = 0
+        now = time.time()
+        if s.get("plus_token") and (checked > now or now - checked > STATUS_TTL_SECONDS):
+            status(True)
+    finally:
+        _REFRESH_LOCK.release()

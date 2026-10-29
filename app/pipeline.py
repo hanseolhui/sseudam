@@ -117,6 +117,7 @@ def build_prompt(op, params):
                      if db.note_in_area(n, kind, area)]
             if not notes:
                 raise ValueError("%s 학생의 '%s' 관찰기록이 없습니다." % (s["name"], db.area_name(area)))
+            params["_sources"] = [{k: n.get(k) for k in ("id", "uid", "date", "content", "evidence", "recording_id")} for n in notes]
             ctx = db.row(conn, "SELECT topic, competencies, philosophy FROM class_context WHERE class_id=? AND area=?",
                          (s["class_id"], area)) or {}
             t = db.row(conn, "SELECT bytes FROM student_targets WHERE student_id=? AND area=?", (s["id"], area))
@@ -125,6 +126,9 @@ def build_prompt(op, params):
                     "system": prompts.draft_system(area)}
         if op == "shorten":
             text = params.get("text", "")
+            parent = db.row(conn, "SELECT sources FROM drafts WHERE id=? AND student_id=? AND area=?",
+                            (params.get("source_draft_id"), params.get("student_id"), params.get("area") or "subject"))
+            params["_sources"] = json.loads(parent["sources"] or "[]") if parent else []
             limit = db.area_limit(params.get("area") or "subject", settings)
             if params.get("student_id"):
                 t = db.row(conn, "SELECT bytes FROM student_targets WHERE student_id=? AND area=?",
@@ -147,7 +151,7 @@ def apply(op, params, text):
         return apply_segment(params["recording_id"], text)
     if op in ("draft", "shorten"):
         return apply_draft(params["student_id"], text, params.get("area") or "subject",
-                           op=op, engine=params.get("_engine") or "manual", t0=params.get("_t0"))
+                           op=op, engine=params.get("_engine") or "manual", t0=params.get("_t0"), sources=params.get("_sources"))
     raise ValueError("알 수 없는 작업: %s" % op)
 
 
@@ -229,7 +233,7 @@ def apply_segment(rid, text):
         conn.close()
 
 
-def apply_draft(student_id, text, area="subject", op="draft", engine="manual", t0=None):
+def apply_draft(student_id, text, area="subject", op="draft", engine="manual", t0=None, sources=None):
     import quality
     conn = db.connect()
     st = db.row(conn, "SELECT * FROM students WHERE id=?", (student_id,))
@@ -242,8 +246,8 @@ def apply_draft(student_id, text, area="subject", op="draft", engine="manual", t
     else:   # 이 학생 · 영역에 AI 초안이 이미 있으면 '다시 뽑기'
         event = "regen" if db.row(conn, "SELECT id FROM drafts WHERE student_id=? AND area=? AND ai_text<>''",
                                   (student_id, area)) else "draft"
-    conn.execute("INSERT INTO drafts(student_id, content, bytes, area, ai_text, origin) VALUES (?,?,?,?,?,?)",
-                 (student_id, text, db.neis_bytes(text), area, text, engine))
+    conn.execute("INSERT INTO drafts(student_id, content, bytes, area, ai_text, origin, sources) VALUES (?,?,?,?,?,?,?)",
+                 (student_id, text, db.neis_bytes(text), area, text, engine, json.dumps(sources or [], ensure_ascii=False)))
     quality.record(conn, event, engine, area, ms=(time.time() - t0) * 1000 if t0 else None)
     conn.commit()
     conn.close()
@@ -1028,7 +1032,7 @@ def _expand_if_short(text, params, settings, gen):
         if t and t["bytes"]:
             limit = int(t["bytes"])
         st = db.row(conn, "SELECT * FROM students WHERE id=?", (params["student_id"],))
-        notes = db.rows(conn, "SELECT content FROM notes WHERE student_id=? AND use_in_draft=1", (params["student_id"],))
+        notes = params.get("_sources") or []
     finally:
         conn.close()
     cur = db.neis_bytes(prompts.clean_draft(text, st))

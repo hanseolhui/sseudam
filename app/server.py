@@ -843,7 +843,7 @@ def ai_run(h, q, b):
         return {"ok": True, "job_id": jid}
     if b.get("manual"):
         p = pipeline.build_prompt(op, params)
-        return {"manual": True, "prompt": p["prompt"], "has_audio": bool(p.get("audio_path"))}
+        return {"manual": True, "prompt": p["prompt"], "has_audio": bool(p.get("audio_path")), "sources": params.get("_sources", [])}
     # 내 맥 AI (기기 안 AI · Ollama · LM Studio) — 키 없이, 기록이 맥 밖으로 나가지 않음
     if op == "segment" and pipeline.seg_engine(settings) in ("apple", "local"):
         eng = pipeline.seg_engine(settings)
@@ -859,7 +859,7 @@ def ai_run(h, q, b):
     if settings.get("mode") == "manual" or not cloudai.key_of(settings):
         # 쓸 AI가 없으면 오류 대신: 프롬프트를 복사해서 ChatGPT·Gemini 앱에 붙여넣기
         p = pipeline.build_prompt(op, params)
-        return {"manual": True, "prompt": p["prompt"], "has_audio": bool(p.get("audio_path"))}
+        return {"manual": True, "prompt": p["prompt"], "has_audio": bool(p.get("audio_path")), "sources": params.get("_sources", [])}
     pipeline.build_prompt(op, params)  # 사전 검증(관찰기록 없음 등)
     labels = {"transcribe": "전사", "segment": "학생별 분리", "draft": "세특 초안", "shorten": "초안 줄이기"}
     jid = pipeline.enqueue(op, params, "%s %s" % (labels.get(op, op), b.get("label", "")))
@@ -1003,11 +1003,11 @@ def drafts_save(h, q, b):
                      (content, db.neis_bytes(content), status, int(b["id"])))
     else:
         # 선생님이 고쳐 저장한 버전도 어느 AI 초안에서 나왔는지 이어 둠 (초안 통계 · 👍👎용)
-        src = db.row(conn, "SELECT ai_text, origin FROM drafts WHERE student_id=? AND area=? AND ai_text<>'' "
-                           "ORDER BY id DESC LIMIT 1", (int(b["student_id"]), area)) or {}
-        conn.execute("INSERT INTO drafts(student_id, content, bytes, status, area, ai_text, origin) VALUES (?,?,?,?,?,?,?)",
+        src = db.row(conn, "SELECT ai_text, origin, sources FROM drafts WHERE id=? AND student_id=? AND area=?",
+                     (b.get("source_draft_id"), int(b["student_id"]), area)) or {}
+        conn.execute("INSERT INTO drafts(student_id, content, bytes, status, area, ai_text, origin, sources) VALUES (?,?,?,?,?,?,?,?)",
                      (int(b["student_id"]), content, db.neis_bytes(content), status, area,
-                      src.get("ai_text") or "", src.get("origin") or ""))
+                      src.get("ai_text") or "", src.get("origin") or "", src.get("sources") or "[]"))
     conn.commit()
     conn.close()
     return {"ok": True}
