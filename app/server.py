@@ -736,6 +736,44 @@ def recordings_delete(h, q, b):
     return {"ok": True, "trash_id": tid}
 
 
+@route("POST", "/api/recordings/review")
+def recordings_review(h, q, b):
+    action = b.get("action")
+    raw = b.get("ids")
+    if action not in ("general", "exclude") or not isinstance(raw, list) or not 1 <= len(raw) <= 500:
+        raise ApiError("처리할 녹음과 작업을 선택해 주세요.")
+    try:
+        ids = list(dict.fromkeys(int(i) for i in raw))
+    except (ValueError, TypeError):
+        raise ApiError("녹음 번호를 확인해 주세요.")
+    conn = db.connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        for rid in ids:
+            r = db.row(conn, "SELECT status FROM recordings WHERE id=?", (rid,))
+            if not r or r["status"] not in ("확인필요", "오류"):
+                raise ApiError("목록이 바뀌었어요. 새로 확인한 뒤 다시 선택해 주세요.", 409)
+            if db.row(conn, "SELECT id FROM jobs WHERE status IN ('대기','진행중') AND json_extract(params,'$.recording_id')=?", (rid,)):
+                raise ApiError("처리 중인 녹음이 있어요. 완료 후 다시 시도해 주세요.", 409)
+        moved = 0
+        for rid in ids:
+            if action == "exclude":
+                trash.move(conn, "recording", rid, delete_notes=False, delete_audio=False)
+            else:
+                for n in db.rows(conn, "SELECT id FROM notes WHERE recording_id=?", (rid,)):
+                    trash.move(conn, "note", n["id"])
+                    moved += 1
+                conn.execute("DELETE FROM unmatched WHERE recording_id=?", (rid,))
+                conn.execute("UPDATE recordings SET status='일반메모', error='' WHERE id=?", (rid,))
+        conn.commit()
+        return {"ok": True, "processed": len(ids), "notes_moved": moved}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 @route("POST", "/api/recordings/mark_general")
 def recordings_mark_general(h, q, b):
     """일반 메모로 표시(이 녹음에서 나온 학생 기록은 휴지통으로) / 학생 기록으로 되돌리기."""

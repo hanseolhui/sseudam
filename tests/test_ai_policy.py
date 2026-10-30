@@ -61,3 +61,26 @@ class AIPolicyTests(unittest.TestCase):
         db.init()
         with connection() as c:
             self.assertEqual(db.row(c,'SELECT status FROM recordings WHERE id=?',(rid,))['status'],'확인필요')
+
+    def test_bulk_exclude_preserves_audio_and_restore(self):
+        import trash
+        from pathlib import Path
+        audio=Path(db.AUDIO_DIR)/'test.wav';audio.parent.mkdir(exist_ok=True);audio.write_bytes(b'keep')
+        with connection() as c:
+            ids=[c.execute("INSERT INTO recordings(title,status,audio_path) VALUES('review','확인필요',?)",(str(audio),)).lastrowid for _ in range(2)]
+        result=server.recordings_review(None,{}, {'ids':ids,'action':'exclude','delete_audio':True})
+        self.assertEqual(result['processed'],2)
+        with connection() as c:
+            items=db.rows(c,"SELECT id,payload FROM trash WHERE kind='recording'")
+            self.assertEqual(len(items),2)
+            self.assertTrue(all('delete_audio' not in __import__('json').loads(t['payload']) for t in items))
+        trash.restore(items[0]['id']);trash.purge(everything=True)
+        self.assertEqual(audio.read_bytes(),b'keep')
+
+    def test_bulk_review_is_atomic_on_stale_selection(self):
+        with connection() as c:
+            rid=c.execute("INSERT INTO recordings(title,status) VALUES('review','확인필요')").lastrowid
+        with self.assertRaises(server.ApiError):server.recordings_review(None,{}, {'ids':[rid,99999],'action':'general'})
+        with connection() as c:self.assertEqual(db.row(c,'SELECT status FROM recordings WHERE id=?',(rid,))['status'],'확인필요')
+        server.recordings_review(None,{}, {'ids':[rid,rid],'action':'general'})
+        with connection() as c:self.assertEqual(db.row(c,'SELECT status FROM recordings WHERE id=?',(rid,))['status'],'일반메모')
