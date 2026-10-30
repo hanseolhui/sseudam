@@ -136,3 +136,22 @@ class AIPolicyTests(unittest.TestCase):
         self.assertFalse(server.recordings_excluded(None,{}, {})['items'][0]['available'])
         result=server.recordings_excluded_restore(None,{}, {'ids':[rid]})
         self.assertEqual(len(result['failed']),1)
+
+    def test_excluded_preview_is_read_only_and_confined(self):
+        import trash,tempfile
+        from pathlib import Path
+        audio=Path(db.AUDIO_DIR)/'preview.wav';audio.parent.mkdir(exist_ok=True);audio.write_bytes(b'keep audio')
+        with connection() as c:
+            rid=c.execute("INSERT INTO recordings(title,status,audio_path,transcript) VALUES('Preview','확인필요',?,'<시험> 전사문')",(str(audio),)).lastrowid
+            trash.move(c,'recording',rid)
+        for _ in range(2):
+            result=server.recordings_excluded_preview(None,{}, {},str(rid))
+            self.assertTrue(result['has_audio']);self.assertEqual(result['transcript'],'<시험> 전사문')
+        self.assertEqual(audio.read_bytes(),b'keep audio')
+        with connection() as c:
+            self.assertIsNone(db.row(c,'SELECT id FROM recordings WHERE id=?',(rid,)))
+            self.assertIsNone(db.row(c,'SELECT restored_id FROM excluded_recordings WHERE original_id=?',(rid,))['restored_id'])
+        with tempfile.TemporaryDirectory() as folder:
+            outside=Path(folder)/'secret.wav';outside.write_bytes(b'outside')
+            audio.unlink();audio.symlink_to(outside)
+            self.assertFalse(server.recordings_excluded_preview(None,{}, {},str(rid))['has_audio'])

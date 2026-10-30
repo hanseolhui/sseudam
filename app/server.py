@@ -752,6 +752,26 @@ def recordings_excluded(h, q, b):
         conn.close()
 
 
+def excluded_preview_data(rid):
+    conn = db.connect()
+    try:
+        item = db.row(conn, "SELECT payload FROM excluded_recordings WHERE original_id=? AND restored_id IS NULL", (rid,))
+        if not item:
+            raise ApiError("제외 목록에 없는 녹음이에요.", 404)
+        r = json.loads(item["payload"])["rows"]["recordings"][0]
+        fp = r.get("audio_path") or ""
+        safe_audio = bool(fp and os.path.isfile(fp) and os.path.commonpath([os.path.realpath(fp), os.path.realpath(db.AUDIO_DIR)]) == os.path.realpath(db.AUDIO_DIR))
+        return r, fp if safe_audio else None
+    finally:
+        conn.close()
+
+
+@route("GET", r"/api/recordings/excluded/(\d+)/preview")
+def recordings_excluded_preview(h, q, b, rid):
+    r, fp = excluded_preview_data(int(rid))
+    return {"title": r.get("title") or "녹음", "transcript": r.get("transcript") or "", "has_audio": bool(fp)}
+
+
 _excluded_restore_lock = threading.Lock()
 
 @route("POST", "/api/recordings/excluded/restore")
@@ -1838,12 +1858,18 @@ class Handler(BaseHTTPRequestHandler):
 
     def _serve_audio(self, path):
         rid = _int(path.rsplit("/", 1)[-1])
-        conn = db.connect()
-        r = db.row(conn, "SELECT audio_path FROM recordings WHERE id=?", (rid,))
-        conn.close()
-        if not r or not r["audio_path"] or not os.path.exists(r["audio_path"]):
+        if path.startswith("/audio/excluded/"):
+            try:
+                _, fp = excluded_preview_data(rid)
+            except ApiError:
+                fp = None
+        else:
+            conn = db.connect()
+            r = db.row(conn, "SELECT audio_path FROM recordings WHERE id=?", (rid,))
+            conn.close()
+            fp = r.get("audio_path") if r else None
+        if not fp or not os.path.isfile(fp):
             return self._send(404, {"error": "no audio"})
-        fp = r["audio_path"]
         size = os.path.getsize(fp)
         ctype = mimetypes.guess_type(fp)[0] or "audio/mp4"
         if fp.lower().endswith(".m4a"):
@@ -1861,9 +1887,12 @@ class Handler(BaseHTTPRequestHandler):
                 elif m.group(2):
                     start = max(0, size - int(m.group(2)))
                 code = 206
+        if size == 0 or start >= size or start > end:
+            return self._send(416, {"error": "invalid range"}, extra={"Content-Range": "bytes */%d" % size})
         length = end - start + 1
         self.send_response(code)
         self.send_header("Content-Type", ctype)
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Length", str(length))
         if code == 206:

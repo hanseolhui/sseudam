@@ -602,20 +602,47 @@ async function viewExcludedRecordings() {
   const data = await api('/api/recordings/excluded');
   view.innerHTML = `<div class="page-head"><h1>제외한 녹음</h1><button id="excluded-back">녹음함으로</button></div>
     <p class="help">원본은 그대로 두고 쓰담의 보관 파일·전사문으로 다시 가져와요. 자동 가져오기 제외는 유지되어 중복으로 들어오지 않아요.</p>
-    <div class="card"><div class="row"><label class="check"><input type="checkbox" id="excluded-all">가져올 수 있는 항목 전체 선택</label><button id="excluded-restore" disabled>선택 항목 다시 가져오기</button><span id="excluded-count">0개 선택</span></div>
-    ${data.items.length ? `<table><thead><tr><th>선택</th><th>녹음</th><th>제외한 날</th><th>다시 가져오기</th></tr></thead><tbody>${data.items.map(r => `<tr><td><input class="excluded-check" type="checkbox" value="${r.id}" aria-label="${esc(r.title)} 선택" ${r.available ? '' : 'disabled'}></td><td>${esc(r.title)}<div class="small muted">${esc(fmtDate(r.recorded_at))}</div></td><td>${esc(fmtDate(r.excluded_at))}</td><td>${r.available ? `<button class="sm excluded-one" data-id="${r.id}">다시 가져오기</button>` : '보관 파일 없음 · 원본 파일을 직접 올려 주세요'}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">제외한 녹음이 없어요.</p>'}
+    <div class="card"><label class="field"><span>제목으로 검색</span><input type="search" id="excluded-search" placeholder="녹음 제목 입력"></label><p id="excluded-search-count" class="small muted"></p><div class="row"><label class="check"><input type="checkbox" id="excluded-all">검색 결과에서 가져올 수 있는 항목 전체 선택</label><button id="excluded-restore" disabled>선택 항목 다시 가져오기</button><span id="excluded-count">0개 선택</span></div>
+    ${data.items.length ? `<table><thead><tr><th>선택</th><th>녹음</th><th>제외한 날</th><th>다시 가져오기</th></tr></thead><tbody>${data.items.map(r => `<tr class="excluded-row" data-title="${esc(r.title)}"><td><input class="excluded-check" type="checkbox" value="${r.id}" aria-label="${esc(r.title)} 선택" ${r.available ? '' : 'disabled'}></td><td>${esc(r.title)}<div class="small muted">${esc(fmtDate(r.recorded_at))}</div></td><td>${esc(fmtDate(r.excluded_at))}</td><td><button class="sm excluded-preview" data-id="${r.id}">듣기·전사문 보기</button> ${r.available ? `<button class="sm excluded-one" data-id="${r.id}">다시 가져오기</button>` : '보관 파일 없음 · 원본 파일을 직접 올려 주세요'}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">제외한 녹음이 없어요.</p>'}
     <div id="excluded-result" role="status"></div></div>`;
   $('#excluded-back').onclick = () => { recordingInboxFilter = 'all'; viewRecordings(); };
-  const selected = () => $$('.excluded-check:checked').map(x => +x.value);
+  const visibleChecks = () => $$('.excluded-row').filter(row => !row.hidden).flatMap(row => $$('.excluded-check:not(:disabled)', row));
+  const selected = () => visibleChecks().filter(x => x.checked).map(x => +x.value);
   const refresh = () => {
-    const n = selected().length, total = $$('.excluded-check:not(:disabled)').length;
+    const n = selected().length, total = visibleChecks().length;
     $('#excluded-count').textContent = `${n}개 선택`;
     $('#excluded-restore').disabled = !n;
     $('#excluded-all').checked = total > 0 && n === total;
     $('#excluded-all').indeterminate = n > 0 && n < total;
   };
-  $('#excluded-all').onchange = e => { $$('.excluded-check:not(:disabled)').forEach(x => x.checked = e.target.checked); refresh(); };
+  $('#excluded-all').onchange = e => { visibleChecks().forEach(x => x.checked = e.target.checked); refresh(); };
   $$('.excluded-check').forEach(x => x.onchange = refresh);
+  $('#excluded-search').oninput = e => {
+    const term = e.target.value.normalize('NFC').trim().toLocaleLowerCase();
+    let count = 0;
+    $$('.excluded-row').forEach(row => {
+      row.hidden = !row.dataset.title.normalize('NFC').toLocaleLowerCase().includes(term);
+      row.style.display = row.hidden ? 'none' : '';
+      if (row.hidden) $('.excluded-check', row).checked = false; else count++;
+    });
+    $('#excluded-search-count').textContent = `${count}개 / 전체 ${data.items.length}개` + (count ? '' : ' · 검색 결과가 없어요.');
+    refresh();
+  };
+  $('#excluded-search').oninput({target: $('#excluded-search')});
+  $$('.excluded-preview').forEach(button => button.onclick = async () => {
+    const id = +button.dataset.id;
+    button.disabled = true;
+    try {
+      const item = await api(`/api/recordings/excluded/${id}/preview`);
+      modal(`<h2>${esc(item.title)}</h2><p class="help">미리보기만 해요. 원본과 제외 상태는 바뀌지 않아요.</p>
+        ${item.has_audio ? `<audio controls preload="metadata" style="width:100%" src="/audio/excluded/${id}"></audio>` : '<p class="muted">들을 수 있는 보관 파일이 없어요.</p>'}
+        <h3>전사문</h3>${item.transcript ? `<textarea readonly rows="12" aria-label="제외한 녹음 전사문">${esc(item.transcript)}</textarea>` : '<p class="muted">저장된 전사문이 없어요.</p>'}
+        <div class="modal-actions"><button id="excluded-preview-close">닫기</button></div>`, box => {
+          $('#excluded-preview-close', box).onclick = closeModal;
+        });
+    } finally { button.disabled = false; }
+  });
+
   let busy = false;
   const restore = async ids => {
     if (busy || !ids.length) return;
