@@ -1705,6 +1705,7 @@ async function viewSettings(section) {
     </div>
     <div style="position:sticky;bottom:0;padding:14px 0;background:linear-gradient(transparent, var(--bg) 30%);display:flex;justify-content:flex-start">
       <span class="save-chip" id="save-chip">바꾸면 바로 저장돼요</span></div>`;
+  bindProfile(document, '');
   $('#open-data').onclick = e => { e.preventDefault(); api('/api/open_data', {}); };
   const collect = () => ({
     area_limits: JSON.stringify(Object.fromEntries($$('.area-limit').map(i => [i.dataset.area, +i.value || 0]))),
@@ -2313,6 +2314,42 @@ async function viewPrompts() {
 // ───────────────────────── 선생님 정보 (설정 · 첫 실행 · 이미 쓰던 분께 한 번) ─────────────────────────
 const SIDO = ['서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종', '경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주', '해외'];
 const PRIVACY_URL = 'https://apps.seoriarts.com/sseudam-privacy';
+function profileOptions(org) {
+  const all = ['유아', '초등학교', '중학교', '고등학교', '특수학교', '성인·기타', '복수 대상', '직접 입력'];
+  const configs = {
+    '학교': ['학교 이름', '예: 쓰담초등학교', '가르치는 대상', all, '담임 여부', ['담임', '비담임'], '담당 과목', '예: 국어 · 수학 · 통합교과', '맡은 학년', '예: 1학년 · 2, 3학년'],
+    '유치원·어린이집': ['유치원·어린이집 이름', '예: 쓰담어린이집', '담당 영유아', ['영아', '유아', '영아·유아 혼합', '직접 입력'], '반 담당 여부', ['반 담당', '보조·지원'], '담당 활동', '예: 놀이 · 언어 · 신체활동', '담당 연령', '예: 만 2세 · 만 4~5세'],
+    '학원·교습소': ['학원·교습소 이름', '예: 쓰담수학학원', '수강생 대상', all, '반 운영 방식', ['담당 반 있음', '개별 지도'], '강의 과목·분야', '예: 수학 · 영어회화 · 피아노', '학년·수준', '예: 중2 · 고1 · 기초반'],
+    '과외': ['활동 이름 (선택)', '예: 쓰담수학 · 개인 과외', '지도 대상', all, '지도 방식', ['그룹 과외', '개인 과외'], '지도 과목·분야', '예: 수학 · 영어 · 논술', '학년·수준', '예: 고2 · 성인 초급'],
+    'PT·필라테스': ['센터·스튜디오 이름', '예: 쓰담필라테스', '회원 대상', ['아동', '청소년', '성인', '시니어', '복수 대상', '직접 입력'], '지도 방식', ['그룹 수업', '개인 레슨'], '운동·지도 분야', '예: PT · 필라테스 · 요가', '연령·운동 수준', '예: 30~40대 · 입문 · 중급'],
+    '방과후·돌봄': ['학교·기관 이름', '예: 쓰담돌봄센터', '참여 대상', all, '반·프로그램 담당', ['담당 반 있음', '개별 지원'], '담당 프로그램', '예: 미술 · 독서 · 놀이', '학년·연령', '예: 초1~2 · 만 6세'],
+  };
+  return configs[org] || ['소속 이름 (선택)', '예: 기관·활동 이름', '참여 대상', all, '운영 방식', ['그룹·반 담당', '개별 지도'], '담당 분야', '예: 교육 · 예술 · 상담 · 운동', '연령·수준', '예: 청소년 · 성인 · 초급'];
+}
+function bindProfile(root, p) {
+  const q = id => root.querySelector('#' + p + id);
+  if (!q('org_type')) return;
+  const update = (changed = false) => {
+    const c = profileOptions(q('org_type').value);
+    const input = (id, label, placeholder) => { const el = q(id); el.previousElementSibling.textContent = label; el.placeholder = placeholder; };
+    input('school_name', c[0], c[1]); input('teacher_subject', c[6], c[7]); input('teacher_grades', c[8], c[9]);
+    const level = q('school_level'), old = level.value;
+    const values = [...c[3]];
+    if (!changed && old && !values.includes(old)) values.push(old);
+    level.previousElementSibling.textContent = c[2];
+    level.innerHTML = [['', '고르기'], ...values.map(x => [x, x])].map(([v, n]) => `<option value="${esc(v)}">${esc(n)}</option>`).join('');
+    level.value = values.includes(old) ? old : '';
+    const role = q('homeroom'), prior = role.value;
+    role.previousElementSibling.textContent = c[4];
+    role.innerHTML = [['', '고르기'], ['1', c[5][0]], ['0', c[5][1]], ['mixed', '둘 다'], ['other', '기타']].map(([v, n]) => `<option value="${v}">${n}</option>`).join('');
+    role.value = changed ? '' : prior;
+    const custom = q('school_level_custom');
+    custom.closest('label').style.display = level.value === '직접 입력' ? '' : 'none';
+  };
+  q('org_type').addEventListener('change', () => update(true));
+  q('school_level').addEventListener('change', () => { q('school_level_custom').closest('label').style.display = q('school_level').value === '직접 입력' ? '' : 'none'; });
+  update();
+}
 /** p = id 앞에 붙일 말 (설정은 '' → id 가 곧 설정 이름) */
 function profileFields(s, p) {
   const sel = (id, opts, v) => `<select id="${p}${id}">${opts.map(([k, n]) => `<option value="${esc(k)}" ${String(v || '') === k ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`;
@@ -2326,10 +2363,11 @@ function profileFields(s, p) {
       ${f('소속 이름', inp('school_name', s.school_name, '예: 쓰담고등학교 · 쓰담수학학원'))}
       ${f('지역 (시·도)', sel('region_sido', [['', '고르기']].concat(SIDO.map(x => [x, x])), s.region_sido))}
       ${f('시·군·구', inp('region_sigungu', s.region_sigungu, '예: 파주시'))}
-      ${f('가르치는 대상', sel('school_level', ['유아', '초등학교', '중학교', '고등학교', '특수학교', '성인·기타'].map(x => [x, x]), s.school_level || '고등학교'))}
-      ${f('담임 · 반 담당', sel('homeroom', [['', '고르기'], ['1', '맡고 있어요'], ['0', '안 맡아요']], s.homeroom))}
+      ${f('가르치는 대상', sel('school_level', [...new Set(['', ...profileOptions(s.org_type)[3], s.school_level || ''])].map(x => [x, x || '고르기']), s.school_level || ''))}
+      ${f('담임 · 반 담당', sel('homeroom', [['', '고르기'], ['1', '맡고 있어요'], ['0', '안 맡아요'], ['mixed', '둘 다'], ['other', '기타']], s.homeroom))}
       ${f('담당 과목', inp('teacher_subject', s.teacher_subject, '예: 국어 (초안의 기본 과목)'))}
       ${f('맡은 학년 · 연령', inp('teacher_grades', s.teacher_grades, '예: 2학년 · 1, 3 · 만 5세'))}
+      ${f('대상 직접 입력', inp('school_level_custom', s.school_level_custom, '예: 검정고시 준비생 · 다문화 학습자'))}
       ${f('휴대폰 (선택)', inp('phone', s.phone, '연락이 필요할 때만 써요', 'inputmode="tel"'))}
     </div>
     <label class="check" style="margin-top:12px"><input type="checkbox" id="${p}share_info" ${s.share_info === '1' ? 'checked' : ''}> <span><b>개인정보 수집·이용 동의</b> — 위 정보를 쓰담 운영(문제 해결·안내, 쓰담 플러스 계정 연결, 사용자 통계)에 보내요. 지원사업 보고에는 이름 없이 합계 숫자로만 써요. <a href="${PRIVACY_URL}" target="_blank">자세히</a></span></label>
@@ -2341,7 +2379,7 @@ function readProfile(root, p) {
   if (!q('teacher_name')) return {};
   const v = id => (q(id).value || '').trim();
   return {
-    teacher_name: v('teacher_name'), contact_email: v('contact_email'), org_type: v('org_type'), school_name: v('school_name'), school_level: v('school_level'),
+    teacher_name: v('teacher_name'), contact_email: v('contact_email'), org_type: v('org_type'), school_name: v('school_name'), school_level: v('school_level'), school_level_custom: v('school_level_custom'),
     region_sido: v('region_sido'), region_sigungu: v('region_sigungu'), teacher_subject: v('teacher_subject'), teacher_grades: v('teacher_grades'),
     homeroom: v('homeroom'), phone: v('phone'), share_info: q('share_info').checked ? '1' : '0', marketing_ok: q('marketing_ok').checked ? '1' : '0',
   };
@@ -2352,6 +2390,7 @@ function askProfile(s) {
     <p class="muted" style="margin-top:-4px">쓰담을 더 잘 만들고, 문제가 생겼을 때 도와드리려고 여쭤요. 모두 선택이고, 나중에 설정 → 선생님에서 바꿀 수 있어요.</p>
     ${profileFields(s, 'ap-')}
     <div class="modal-actions"><button id="ap-skip" class="ghost">다음에 (다시 묻지 않기)</button><button class="primary" id="ap-save">저장</button></div>`, box => {
+    bindProfile(box, 'ap-');
     $('#ap-skip', box).onclick = async () => { await api('/api/settings', { profile_asked: '1' }); closeModal(); };
     $('#ap-save', box).onclick = async () => {
       await api('/api/settings', Object.assign(readProfile(box, 'ap-'), { profile_asked: '1' }));   // 저장하면 서버가 바로 한 번 보냄
@@ -2402,6 +2441,7 @@ function showOnboarding(s) {
     modal(`<div class="small muted" style="margin-bottom:6px">${st.step} / 3</div>${steps[st.step]()}
       <div class="modal-actions">${st.step > 1 ? '<button id="ob-back">이전</button>' : '<button id="ob-skip" class="ghost">건너뛰기</button>'}
         <button class="primary" id="ob-next">${st.step === 3 ? '✨ 한 번에 준비하기' : '다음'}</button></div>`, box => {
+      if (st.step === 1) bindProfile(box, 'ob-');
       if (st.step === 3) api('/api/ai/state', undefined, { silent: true }).then(a => {
         st.aiPick = a.apple.state === 'ready' ? 'apple' : 'manual';
         $('#ob-ai-pick', box).textContent = st.aiPick === 'apple' ? '기기 내 기록 정리 (별도 설치 없음)' : '이름 기준 기록 정리';
