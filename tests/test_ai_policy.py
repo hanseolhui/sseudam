@@ -109,3 +109,30 @@ class AIPolicyTests(unittest.TestCase):
             self.assertEqual(watcher._scan_folder(folder),0)
             self.assertEqual(original.read_text(),'시험 메모')
             self.assertFalse((Path(folder)/'처리완료').exists())
+
+    def test_excluded_catalog_restore_after_trash_expiry(self):
+        import trash, watcher
+        from pathlib import Path
+        audio=Path(db.AUDIO_DIR)/'catalog.wav'; audio.parent.mkdir(exist_ok=True); audio.write_bytes(b'original')
+        with connection() as c:
+            rid=c.execute("INSERT INTO recordings(title,status,audio_path,transcript) VALUES('catalog','확인필요',?,'text')",(str(audio),)).lastrowid
+            tid=trash.move(c,'recording',rid)
+        trash.purge(trash_id=tid)
+        items=server.recordings_excluded(None,{}, {})['items']
+        self.assertTrue(next(x for x in items if x['id']==rid)['available'])
+        result=server.recordings_excluded_restore(None,{}, {'ids':[rid,rid]})
+        self.assertEqual(len(result['restored']),1);self.assertEqual(result['failed'],[])
+        self.assertEqual(server.recordings_excluded(None,{}, {})['items'],[])
+        self.assertEqual(audio.read_bytes(),b'original')
+        self.assertTrue(watcher.auto_excluded('file',watcher.file_identity(str(audio))))
+        again=server.recordings_excluded_restore(None,{}, {'ids':[rid]})
+        self.assertEqual(len(again['restored']),0)
+
+    def test_excluded_catalog_handles_missing_audio(self):
+        import trash
+        with connection() as c:
+            rid=c.execute("INSERT INTO recordings(title,status,audio_path) VALUES('missing','확인필요','/nonexistent/audio.wav')").lastrowid
+            trash.move(c,'recording',rid)
+        self.assertFalse(server.recordings_excluded(None,{}, {})['items'][0]['available'])
+        result=server.recordings_excluded_restore(None,{}, {'ids':[rid]})
+        self.assertEqual(len(result['failed']),1)

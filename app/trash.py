@@ -103,6 +103,8 @@ def _snapshot(conn, kind, rid, delete_notes=False):
 
 
 def remember_exclusion(conn, rid, payload):
+    conn.execute("INSERT OR IGNORE INTO excluded_recordings(original_id,payload) VALUES (?,?)",
+                 (rid, json.dumps(payload, ensure_ascii=False)))
     # 제외 이력은 휴지통을 비워도 유지. 직접 파일 올리기는 이 이력을 조회하지 않는다.
     import watcher
     for item in db.rows(conn, "SELECT source, ext_id FROM imported WHERE recording_id=?", (rid,)):
@@ -121,6 +123,8 @@ def move(conn, kind, rid, delete_notes=False, delete_audio=False):
     payload, title, detail = snap
     if kind == "recording":
         remember_exclusion(conn, rid, payload)
+        conn.execute("UPDATE excluded_recordings SET payload=?, restored_id=NULL, excluded_at=datetime('now','localtime') WHERE original_id=?",
+                     (json.dumps(payload, ensure_ascii=False), rid))
     if kind == "recording" and delete_audio:
         ap = payload["rows"]["recordings"][0].get("audio_path")
         if ap:
@@ -190,6 +194,9 @@ def restore(trash_id):
         if rec:
             for nid in links.get("notes.recording_id") or []:
                 conn.execute("UPDATE notes SET recording_id=? WHERE id=? AND recording_id IS NULL", (rec, nid))
+        if rec:
+            for original in data.get("recordings") or []:
+                conn.execute("UPDATE excluded_recordings SET restored_id=? WHERE original_id=?", (rec, original["id"]))
         conn.execute("DELETE FROM trash WHERE id=?", (t["id"],))
         conn.commit()
         target = KIND_TABLE.get(t["kind"])

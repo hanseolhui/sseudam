@@ -736,6 +736,63 @@ def recordings_delete(h, q, b):
     return {"ok": True, "trash_id": tid}
 
 
+@route("GET", "/api/recordings/excluded")
+def recordings_excluded(h, q, b):
+    conn = db.connect()
+    try:
+        items = db.rows(conn, "SELECT * FROM excluded_recordings WHERE restored_id IS NULL ORDER BY excluded_at DESC")
+        result = []
+        for item in items:
+            r = json.loads(item["payload"])["rows"]["recordings"][0]
+            available = bool((r.get("audio_path") and os.path.isfile(r["audio_path"])) or r.get("transcript"))
+            result.append({"id": item["original_id"], "title": r.get("title") or "녹음", "recorded_at": r.get("recorded_at"),
+                           "excluded_at": item["excluded_at"], "available": available})
+        return {"items": result}
+    finally:
+        conn.close()
+
+
+_excluded_restore_lock = threading.Lock()
+
+@route("POST", "/api/recordings/excluded/restore")
+def recordings_excluded_restore(h, q, b):
+    ids = b.get("ids")
+    if not isinstance(ids, list) or not 1 <= len(ids) <= 500:
+        raise ApiError("다시 가져올 녹음을 선택해 주세요.")
+    try:
+        ids = list(dict.fromkeys(int(i) for i in ids))
+    except (TypeError, ValueError):
+        raise ApiError("녹음 번호를 확인해 주세요.")
+    restored, failed = [], []
+    with _excluded_restore_lock:
+        for rid in ids:
+            conn = db.connect()
+            try:
+                item = db.row(conn, "SELECT * FROM excluded_recordings WHERE original_id=? AND restored_id IS NULL", (rid,))
+                if not item:
+                    raise ValueError("이미 가져왔거나 목록이 변경됐어요.")
+                payload = json.loads(item["payload"])
+                r = payload["rows"]["recordings"][0]
+                if not ((r.get("audio_path") and os.path.isfile(r["audio_path"])) or r.get("transcript")):
+                    raise ValueError("보관 파일이 없어요. 원본을 '녹음 파일 올리기'로 가져와 주세요.")
+                t = db.row(conn, "SELECT id FROM trash WHERE kind='recording' AND json_extract(payload,'$.rows.recordings[0].id')=?", (rid,))
+                if t:
+                    tid = t["id"]
+                else:
+                    tid = conn.execute("INSERT INTO trash(kind,title,detail,payload) VALUES('recording',?,'제외 목록에서 다시 가져오기',?)",
+                                       (r.get("title") or "녹음", item["payload"])).lastrowid
+                    conn.commit()
+                conn.close(); conn = None
+                result = trash.restore(tid)
+                restored.append({"excluded_id": rid, "recording_id": result["id"]})
+            except Exception as e:
+                failed.append({"id": rid, "message": str(e)})
+            finally:
+                if conn:
+                    conn.close()
+    return {"restored": restored, "failed": failed}
+
+
 @route("POST", "/api/recordings/review")
 def recordings_review(h, q, b):
     action = b.get("action")

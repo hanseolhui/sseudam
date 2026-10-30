@@ -598,8 +598,41 @@ function bindRowLinks(root) {
 
 // ───────────────────────── 녹음함 ─────────────────────────
 
+async function viewExcludedRecordings() {
+  const data = await api('/api/recordings/excluded');
+  view.innerHTML = `<div class="page-head"><h1>제외한 녹음</h1><button id="excluded-back">녹음함으로</button></div>
+    <p class="help">원본은 그대로 두고 쓰담의 보관 파일·전사문으로 다시 가져와요. 자동 가져오기 제외는 유지되어 중복으로 들어오지 않아요.</p>
+    <div class="card"><div class="row"><label class="check"><input type="checkbox" id="excluded-all">가져올 수 있는 항목 전체 선택</label><button id="excluded-restore" disabled>선택 항목 다시 가져오기</button><span id="excluded-count">0개 선택</span></div>
+    ${data.items.length ? `<table><thead><tr><th>선택</th><th>녹음</th><th>제외한 날</th><th>다시 가져오기</th></tr></thead><tbody>${data.items.map(r => `<tr><td><input class="excluded-check" type="checkbox" value="${r.id}" aria-label="${esc(r.title)} 선택" ${r.available ? '' : 'disabled'}></td><td>${esc(r.title)}<div class="small muted">${esc(fmtDate(r.recorded_at))}</div></td><td>${esc(fmtDate(r.excluded_at))}</td><td>${r.available ? `<button class="sm excluded-one" data-id="${r.id}">다시 가져오기</button>` : '보관 파일 없음 · 원본 파일을 직접 올려 주세요'}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">제외한 녹음이 없어요.</p>'}
+    <div id="excluded-result" role="status"></div></div>`;
+  $('#excluded-back').onclick = () => { recordingInboxFilter = 'all'; viewRecordings(); };
+  const selected = () => $$('.excluded-check:checked').map(x => +x.value);
+  const refresh = () => {
+    const n = selected().length, total = $$('.excluded-check:not(:disabled)').length;
+    $('#excluded-count').textContent = `${n}개 선택`;
+    $('#excluded-restore').disabled = !n;
+    $('#excluded-all').checked = total > 0 && n === total;
+    $('#excluded-all').indeterminate = n > 0 && n < total;
+  };
+  $('#excluded-all').onchange = e => { $$('.excluded-check:not(:disabled)').forEach(x => x.checked = e.target.checked); refresh(); };
+  $$('.excluded-check').forEach(x => x.onchange = refresh);
+  let busy = false;
+  const restore = async ids => {
+    if (busy || !ids.length) return;
+    busy = true; $$('#excluded-restore, #excluded-all, .excluded-check, .excluded-one').forEach(x => x.disabled = true);
+    try {
+      const result = await api('/api/recordings/excluded/restore', { ids });
+      await viewExcludedRecordings();
+      $('#excluded-result').textContent = `${result.restored.length}개 다시 가져왔어요.` + result.failed.map(x => ` ${x.message}`).join('');
+    } catch (e) { await viewExcludedRecordings(); }
+  };
+  $('#excluded-restore').onclick = () => restore(selected());
+  $$('.excluded-one').forEach(x => x.onclick = () => restore([+x.dataset.id]));
+}
+
 let recordingInboxFilter = "all";
 async function viewRecordings(classFilter) {
+  if (recordingInboxFilter === 'excluded') return viewExcludedRecordings();
   const [recs, settings] = await Promise.all([
     api('/api/recordings' + (classFilter ? '?class_id=' + classFilter : '')), api('/api/settings')]);
   state.settings = settings;
@@ -635,7 +668,7 @@ async function viewRecordings(classFilter) {
     <div class="card">
       <div class="section-title"><h2>녹음 보관함 ${recs.recordings.length}건</h2>
         <select id="rec-filter" style="width:auto">${classOptions(classFilter || '', '전체 학급')}</select></div>
-      <div class="row" style="margin-bottom:12px"><label class="field"><span>보기</span><select id="rec-inbox-filter"><option value="all">전체 녹음</option><option value="review">확인할 녹음 (${reviewCount})</option><option value="general">일반 메모</option></select></label></div>
+      <div class="row" style="margin-bottom:12px"><label class="field"><span>보기</span><select id="rec-inbox-filter"><option value="all">전체 녹음</option><option value="review">확인할 녹음 (${reviewCount})</option><option value="general">일반 메모</option><option value="excluded">제외한 녹음</option></select></label></div>
       ${recordingInboxFilter === 'review' ? '<p class="help">학생 기록인지 확인할 녹음이에요. 열어서 듣고 일반 메모로 보관하거나 쓰담에서 제외할 수 있어요. 기술적인 처리 실패는 다시 시도할 수 있어요.</p>' : ''}
       ${recordingInboxFilter === 'review' ? '<div class="row" style="margin-bottom:12px"><span id="review-count">0개 선택</span><button id="review-general" disabled>선택 항목 일반 메모로</button><button id="review-exclude" disabled>선택 항목 쓰담에서 제외</button></div><p class="help">제외해도 외부 원본과 쓰담의 녹음 파일은 그대로 남아요. 제외한 항목은 자동으로 다시 가져오지 않아요. 30일 안에는 휴지통에서 복구하거나, 나중에 ‘녹음 파일 올리기’로 원본을 직접 다시 가져올 수 있어요.</p>' : ''}
       ${recs.recordings.length ? `<div class="table-wrap"><table>

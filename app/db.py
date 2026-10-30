@@ -220,6 +220,10 @@ CREATE TABLE IF NOT EXISTS student_targets (
     bytes INTEGER,
     PRIMARY KEY (student_id, area)
 );
+CREATE TABLE IF NOT EXISTS excluded_recordings (
+    original_id INTEGER PRIMARY KEY, payload TEXT NOT NULL,
+    excluded_at TEXT DEFAULT (datetime('now','localtime')), restored_id INTEGER
+);
 CREATE TABLE IF NOT EXISTS auto_import_exclusions (
     source TEXT NOT NULL, ext_id TEXT NOT NULL, PRIMARY KEY(source, ext_id)
 );
