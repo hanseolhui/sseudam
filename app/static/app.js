@@ -470,7 +470,7 @@ async function viewDashboard() {
       <div class="card">
         <div class="section-title"><h2>최근 녹음</h2><a href="#/recordings" class="small">전체 보기</a></div>
         <table><tbody>${d.recent.map(r => `<tr class="clickable" data-href="#/recording/${r.id}">
-          ${recordingInboxFilter === 'review' ? `<td><input type="checkbox" class="review-check" value="${r.id}" aria-label="${esc(r.title)} 선택"></td>` : ''}<td class="small muted nowrap">${esc(fmtDate(r.recorded_at))}</td><td>${kindBadge(r.kind)} ${esc(r.title)}<div class="small muted">${esc(r.label)}</div></td>
+          <td class="small muted nowrap">${esc(fmtDate(r.recorded_at))}</td><td>${kindBadge(r.kind)} ${esc(r.title)}<div class="small muted">${esc(r.label)}</div></td>
           <td class="right nowrap">${badge(r.status)}<div class="small muted">학생기록 ${r.notes}</div></td></tr>`).join('') || '<tr><td class="muted">아직 녹음이 없습니다</td></tr>'}</tbody></table>
       </div>
     </div>`;
@@ -641,7 +641,7 @@ async function viewRecordings(classFilter) {
       ${recs.recordings.length ? `<div class="table-wrap"><table>
         <thead><tr>${recordingInboxFilter === 'review' ? '<th><input type="checkbox" id="review-all" aria-label="현재 목록 전체 선택"></th>' : ''}<th>일시</th><th>유형</th><th>제목</th><th>학급</th><th>상태</th><th class="right">학생기록</th>${recordingInboxFilter === 'review' ? '<th>빠른 정리</th>' : ''}</tr></thead>
         <tbody>${recs.recordings.map(r => `<tr class="clickable" data-href="#/recording/${r.id}">
-          <td class="nowrap small">${esc(fmtDate(r.recorded_at))}</td><td>${kindBadge(r.kind)}</td>
+          ${recordingInboxFilter === 'review' ? `<td><input type="checkbox" class="review-check" value="${r.id}" aria-label="${esc(r.title)} 선택"></td>` : ''}<td class="nowrap small">${esc(fmtDate(r.recorded_at))}</td><td>${kindBadge(r.kind)}</td>
           <td>${esc(r.title)}${r.has_audio ? ' <span class="muted small">🎙</span>' : ''}${r.error ? `<div class="small" style="color:${r.status === '확인필요' ? 'var(--muted)' : 'var(--red)'}">${esc(r.error.slice(0, 80))}</div>` : ''}</td>
           <td class="small">${esc(r.label)}</td><td>${badge(r.status)}</td>
           <td class="num">${r.notes}${r.unmatched ? ` <span class="badge amber">미배정 ${r.unmatched}</span>` : ''}</td>${recordingInboxFilter === 'review' ? `<td><button class="sm review-action" data-id="${r.id}" data-action="general">일반 메모로</button><button class="sm review-action" data-id="${r.id}" data-action="exclude">쓰담에서 제외</button></td>` : ''}</tr>`).join('')}</tbody></table></div>`
