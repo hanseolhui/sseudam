@@ -1039,11 +1039,14 @@ def _worker():
                 elif isinstance(res, dict) and "matched" in res:
                     msg = "배정 %d건, 미배정 %d건" % (res["matched"], res["unmatched"])
             except Exception as e:  # noqa
-                status, msg = "실패", str(e)
-                traceback.print_exc()
+                import whisper
+                review = isinstance(e, whisper.NoSpeechDetected)
+                status, msg = ("완료" if review else "실패"), str(e)
+                if not review:
+                    traceback.print_exc()
                 if "recording_id" in params:
                     conn = db.connect()
-                    _set_rec(conn, params["recording_id"], status="오류", error=msg[:500])
+                    _set_rec(conn, params["recording_id"], status="확인필요" if review else "오류", error=msg[:500])
                     conn.close()
             conn = db.connect()
             conn.execute("UPDATE jobs SET status=?, message=?, finished_at=datetime('now','localtime') WHERE id=?",

@@ -275,6 +275,8 @@ def init():
     _migrate_columns(conn)
     for k, v in DEFAULT_SETTINGS.items():
         conn.execute("INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)", (k, v))
+    conn.execute("UPDATE recordings SET status='확인필요', error='말소리를 찾지 못했어요. 녹음을 확인하고 일반 메모로 보관하거나 쓰담에서 제외해 주세요.' "
+                 "WHERE status='오류' AND error='녹음에서 말소리를 찾지 못했습니다.'")
     # 비정상 종료로 '진행중'에 남은 작업 정리
     conn.execute("UPDATE jobs SET status='실패', message='프로그램 재시작으로 중단됨' WHERE status IN ('대기','진행중')")
     conn.execute("UPDATE recordings SET status='오류', error='프로그램 재시작으로 중단됨' WHERE status IN ('전사중','분리중')")

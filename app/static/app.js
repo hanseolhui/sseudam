@@ -598,10 +598,15 @@ function bindRowLinks(root) {
 
 // ───────────────────────── 녹음함 ─────────────────────────
 
+let recordingInboxFilter = "all";
 async function viewRecordings(classFilter) {
   const [recs, settings] = await Promise.all([
     api('/api/recordings' + (classFilter ? '?class_id=' + classFilter : '')), api('/api/settings')]);
   state.settings = settings;
+  const allRecordings = recs.recordings;
+  const needsReview = r => r.status === '확인필요' || r.status === '오류';
+  const reviewCount = allRecordings.filter(needsReview).length;
+  recs.recordings = allRecordings.filter(r => recordingInboxFilter === 'review' ? needsReview(r) : recordingInboxFilter === 'general' ? r.status === '일반메모' : true);
   const isApi = true;   // 받아쓰기(내 컴퓨터)·학생 나누기는 키 없이도 됨
   view.innerHTML = `
     <div class="page-head"><div><h1>녹음함</h1><div class="muted">수업 평가·상담 녹음을 보관하고, 전사·학생별 분리를 진행합니다.</div></div>
@@ -628,19 +633,23 @@ async function viewRecordings(classFilter) {
       </div>
     </div>
     <div class="card">
-      <div class="section-title"><h2>보관된 녹음 ${recs.recordings.length}건</h2>
+      <div class="section-title"><h2>녹음 보관함 ${recs.recordings.length}건</h2>
         <select id="rec-filter" style="width:auto">${classOptions(classFilter || '', '전체 학급')}</select></div>
+      <div class="row" style="margin-bottom:12px"><label class="field"><span>보기</span><select id="rec-inbox-filter"><option value="all">전체 녹음</option><option value="review">확인할 녹음 (${reviewCount})</option><option value="general">일반 메모</option></select></label></div>
+      ${recordingInboxFilter === 'review' ? '<p class="help">학생 기록인지 확인할 녹음이에요. 열어서 듣고 일반 메모로 보관하거나 쓰담에서 제외할 수 있어요. 기술적인 처리 실패는 다시 시도할 수 있어요.</p>' : ''}
       ${recs.recordings.length ? `<div class="table-wrap"><table>
         <thead><tr><th>일시</th><th>유형</th><th>제목</th><th>학급</th><th>상태</th><th class="right">학생기록</th></tr></thead>
         <tbody>${recs.recordings.map(r => `<tr class="clickable" data-href="#/recording/${r.id}">
           <td class="nowrap small">${esc(fmtDate(r.recorded_at))}</td><td>${kindBadge(r.kind)}</td>
-          <td>${esc(r.title)}${r.has_audio ? ' <span class="muted small">🎙</span>' : ''}${r.error ? `<div class="small" style="color:var(--red)">${esc(r.error.slice(0, 80))}</div>` : ''}</td>
+          <td>${esc(r.title)}${r.has_audio ? ' <span class="muted small">🎙</span>' : ''}${r.error ? `<div class="small" style="color:${r.status === '확인필요' ? 'var(--muted)' : 'var(--red)'}">${esc(r.error.slice(0, 80))}</div>` : ''}</td>
           <td class="small">${esc(r.label)}</td><td>${badge(r.status)}</td>
           <td class="num">${r.notes}${r.unmatched ? ` <span class="badge amber">미배정 ${r.unmatched}</span>` : ''}</td></tr>`).join('')}</tbody></table></div>`
       : '<p class="muted">아직 보관된 녹음이 없습니다.</p>'}
       <p class="help">수신 폴더: <code>${esc(settings.inbox_dir)}</code> ${settings.inbox_exists ? '' : '<span class="badge amber">폴더 없음 — 설정에서 만들기</span>'} · 20초마다 자동 확인</p>
     </div>`;
   bindRowLinks();
+  $('#rec-inbox-filter').value = recordingInboxFilter;
+  $('#rec-inbox-filter').onchange = e => { recordingInboxFilter = e.target.value; viewRecordings(classFilter); };
   $$('.tabs button').forEach(b => b.onclick = () => {
     $$('.tabs button').forEach(x => x.classList.toggle('on', x === b));
     $$('[data-pane]').forEach(p => p.classList.toggle('hidden', p.dataset.pane !== b.dataset.tab));
@@ -780,8 +789,8 @@ async function viewRecording(id) {
   const reload = () => router(true);
   if ($('#b-reveal')) $('#b-reveal').onclick = () => api('/api/recordings/reveal', { id: r.id });
   $('#b-del').onclick = async () => {
-    if (!confirmBox('이 녹음을 휴지통으로 옮길까요?\n30일 안에 되살릴 수 있어요. (이 녹음에서 나온 학생 관찰기록은 그대로 남아요)')) return;
-    const delAudio = r.has_audio && confirmBox('휴지통을 비울 때 녹음 파일도 함께 지울까요?\n[확인] 파일도 지움  [취소] 파일은 남김');
+    if (!confirmBox('쓰담 보관함에서 이 녹음을 제외할까요?\n외부에서 가져온 원본은 삭제하지 않아요. 30일 안에 휴지통에서 되살릴 수 있고, 학생 관찰기록은 그대로 남아요.')) return;
+    const delAudio = r.has_audio && confirmBox('휴지통을 비울 때 쓰담이 보관하는 녹음 파일도 지울까요?\n외부에서 가져온 파일은 쓰담 안의 복사본만 대상이며, 원본은 그대로예요. 쓰담에서 녹음한 파일은 쓰담이 관리해요.\n[확인] 쓰담 보관 파일도 지움  [취소] 파일은 남김');
     const res = await api('/api/recordings/delete', { id: r.id, delete_audio: delAudio });
     location.hash = '#/recordings';
     trashedToast('녹음', res, () => { location.hash = '#/recording/' + r.id; });

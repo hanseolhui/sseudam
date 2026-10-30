@@ -17,6 +17,10 @@ import urllib.request
 import db
 import gemini
 
+class NoSpeechDetected(RuntimeError):
+    """녹음은 보관하되 사용자가 용도를 확인해야 하는 경우."""
+
+
 HF = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/"
 MODELS = [
     {"id": "turbo-q5", "file": "ggml-large-v3-turbo-q5_0.bin", "size": 574041195,
@@ -290,7 +294,7 @@ def transcribe(audio_path, students=None, kind="수업", on_progress=None, model
             raise RuntimeError("Whisper 실행 오류: %s" % " / ".join((cause or err_tail)[-3:]))
         text = format_segments(out)
         if not text.strip():
-            raise RuntimeError("녹음에서 말소리를 찾지 못했습니다.")
+            raise NoSpeechDetected("말소리를 찾지 못했어요. 녹음을 듣고 일반 메모로 보관하거나 쓰담에서 제외해 주세요.")
         return text
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

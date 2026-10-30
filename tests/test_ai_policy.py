@@ -40,3 +40,24 @@ class AIPolicyTests(unittest.TestCase):
     def test_custom_profile_target_persists(self):
         db.set_settings({'school_level': '직접 입력', 'school_level_custom': '시니어 입문 회원'})
         self.assertEqual(db.get_settings()['school_level_custom'], '시니어 입문 회원')
+
+    def test_external_audio_survives_trash_cleanup(self):
+        import os, tempfile, trash
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as ext:
+            original = Path(ext)/'original.wav'; original.write_bytes(b'original')
+            archive = Path(db.AUDIO_DIR); archive.mkdir(exist_ok=True)
+            local = archive/'copy.wav'; local.write_bytes(b'copy')
+            link = archive/'linked.wav'; link.symlink_to(original)
+            with connection() as c:
+                trash._drop_files(c, {'delete_audio':[str(original), str(link), str(local)]})
+            self.assertEqual(original.read_bytes(),b'original')
+            self.assertTrue(link.exists())
+            self.assertFalse(local.exists())
+
+    def test_old_silent_recording_moves_to_review(self):
+        with connection() as c:
+            rid=c.execute("INSERT INTO recordings(title,status,error) VALUES('silent','오류','녹음에서 말소리를 찾지 못했습니다.')").lastrowid
+        db.init()
+        with connection() as c:
+            self.assertEqual(db.row(c,'SELECT status FROM recordings WHERE id=?',(rid,))['status'],'확인필요')

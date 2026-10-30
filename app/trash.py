@@ -193,7 +193,10 @@ def restore(trash_id):
 def _drop_files(conn, payload):
     for p in payload.get("delete_audio") or []:
         try:
-            if p and os.path.exists(p) and not db.row(conn, "SELECT id FROM recordings WHERE audio_path=?", (p,)):
+            # 휴지통 payload가 오래됐거나 변조돼도 외부 원본·심볼릭 링크 대상은 지우지 않는다.
+            if not p or os.path.commonpath([os.path.realpath(p), os.path.realpath(db.AUDIO_DIR)]) != os.path.realpath(db.AUDIO_DIR):
+                continue
+            if os.path.isfile(p) and not db.row(conn, "SELECT id FROM recordings WHERE audio_path=?", (p,)):
                 os.remove(p)
         except OSError:
             pass
