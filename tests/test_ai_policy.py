@@ -36,3 +36,7 @@ class AIPolicyTests(unittest.TestCase):
     def test_retired_selection_rejected(self):
         for choice in ('builtin','external','gemini'):
             with self.assertRaises(server.ApiError):server.ai_choose(None,{}, {'choice':choice})
+
+    def test_custom_profile_target_persists(self):
+        db.set_settings({'school_level': '직접 입력', 'school_level_custom': '시니어 입문 회원'})
+        self.assertEqual(db.get_settings()['school_level_custom'], '시니어 입문 회원')

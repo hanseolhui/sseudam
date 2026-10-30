@@ -35,6 +35,7 @@ DEFAULT_SETTINGS = {
     "relay_peer_at": "0",
     "byte_limit": "1500",
     "school_level": "고등학교",
+    "school_level_custom": "",
     "teacher_subject": "",
     "style_examples": "",
     "draft_guidance": "",
