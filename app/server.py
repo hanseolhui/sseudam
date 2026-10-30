@@ -746,7 +746,7 @@ def recordings_excluded(h, q, b):
             r = json.loads(item["payload"])["rows"]["recordings"][0]
             available = bool((r.get("audio_path") and os.path.isfile(r["audio_path"])) or r.get("transcript"))
             result.append({"id": item["original_id"], "title": r.get("title") or "녹음", "recorded_at": r.get("recorded_at"),
-                           "excluded_at": item["excluded_at"], "available": available})
+                           "excluded_at": item["excluded_at"], "available": available, "transcript": r.get("transcript") or ""})
         return {"items": result}
     finally:
         conn.close()
