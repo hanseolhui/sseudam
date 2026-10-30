@@ -609,12 +609,43 @@ function matchesExcludedRecording(item, filters) {
     && (!filters.from || day >= filters.from) && (!filters.to || day <= filters.to);
 }
 
+function excludedTextMatch(text, query) {
+  const value = String(text || '').normalize('NFC');
+  const term = String(query || '').normalize('NFC').trim();
+  const ranges = [];
+  if (term) {
+    const haystack = value.toLocaleLowerCase(), needle = term.toLocaleLowerCase();
+    let at = 0, found;
+    while ((found = haystack.indexOf(needle, at)) !== -1) {
+      ranges.push([found, found + needle.length]); at = found + needle.length;
+    }
+  }
+  return { value, ranges };
+}
+function excludedHighlighted(text, query) {
+  const { value, ranges } = excludedTextMatch(text, query);
+  let html = '', at = 0;
+  for (const [start, end] of ranges) {
+    html += esc(value.slice(at, start)) + '<mark class="excluded-match">' + esc(value.slice(start, end)) + '</mark>';
+    at = end;
+  }
+  return html + esc(value.slice(at));
+}
+function excludedSnippet(text, query) {
+  const { value, ranges } = excludedTextMatch(text, query);
+  if (!String(query || '').trim()) return '';
+  if (!value) return '<span class="muted">저장된 전사문 없음</span>';
+  if (!ranges.length) return '<span class="muted">제목에서 일치 · 전사문에는 검색어가 없어요</span>';
+  const start = Math.max(0, ranges[0][0] - 40), end = Math.min(value.length, ranges[0][1] + 70);
+  return (start ? '…' : '') + excludedHighlighted(value.slice(start, end), query) + (end < value.length ? '…' : '');
+}
+
 async function viewExcludedRecordings() {
   const data = await api('/api/recordings/excluded');
   view.innerHTML = `<div class="page-head"><h1>제외한 녹음</h1><button id="excluded-back">녹음함으로</button></div>
     <p class="help">원본은 그대로 두고 쓰담의 보관 파일·전사문으로 다시 가져와요. 자동 가져오기 제외는 유지되어 중복으로 들어오지 않아요.</p>
     <div class="card"><label class="field"><span>제목·전사문 검색</span><input type="search" id="excluded-search" placeholder="제목이나 전사문에 포함된 단어" value="${esc(excludedFilters.query)}"></label><div class="row"><label class="field"><span>녹음 날짜 시작일</span><input type="date" id="excluded-from" value="${esc(excludedFilters.from)}"></label><label class="field"><span>녹음 날짜 종료일</span><input type="date" id="excluded-to" value="${esc(excludedFilters.to)}"></label><button id="excluded-reset">검색·날짜 초기화</button></div><p class="help">녹음한 날짜 기준이며 시작일과 종료일을 모두 포함해요. 날짜 범위를 지정하면 날짜가 없는 녹음은 표시하지 않아요.</p><p id="excluded-search-count" class="small muted"></p><div class="row"><label class="check"><input type="checkbox" id="excluded-all">검색 결과에서 가져올 수 있는 항목 전체 선택</label><button id="excluded-restore" disabled>선택 항목 다시 가져오기</button><span id="excluded-count">0개 선택</span></div>
-    ${data.items.length ? `<table><thead><tr><th>선택</th><th>녹음</th><th>제외한 날</th><th>다시 가져오기</th></tr></thead><tbody>${data.items.map(r => `<tr class="excluded-row" data-id="${r.id}"><td><input class="excluded-check" type="checkbox" value="${r.id}" aria-label="${esc(r.title)} 선택" ${r.available ? '' : 'disabled'}></td><td>${esc(r.title)}<div class="small muted">${esc(fmtDate(r.recorded_at))}</div></td><td>${esc(fmtDate(r.excluded_at))}</td><td><button class="sm excluded-preview" data-id="${r.id}">듣기·전사문 보기</button> ${r.available ? `<button class="sm excluded-one" data-id="${r.id}">다시 가져오기</button>` : '보관 파일 없음 · 원본 파일을 직접 올려 주세요'}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">제외한 녹음이 없어요.</p>'}
+    ${data.items.length ? `<table><thead><tr><th>선택</th><th>녹음</th><th>제외한 날</th><th>다시 가져오기</th></tr></thead><tbody>${data.items.map(r => `<tr class="excluded-row" data-id="${r.id}"><td><input class="excluded-check" type="checkbox" value="${r.id}" aria-label="${esc(r.title)} 선택" ${r.available ? '' : 'disabled'}></td><td>${esc(r.title)}<div class="small muted">${esc(fmtDate(r.recorded_at))}</div><div class="excluded-snippet small"></div></td><td>${esc(fmtDate(r.excluded_at))}</td><td><button class="sm excluded-preview" data-id="${r.id}">듣기·전사문 보기</button> ${r.available ? `<button class="sm excluded-one" data-id="${r.id}">다시 가져오기</button>` : '보관 파일 없음 · 원본 파일을 직접 올려 주세요'}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">제외한 녹음이 없어요.</p>'}
     <div id="excluded-result" role="status"></div></div>`;
   $('#excluded-back').onclick = () => { recordingInboxFilter = 'all'; viewRecordings(); };
   const visibleChecks = () => $$('.excluded-row').filter(row => !row.hidden).flatMap(row => $$('.excluded-check:not(:disabled)', row));
@@ -638,6 +669,7 @@ async function viewExcludedRecordings() {
     $$('.excluded-row').forEach(row => {
       row.hidden = !matchesExcludedRecording(itemsById.get(row.dataset.id), excludedFilters);
       row.style.display = row.hidden ? 'none' : '';
+      $('.excluded-snippet', row).innerHTML = row.hidden ? '' : excludedSnippet(itemsById.get(row.dataset.id).transcript, excludedFilters.query);
       if (row.hidden) $('.excluded-check', row).checked = false; else count++;
     });
     $('#excluded-search-count').textContent = invalidRange ? '종료일을 시작일과 같거나 나중 날짜로 선택해 주세요.' : `${count}개 / 전체 ${data.items.length}개` + (count ? '' : ' · 검색 결과가 없어요.');
@@ -654,9 +686,11 @@ async function viewExcludedRecordings() {
       const item = await api(`/api/recordings/excluded/${id}/preview`);
       modal(`<h2>${esc(item.title)}</h2><p class="help">미리보기만 해요. 원본과 제외 상태는 바뀌지 않아요.</p>
         ${item.has_audio ? `<audio controls preload="metadata" style="width:100%" src="/audio/excluded/${id}"></audio>` : '<p class="muted">들을 수 있는 보관 파일이 없어요.</p>'}
-        <h3>전사문</h3>${item.transcript ? `<textarea readonly rows="12" aria-label="제외한 녹음 전사문">${esc(item.transcript)}</textarea>` : '<p class="muted">저장된 전사문이 없어요.</p>'}
+        <h3>전사문</h3>${item.transcript ? `<div class="excluded-transcript" role="region" tabindex="0" aria-label="제외한 녹음 전사문">${excludedHighlighted(item.transcript, excludedFilters.query)}</div>` : '<p class="muted">저장된 전사문이 없어요.</p>'}
         <div class="modal-actions"><button id="excluded-preview-close">닫기</button></div>`, box => {
           $('#excluded-preview-close', box).onclick = closeModal;
+          const firstMatch = $('.excluded-transcript mark', box);
+          if (firstMatch) firstMatch.scrollIntoView({ block: 'nearest' });
         });
     } finally { button.disabled = false; }
   });
