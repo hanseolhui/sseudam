@@ -851,12 +851,12 @@ def ai_run(h, q, b):
         jid = pipeline.enqueue("segment_local", dict(params, engine=eng),
                                "%s 학생별 분리 %s" % ("기기 안 AI" if eng == "apple" else "내 맥 AI", b.get("label", "")))
         return {"ok": True, "job_id": jid}
-    if op in ("draft", "shorten") and pipeline.draft_engine(settings) == "local":
-        pipeline.build_prompt(op, params)
-        labels = {"draft": "세특 초안", "shorten": "초안 줄이기"}
-        jid = pipeline.enqueue(op, params, "내 맥 AI %s %s" % (labels[op], b.get("label", "")))
-        return {"ok": True, "job_id": jid}
-    if settings.get("mode") == "manual" or not cloudai.key_of(settings):
+    if op == "segment" and pipeline.seg_engine(settings) == "rules":
+        pipeline.rule_segment(params["recording_id"])
+        return {"ok": True}
+    if op in ("draft", "shorten"):
+        settings = dict(settings, api_provider="plus", mode="api")
+    if (op in ("draft", "shorten") and not pipeline.draft_engine(settings)) or settings.get("mode") == "manual" or not cloudai.key_of(settings):
         # 쓸 AI가 없으면 오류 대신: 프롬프트를 복사해서 ChatGPT·Gemini 앱에 붙여넣기
         p = pipeline.build_prompt(op, params)
         return {"manual": True, "prompt": p["prompt"], "has_audio": bool(p.get("audio_path")), "sources": params.get("_sources", [])}
@@ -933,7 +933,7 @@ def drafts_batch_apply(h, q, b):
 @route("POST", "/api/drafts/batch")
 def drafts_batch(h, q, b):
     settings = db.get_settings()
-    if pipeline.draft_engine(settings) not in ("gemini", "local"):
+    if pipeline.draft_engine(settings) != "gemini":
         raise ApiError("AI가 연결돼 있지 않아요. '반 전체 프롬프트 복사'로 ChatGPT·Gemini 앱에서 만들 수 있어요.")
     conn = db.connect()
     c = db.row(conn, "SELECT * FROM classes WHERE id=?", (int(b["class_id"]),))
@@ -1077,8 +1077,8 @@ def settings_save(h, q, b):
         vals[cloudai.PROVIDERS.get(clear if isinstance(clear, str) else "gemini", cloudai.PROVIDERS["gemini"])["key"]] = ""
     if vals.get("api_provider") and vals["api_provider"] not in cloudai.PROVIDERS:
         vals.pop("api_provider")
-    if (vals.get("local_ai_url") or "").strip() and not localai.is_local_url(vals["local_ai_url"]):
-        raise ApiError("내 맥 AI 주소는 이 맥(127.0.0.1 또는 localhost)만 넣을 수 있어요. 학생 기록이 밖으로 나가지 않게요.")
+    for retired in ("local_ai_url", "local_ai_model", "draft_local", "draft_light_ok"):
+        vals.pop(retired, None)
     before = db.get_settings()
     db.set_settings(vals)
     # 선생님 정보·동의를 실제로 바꿨을 때만 바로 한 번 보냄 (관리자 쪽에 바로 보이게)
@@ -1150,33 +1150,17 @@ def localai_status(h, q, b):
 
 
 def _ai_choice(s):
-    """지금 고른 AI: builtin(쓰담 AI 모델) | apple | gemini | external(Ollama·LM Studio) | manual(AI 없이)."""
-    c = s.get("ai_choice") or ""
-    if c == "plus" and not plus.ENABLED:
-        c = ""                   # 쓰담 플러스를 닫아 둔 동안은 다른 선택으로 보이게
-    if c:
-        return c
-    eng = s.get("seg_engine") or "auto"
-    if eng == "auto":
-        eng = pipeline.seg_engine(s)
-    if eng == "local":
-        return "builtin" if s.get("local_ai_url") == localai.BUILTIN else "external"
-    if eng in ("gemini", "apple"):
-        return eng
-    return "manual"
+    if s.get("ai_choice") == "plus":
+        return "plus"
+    return "apple" if pipeline.seg_engine(s) == "apple" else "manual"
 
 
 def _ai_state():
     s = db.get_settings()
-    choice = _ai_choice(s)
-    return {"choice": choice, "active_seg": pipeline.seg_engine(s), "draft": pipeline.draft_engine(s) or "manual",
-            "has_key": bool(cloudai.key_of(s)), "gemini_model": s.get("gemini_model") or "",
-            "provider": cloudai.provider(s), "provider_label": cloudai.label(s), "api_model": cloudai.model_of(s),
-            "plus_enabled": plus.ENABLED,
-            "apple": {"state": localai.apple_state(), "text": localai.APPLE_TEXT.get(localai.apple_state(), "")},
-            "builtin": localai.llm_status(), "local_ai_url": s.get("local_ai_url") or "",
-            "local_ai_model": s.get("local_ai_model") or "", "draft_local": s.get("draft_local", "1"),
-            "draft_light_ok": s.get("draft_light_ok", "0"), "light": sorted(localai.LIGHT_MODELS)}
+    st = localai.apple_state()
+    return {"choice": _ai_choice(s), "active_seg": pipeline.seg_engine(s),
+            "draft": pipeline.draft_engine(s) or "manual", "plus_enabled": plus.ENABLED,
+            "apple": {"state": st, "text": localai.APPLE_TEXT.get(st, "")}}
 
 
 @route("GET", "/api/ai/state")
@@ -1186,52 +1170,18 @@ def ai_state(h, q, b):
 
 @route("POST", "/api/ai/choose")
 def ai_choose(h, q, b):
-    """AI 하나 고르면 학생 분리·세특 초안 설정을 한 번에 맞춘다 (바로 저장)."""
+    """기록 정리와 플러스 연결. 별도 모델/API 선택은 제공하지 않는다."""
     c = b.get("choice")
-    s = db.get_settings()
-    vals = {"ai_choice": c, "mode": "api"}
-    started = None
-    if c == "builtin":
-        st = localai.llm_status()
-        installed = [m["id"] for m in st["models"] if m["installed"]]
-        mid = st["recommended"] if st["recommended"] in installed else (installed[0] if installed else st["recommended"])
-        if not mid:
-            raise ApiError(st["machine"]["why"])
-        vals.update(seg_engine="local", local_ai_url=localai.BUILTIN, local_ai_model=mid)
-        if mid not in installed:
-            if not st["engine"]:
-                raise ApiError("쓰담을 최신 버전으로 업데이트하면 쓸 수 있어요.")
-            localai.llm_download(mid)   # 이 컴퓨터에 맞는 모델을 바로 받기 시작
-            started = mid
-    elif c == "plus":            # 쓰담 플러스(구독): 키 없이 서버 AI로 분리·초안, 받아쓰기는 내 컴퓨터 Whisper
-        if not plus.ENABLED or not plus.active(s):
-            raise ApiError("먼저 쓰담 플러스에 로그인하고 구독(또는 체험)을 시작해 주세요.")
-        vals.update(seg_engine="gemini", api_provider="plus", stt_engine="whisper")
-        import whisper
-        if whisper.supported() and not whisper.available():
-            try:
-                whisper.download("turbo-q5")     # 녹음만 하면 다 되게: 받아쓰기 모델도 같이
-            except Exception:  # noqa
-                pass
-    elif c == "apple":
-        vals["seg_engine"] = "apple"
-    elif c == "gemini":          # 외부 AI API (Gemini · ChatGPT · Claude)
-        vals["seg_engine"] = "gemini"
-        if b.get("provider") in cloudai.PROVIDERS:
-            vals["api_provider"] = b["provider"]
-    elif c == "external":
-        url = (b.get("url") or "").strip()
-        if not localai.is_local_url(url) or url == localai.BUILTIN:
-            raise ApiError("내 맥 AI 주소는 127.0.0.1 또는 localhost만 쓸 수 있어요.")
-        vals.update(seg_engine="local", local_ai_url=url, local_ai_model=(b.get("model") or "").strip())
-    elif c == "manual":
-        vals.update(seg_engine="rules", mode="manual")
+    if c == "plus":
+        if not plus.ENABLED or not plus.active():
+            raise ApiError("먼저 쓰담 플러스에 로그인하고 이용 상태를 확인해 주세요.")
+        vals = {"ai_choice": c, "api_provider": "plus", "mode": "api"}
+    elif c in ("apple", "manual"):
+        vals = {"ai_choice": c, "seg_engine": "apple" if c == "apple" else "rules"}
     else:
-        raise ApiError("알 수 없는 선택")
+        raise ApiError("별도 로컬 모델과 API 키 연결은 지원하지 않아요. 기록 정리는 기기 안에서, 앱 내 세특 초안은 쓰담 플러스로 만들어요.")
     db.set_settings(vals)
-    out = _ai_state()
-    out["started"] = started
-    return out
+    return _ai_state()
 
 
 def _plus_loop():
@@ -1320,49 +1270,8 @@ def plus_beta(h, q, b):
 def plus_logout(h, q, b):
     plus.logout()
     s = db.get_settings()
-    if s.get("ai_choice") == "plus":     # 받아 둔 쓰담 AI 모델이 있으면 그걸로, 없으면 AI 없이
-        db.set_settings({"api_provider": "gemini"})
-        has_model = any(m["installed"] for m in localai.llm_status()["models"])
-        try:
-            ai_choose(h, q, {"choice": "builtin" if has_model else "manual"})
-        except ApiError:
-            ai_choose(h, q, {"choice": "manual"})
-    return {"ok": True}
-
-
-@route("GET", "/api/localai/models")
-def localai_models(h, q, b):
-    return localai.llm_status()
-
-
-@route("POST", "/api/localai/models/download")
-def localai_models_download(h, q, b):
-    if not localai.llama_bin():
-        raise ApiError("쓰담 내장 AI 엔진이 없어요. 쓰담을 최신 버전으로 업데이트해 주세요.")
-    localai.llm_download(b["id"])
-    return {"ok": True}
-
-
-@route("POST", "/api/localai/models/cancel")
-def localai_models_cancel(h, q, b):
-    localai.llm_cancel(b["id"])
-    return {"ok": True}
-
-
-@route("POST", "/api/localai/models/delete")
-def localai_models_delete(h, q, b):
-    localai.llm_delete(b["id"])
-    return {"ok": True}
-
-
-@route("POST", "/api/localai/models/use")
-def localai_models_use(h, q, b):
-    if not localai.llm_installed(b["id"]):
-        raise ApiError("먼저 받아 주세요.")
-    vals = {"local_ai_url": localai.BUILTIN, "local_ai_model": b["id"]}
-    if db.get_settings().get("seg_engine") in ("rules",):
-        vals["seg_engine"] = "auto"
-    db.set_settings(vals)
+    if s.get("ai_choice") == "plus":
+        db.set_settings({"ai_choice": "apple", "api_provider": "gemini", "seg_engine": "auto"})
     return {"ok": True}
 
 
@@ -1374,8 +1283,8 @@ def localai_test(h, q, b):
         if b.get(k):
             s[k] = b[k]
     eng = b.get("engine") or "apple"
-    if eng == "local" and not localai.is_local_url(s.get("local_ai_url")):
-        raise ApiError("내 맥 AI 주소는 127.0.0.1 또는 localhost만 쓸 수 있어요.")
+    if eng != "apple":
+        raise ApiError("기기 안 AI 기록 정리만 시험할 수 있어요.")
     import time as _t
     t0 = _t.time()
     sents = ["오늘 체육 시간이었어요.", "김민수는 줄넘기를 끝까지 해냈어요.", "그 친구는 친구들 줄도 세어 줬어요.",
@@ -1727,7 +1636,6 @@ def update_apply(h, q, b):
 
 @route("POST", "/api/shutdown")
 def shutdown(h, q, b):
-    localai.stop_builtin()
     threading.Timer(0.5, lambda: os._exit(0)).start()
     return {"ok": True}
 
@@ -1901,7 +1809,7 @@ def main():
         return
     httpd.daemon_threads = True
     import signal
-    signal.signal(signal.SIGTERM, lambda *_: (localai.stop_builtin(), os._exit(0)))  # 앱 종료 시 내장 AI도 함께 끄기
+    signal.signal(signal.SIGTERM, lambda *_: os._exit(0))
     ensure_token()
     ensure_upload_token()
     pipeline.start_worker()

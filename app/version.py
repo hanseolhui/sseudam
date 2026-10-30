@@ -10,6 +10,6 @@ UPDATE_REPO = "hanseolhui/sseudam"
 UPDATE_ASSET = "seteuk-app.zip"
 
 # 앱 셸(창·메뉴·Whisper 실행 파일이 든 .app) 버전. 셸이 이보다 낮으면 화면에서 '앱 업데이트'를 안내한다.
-SHELL_REQUIRED = 5  # 5 = 기기 안 AI 도우미·쓰담 내장 AI(llama-server)가 든 앱
+SHELL_REQUIRED = 5  # 5 = 기기 안 AI 도우미를 지원하는 앱
 APP_ASSET = "Sseudam-mac.zip"
 WHISPER_ASSET = "whisper-cli-arm64.zip"

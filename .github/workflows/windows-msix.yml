@@ -20,8 +20,6 @@ jobs:
       MSIX_NAME: ${{ vars.MSIX_NAME || 'SeoriArts.Sseudam' }}
       MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER || 'CN=SeoriArts' }}
       MSIX_PUBLISHER_NAME: ${{ vars.MSIX_PUBLISHER_NAME || '서리아트' }}
-      LLAMA_URL: https://github.com/ggml-org/llama.cpp/releases/download/b11851/llama-b11851-bin-win-vulkan-x64.zip
-      LLAMA_SHA256: 36dcb7b6d2f3236c6f49762659a6eaf1c4832be947a42c9480123a0ff99a7468
       FFMPEG_URL: https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip
       PYTHONIOENCODING: utf-8
     steps:
@@ -59,15 +57,10 @@ jobs:
           $ver = (Select-String -Path app\version.py -Pattern 'VERSION = "(.+)"').Matches[0].Groups[1].Value
           "APPVER=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: 내장 AI 엔진 · ffmpeg 묶기 (실행 중에 받지 않게)
+      - name: ffmpeg 묶기 (실행 중에 받지 않게)
         shell: pwsh
         run: |
-          Invoke-WebRequest $env:LLAMA_URL -OutFile llama.zip
-          $h = (Get-FileHash llama.zip -Algorithm SHA256).Hash.ToLower()
-          if ($h -ne $env:LLAMA_SHA256) { throw "llama.cpp 해시 불일치: $h" }
-          Expand-Archive llama.zip -DestinationPath llama-x
-          New-Item -ItemType Directory -Force layout\bin\llama | Out-Null
-          Get-ChildItem llama-x -Recurse -Include llama-server.exe, *.dll | Copy-Item -Destination layout\bin\llama\
+          New-Item -ItemType Directory -Force layout\bin | Out-Null
           Invoke-WebRequest $env:FFMPEG_URL -OutFile ffmpeg.zip
           Write-Host "ffmpeg sha256: $((Get-FileHash ffmpeg.zip -Algorithm SHA256).Hash)"
           Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-x

@@ -29,12 +29,8 @@ def engine_of(settings, op_params=None):
     import pipeline
     import cloudai
     eng = pipeline.draft_engine(settings)
-    if eng == "local":
-        return "local"
     if eng == "gemini":
-        if cloudai.provider(settings) == "plus":
-            return "plus-deep" if (op_params or {}).get("deep") else "plus"
-        return "api"
+        return "plus-deep" if (op_params or {}).get("deep") else "plus"
     return "manual"
 
 

@@ -79,11 +79,7 @@ DEFAULT_SETTINGS = {
     "phone": "",
     "marketing_ok": "0",            # (선택) 새 기능·지원 사업·연수 소식 받기
     "profile_asked": "0",           # 이미 쓰던 선생님께 정보 적기를 한 번 물어봤는지
-    "ai_choice": "",                # 설정의 AI 고르기: builtin | apple | gemini | external | manual (비면 기존 설정으로 추정)
-    "local_ai_url": "",             # 예: http://127.0.0.1:11434/v1 (Ollama), http://127.0.0.1:1234/v1 (LM Studio)
-    "local_ai_model": "",
-    "draft_local": "1",
-    "draft_light_ok": "0",          # 가벼운 쓰담 AI 모델(8GB용)로도 초안 쓰기 — 기본은 끔             # Gemini 키가 없으면 세특 초안도 내 맥 AI 앱으로
+    "ai_choice": "",                # 설정의 AI 고르기: plus | apple | manual (비면 기존 설정으로 추정)
     "whisper_model": "",
     # 구글시트 자동 동기화 + 구글 드라이브 백업
     "sheets_auto": "1",

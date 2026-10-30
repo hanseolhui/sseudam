@@ -310,9 +310,6 @@ def busy_reason():
         import whisper
         if any((m.get("download") or {}).get("status") == "downloading" for m in whisper.status().get("models", [])):
             return "받아쓰기 모델 내려받는 중"
-        import localai
-        if any((d or {}).get("status") == "downloading" for d in localai._llm_dl.values()):
-            return "AI 모델 내려받는 중"
     except Exception:  # noqa
         pass
     return ""

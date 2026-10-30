@@ -121,8 +121,8 @@ def t_whisper_direct():
 
 
 def t_llm_engine():
-    st = call("/api/localai/models")
-    return {"supported": st.get("supported"), "engine": st.get("engine"), "machine": st.get("machine")}
+    st = call("/api/ai/state")
+    return {"record_engine": st.get("active_seg"), "draft_engine": st.get("draft")}
 
 
 def t_feedback_preview():

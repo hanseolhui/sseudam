@@ -856,43 +856,17 @@ def local_segment(rid, engine, settings=None):
 
 
 def seg_engine(settings):
-    """학생별 분리 엔진: gemini | local(Ollama·LM Studio) | apple(기기 안 AI) | rules(이름 기준).
-    자동이면 Gemini 키 → 내 맥 AI 앱 → 기기 안 AI → 이름 기준 순."""
+    """기록 정리는 기기 안 AI 또는 이름 규칙만 사용한다."""
     import localai
-    choice = settings.get("seg_engine") or "auto"
-    if choice == "gemini":
-        return "gemini" if ai_ready(settings) else "rules"
-    if choice == "local":
-        return "local" if localai.local_configured(settings) else "rules"
-    if choice == "apple":
-        return "apple" if localai.apple_ready() else "rules"
-    if choice == "rules":
+    if settings.get("seg_engine") == "rules":
         return "rules"
-    if ai_ready(settings):
-        return "gemini"
-    if localai.local_configured(settings):
-        return "local"
-    if localai.apple_ready():
-        return "apple"
-    return "rules"
+    return "apple" if localai.apple_ready() else "rules"
 
 
 def draft_engine(settings):
-    """세특 초안 엔진: Gemini 키가 있으면 Gemini, 없으면 내 맥 AI 앱(설정한 경우). 기기 안 AI는 초안엔 작아서 안 씀."""
-    import localai
-    if settings.get("ai_choice") == "manual":
-        return None              # 'AI 없이'를 골랐으면 늘 프롬프트 복사
-    local = settings.get("draft_local", "1") == "1" and localai.local_configured(settings)
-    if local and settings.get("local_ai_url") == "builtin" and settings.get("local_ai_model") in localai.LIGHT_MODELS \
-            and settings.get("draft_light_ok") != "1":
-        local = False            # 가벼운 모델은 초안에서 말을 지어내기 쉬워서 기본은 프롬프트 복사
-    if local and settings.get("ai_choice") in ("builtin", "external"):
-        return "local"           # 쓰담 AI 모델을 골랐으면 키가 있어도 맥 안에서
-    if ai_ready(settings):
-        return "gemini"
-    if local:
-        return "local"
-    return None
+    """앱 내 초안은 플러스 클라우드 전용. 무료는 프롬프트 복사/결과 입력."""
+    import plus
+    return "gemini" if plus.ENABLED and plus.active(settings) else None
 
 
 def _sentence_start(text, pos):
@@ -957,13 +931,10 @@ def _run_api(op, params, job_id=None):
         return _run_whisper(params, job_id)
     if op == "segment_local":
         return local_segment(params["recording_id"], params.get("engine") or "apple", settings)
-    if op in ("draft", "shorten") and draft_engine(settings) == "local":
-        import localai
-        p = build_prompt(op, params)
-        text = localai.generate("local", settings, p.get("system"), p["prompt"])
-        if op == "draft":
-            text = _expand_if_short(text, params, settings, lambda pr: localai.generate("local", settings, p.get("system"), pr))
-        return apply(op, params, text)
+    if op in ("draft", "shorten"):
+        if not draft_engine(settings):
+            raise ValueError("앱에서 초안을 만들려면 쓰담 플러스가 필요해요. 프롬프트를 복사해 ChatGPT·Gemini에서 작성한 뒤 결과를 붙여넣어 저장할 수 있어요.")
+        settings = dict(settings, api_provider="plus", mode="api")
     import cloudai
     p = build_prompt(op, params)
     if op == "transcribe":   # 녹음 파일 받아쓰기는 Gemini만 (고른 외부 AI와 상관없이 Gemini 키 필요)

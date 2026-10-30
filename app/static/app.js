@@ -415,7 +415,7 @@ async function viewDashboard() {
       <h2>쓰담에 오신 것을 환영합니다</h2>
       <p>수업 중 녹음한 학생 평가와 상담 기록을 학생별로 모아 세특 초안까지 만들어 주는 도구입니다.</p>
       <div class="steps">
-        <div class="card"><b>1</b><h3>AI 고르기</h3><p class="muted small">설정 → 🧠 AI에서 '쓰담 AI 모델'을 누르면 이 컴퓨터에 맞는 AI를 알아서 받아요.</p><a href="#/settings/ai-card">AI 고르기 →</a></div>
+        <div class="card"><b>1</b><h3>AI 고르기</h3><p class="muted small">기록은 기기 안 AI 또는 이름 기준으로 정리해요. 별도 AI 모델 설치는 필요 없어요.</p><a href="#/settings/ai-card">AI 고르기 →</a></div>
         <div class="card"><b>2</b><h3>학급·명단 등록</h3><p class="muted small">학급을 만들고 NEIS 명단의 '번호, 이름'을 복사해 붙여넣습니다.</p><a href="#/classes">학급 만들기 →</a></div>
         <div class="card"><b>3</b><h3>녹음 올리기</h3><p class="muted small">아이폰 음성메모를 iCloud '쓰담 녹음' 폴더에 저장하거나 끌어다 놓습니다.</p><a href="#/recordings">녹음함 →</a></div>
         <div class="card"><b>4</b><h3>세특 초안</h3><p class="muted small">학생별로 쌓인 관찰기록으로 초안을 만들고 구글시트로 보냅니다.</p><a href="#/drafts">세특 초안 →</a></div>
@@ -1258,6 +1258,8 @@ function editStudentModal(s, onSaved) {
 
 async function viewStudent(id, areaParam) {
   const d = await api('/api/students/' + id);
+  const draftSettings = await api('/api/settings');
+  const paidDraft = draftSettings.active_draft === 'gemini';
   const s = d.student, c = d.class, areas = d.areas;
   const area = areas.find(a => a.id === areaParam) || areas[0];
   const limit = area.limit, multi = areas.length > 1;
@@ -1292,13 +1294,13 @@ async function viewStudent(id, areaParam) {
         <div class="card">
           <div class="section-title"><h2>${esc(area.full)}</h2>${current ? `<span class="badge ${current.status === '확정' ? 'green' : 'blue'}">${current.status}</span>` : ''}</div>
           <label class="field"><span>이번 초안에서 강조할 점 (선택)</span><input id="d-extra" placeholder="예: 탐구 보고서의 문제해결 과정, 진로(환경공학) 연계"></label>
-          <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap"><button class="primary shrink" id="d-gen" ${notesInArea.length ? '' : 'disabled'}>✨ AI 초안 생성</button>
+          <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap"><button class="primary shrink${paidDraft ? '' : ' hidden'}" id="d-gen" ${notesInArea.length ? '' : 'disabled'}>✨ 플러스로 초안 만들기</button>
             <button class="shrink hidden" id="d-deep" ${notesInArea.length ? '' : 'disabled'} title="쓰담 플러스: 더 깊게 쓰는 AI로 한 번 더">💜 정성 초안</button>
             <button class="shrink" id="d-ext" ${notesInArea.length ? '' : 'disabled'} title="프롬프트를 복사해서 ChatGPT·Gemini 앱에서 쓰고, 답을 붙여넣어 저장">📋 ChatGPT·Gemini로 쓰기</button><span id="d-deep-left" class="small muted"></span></div>
-          <textarea id="d-text" rows="12" style="margin-top:12px" placeholder="AI 초안이 여기에 표시됩니다. 직접 작성·수정해도 됩니다.">${esc(current ? current.content : '')}</textarea>
+          <textarea id="d-text" rows="12" style="margin-top:12px" placeholder="ChatGPT·Gemini에서 만든 세특 초안을 여기에 붙여넣으세요. 직접 작성·수정한 뒤 아래 저장 버튼을 누르세요.">${esc(current ? current.content : '')}</textarea>
           <div class="row" style="margin-top:6px;align-items:center"><span class="counter" id="d-count"></span><span></span>
             ${current && current.ai_text ? `<span class="small muted" id="d-rate">AI 초안 어땠나요? <button class="shrink sm ghost" data-rate="1" title="좋아요">👍</button><button class="shrink sm ghost" data-rate="0" title="아쉬워요">👎</button></span>` : ''}
-            <button class="shrink sm" id="d-short">AI로 줄이기</button><button class="shrink sm" id="d-copy">복사</button></div>
+            <button class="shrink sm" id="d-short">${paidDraft ? '플러스로 줄이기' : '줄이기 요청문 복사'}</button><button class="shrink sm" id="d-copy">복사</button></div>
           <div id="d-warn"></div>
           <details style="margin-top:12px"><summary>초안의 관찰 근거 확인</summary>
             <p class="small muted">생성 당시 입력한 기록입니다. 초안에서 문장을 선택하면 비슷한 표현이 있는 기록을 먼저 보여 줍니다. 일치 후보가 사실을 증명하는 것은 아니므로 원문과 비교해 주세요.</p>
@@ -1415,7 +1417,7 @@ async function viewDrafts(classId, areaParam) {
   const draftState = s => s.draft_status === '확정' ? 'confirmed' : s.draft ? 'review' : 'missing';
   const overLimit = s => s.draft_bytes > (s.byte_target || limit);
   const done = d.students.filter(s => s.draft_status === '확정').length;
-  const isApi = settings.active_draft === 'gemini' || settings.active_draft === 'local';   // 반 전체를 AI로 바로 만들 수 있음
+  const isApi = settings.active_draft === 'gemini';   // 반 전체를 AI로 바로 만들 수 있음
   const ctxPreview = [d.context.topic, d.context.competencies, d.context.philosophy].filter(x => (x || '').trim()).join(' · ');
   view.innerHTML = `
     <div class="page-head"><div><h1>초안</h1><div class="muted">학급 전체의 초안을 만들고 구글시트·엑셀로 내보냅니다.</div></div>
@@ -1440,12 +1442,12 @@ async function viewDrafts(classId, areaParam) {
           <button id="g-all" ${withNotes ? '' : 'disabled'}>기록 있는 학생 전체 (${withNotes})</button></div>` : ''}
         <div class="act-group"><span class="act-label">ChatGPT · Gemini</span>
           <button class="${isApi ? '' : 'primary'}" id="g-prompt" ${withNotes ? '' : 'disabled'} title="ChatGPT·Gemini 앱에 붙여넣을 반 전체 프롬프트">📋 반 전체 프롬프트 복사 (${missing || withNotes}명)</button>
-          <button id="g-paste" ${withNotes ? '' : 'disabled'}>📥 AI 답 붙여넣기</button></div>
+          <button id="g-paste">📥 외부에서 만든 초안 붙여넣기</button></div>
         <div class="act-group"><span class="act-label">내보내기</span>
           <button id="x-copy">표 복사</button><button id="x-csv">CSV</button><button id="x-xlsx">엑셀</button>
           <button id="x-sheet">구글시트 반영</button></div>
       </div>
-      <p class="help">${isApi ? '<b>✨</b>는 이 컴퓨터의 AI로 바로 만들어요. 더 다듬고 싶으면 ' : ''}<b>📋 반 전체 프롬프트 복사</b> → ChatGPT·Gemini 앱에 붙여넣기 → 나온 답을 통째로 <b>📥 AI 답 붙여넣기</b>에 넣으면 학생마다 초안이 한꺼번에 들어가요.</p>
+      <p class="help">${isApi ? '<b>✨</b>는 이 컴퓨터의 AI로 바로 만들어요. 더 다듬고 싶으면 ' : ''}<b>📋 반 전체 프롬프트 복사</b> → ChatGPT·Gemini 앱에 붙여넣기 → 나온 답을 통째로 <b>📥 외부에서 만든 초안 붙여넣기</b>에 넣으면 학생마다 초안이 한꺼번에 들어가요.</p>
       <details class="lesson-ctx" id="lesson-ctx" ${ctxPreview ? '' : 'open'}>
         <summary class="ctx-toggle"><span class="ctx-title">📚 수업 정보</span>
           <span class="ctx-preview">${ctxPreview ? esc(ctxPreview.length > 70 ? ctxPreview.slice(0, 70) + '…' : ctxPreview) : '종목·역량·교사 철학을 적어 두면 초안이 수업에 맞게 나와요'}</span>
@@ -1499,7 +1501,7 @@ async function viewDrafts(classId, areaParam) {
   $('#dc').onchange = e => { location.hash = '#/drafts/' + e.target.value; };
   const batch = async onlyMissing => {
     const n = onlyMissing ? missing : withNotes;
-    if (!confirmBox(`${n}명의 '${area.name}' 초안을 AI로 생성합니다. 무료 등급은 분당 요청 수 제한이 있어 몇 분 걸릴 수 있습니다. 진행할까요?`)) return;
+    if (!confirmBox(`${n}명의 '${area.name}' 초안을 AI로 생성합니다. 플러스 클라우드 AI로 관찰 내용이 전송되며 몇 분 걸릴 수 있습니다. 진행할까요?`)) return;
     const r = await api('/api/drafts/batch', { class_id: c.id, only_missing: onlyMissing, area: area.id });
     toast(`${r.count}명 초안 생성을 대기열에 넣었습니다`); pollJobs(true);
   };
@@ -1510,7 +1512,7 @@ async function viewDrafts(classId, areaParam) {
     copyText(r.prompt);
     toast(`${r.count}명 프롬프트를 복사했어요 ✓ ChatGPT·Gemini 앱에 붙여넣으세요`);
   };
-  if ($('#g-paste')) $('#g-paste').onclick = () => modal(`<h2>📥 AI 답 붙여넣기</h2>
+  if ($('#g-paste')) $('#g-paste').onclick = () => modal(`<h2>📥 외부에서 만든 초안 붙여넣기</h2>
       <p class="muted">ChatGPT·Gemini가 쓴 답을 <b>통째로</b> 붙여넣으세요. "[3번] …" 줄마다 그 학생 초안으로 저장해요.</p>
       <textarea id="bp-text" rows="14" placeholder="[1번] 토론 수업에서 …&#10;[2번] 실험 활동에서 …"></textarea>
       <div class="modal-actions"><button id="bp-x">닫기</button><button class="primary" id="bp-go">학생별로 저장</button></div>`, box => {
@@ -1535,23 +1537,10 @@ async function viewDrafts(classId, areaParam) {
 // ───────────────────────── 설정 ─────────────────────────
 
 function aiGuidance(st, plus) {
-  const downloading = st.builtin.models.some(m => m.download?.status === 'downloading');
-  if (st.choice === 'plus') {
-    if (plus.offline) return '구독 서버에 연결하지 못해 마지막 상태를 보여요. 인터넷 연결 후 구독을 다시 확인해 주세요.';
-    if (!plus.loggedIn) return '쓰담 플러스 로그인이 필요해요. 아래에서 로그인하세요. 텍스트는 이름을 가린 뒤 외부 AI로 보내요.';
-    if (!plus.sub?.active) return '플러스 이용 상태를 확인해 주세요. 현재 실제 처리 방식은 위에 표시돼요. 다른 방식은 “AI 방식 바꾸기”에서 고를 수 있어요.';
-    return '쓰담 플러스 이용 중이에요. 학생 이름은 가리지만 관찰 내용은 외부 AI로 전송돼요.';
-  }
-  if (st.choice === 'builtin') {
-    if (!st.builtin.supported) return '이 컴퓨터에서는 쓰담 AI 모델을 지원하지 않아요. “AI 방식 바꾸기”에서 다른 방식을 골라 주세요.';
-    if (downloading) return '모델을 내려받고 있어요. 준비 전 실제 처리 방식은 위에 표시돼요.';
-    if (!st.builtin.models.some(m => m.installed && m.id === st.local_ai_model)) return '아래 추천 모델을 내려받아 주세요. 모델 파일을 받을 때는 인터넷이 필요해요.';
-    return '설치된 모델로 이 컴퓨터에서 텍스트를 처리해요. 초안 처리 방식은 위에서 확인하세요.';
-  }
-  if (st.choice === 'gemini') return st.has_key ? '외부 AI API를 선택했어요. 처리할 텍스트가 해당 제공업체로 전송돼요. 연결 변경은 고급 설정에서 해 주세요.' : 'API 키가 없어요. 고급 연결 설정에서 키를 연결하거나 AI 방식을 바꿔 주세요.';
-  if (st.choice === 'external') return '연결한 AI 앱으로 텍스트를 보내요. 고급 설정의 주소가 원격 서버라면 이 컴퓨터 밖으로 전송돼요.';
-  if (st.choice === 'apple') return '학생 나누기는 기기 안 AI를 사용해요. 초안은 위에 표시된 방식으로 처리해요.';
-  return '이름 기준으로 기록을 나눠요. 초안은 프롬프트를 복사해 직접 작성할 수 있어요. 외부 채팅에 붙여넣으면 그 서비스로 내용이 전달돼요.';
+  if (plus.offline) return '플러스 연결을 확인해 주세요. 연결되지 않으면 프롬프트를 복사해 외부에서 작성하고 결과를 저장할 수 있어요.';
+  return st.draft === 'gemini'
+    ? '기록 정리는 기기 안에서, 세특 초안은 플러스 클라우드 AI로 만들어요. 이름을 가리지만 관찰 내용은 외부 AI로 전송돼요. 초안은 기록과 대조해 확인해 주세요.'
+    : '무료: 프롬프트 복사 → ChatGPT·Gemini에서 작성 → 결과 붙여넣기 → 저장·수정. 직접 붙여넣은 내용은 해당 서비스로 전달돼요. 앱 안에서 바로 만드는 초안은 플러스 전용이에요.';
 }
 
 async function viewSettings(section) {
@@ -1633,24 +1622,10 @@ async function viewSettings(section) {
       </div>
       <div class="card" style="grid-column:1 / -1;order:1" id="ai-card" data-pane="ai">
         <div class="section-title"><h2>🧠 AI</h2><span id="ai-now" class="small"></span></div>
-        <p class="help" style="margin-top:-4px">현재 쓰는 방식과 준비 상태를 먼저 확인하세요. 바꾸려면 <b>AI 방식 바꾸기</b>를 펼치세요. 방식 버튼을 누르면 바로 적용돼요. 받아쓰기 방식은 아래에서 따로 설정해요.</p>
+        <p class="help" style="margin-top:-4px">현재 쓰는 방식과 준비 상태를 먼저 확인하세요. 바꾸려면 <b>기록 정리 · 플러스 설정</b>를 펼치세요. 방식 버튼을 누르면 바로 적용돼요. 받아쓰기 방식은 아래에서 따로 설정해요.</p>
         <div id="ai-guidance" class="info-box" role="status" aria-live="polite">현재 설정을 확인하고 있어요…</div>
-        <details id="ai-methods" style="margin-top:12px"><summary>AI 방식 바꾸기</summary><div class="ai-tiles" id="ai-tiles"></div></details>
+        <details id="ai-methods" style="margin-top:12px"><summary>기록 정리 · 플러스 설정</summary><div class="ai-tiles" id="ai-tiles"></div></details>
         <div id="ai-detail" class="ai-detail"></div>
-        <details id="ai-ext" style="margin-top:12px"><summary class="small">고급 연결 설정 — API 키 · 다른 AI 앱</summary>
-          <div id="ai-gemini" class="info-box" style="margin-top:8px"><b>외부 AI API 키</b> <span class="small muted">— 이 컴퓨터 AI 대신 Gemini · ChatGPT · Claude로 나누고 초안 쓰기</span>
-          <div class="seg-pick" role="radiogroup" aria-label="외부 AI 고르기" style="margin-top:8px">${Object.entries(s.api_keys).filter(([p]) => p !== 'plus').map(([p, k]) =>
-            `<label class="check shrink"><input type="radio" name="api_prov" value="${p}" ${(s.api_provider || 'gemini') === p ? 'checked' : ''}> ${esc(k.label)}${k.has ? ' <span class="ok-text small">✓ 키 있음</span>' : ''}</label>`).join('')}</div>
-          <div id="api-fields"></div>
-        </div>
-
-          <div class="info-box" style="margin-top:8px">
-            <div id="la-detect" class="small" style="margin:6px 0">찾는 중…</div>
-            <label class="field"><span>주소</span><input id="local_ai_url" value="${esc(s.local_ai_url === 'builtin' ? '' : (s.local_ai_url || ''))}" placeholder="http://127.0.0.1:11434/v1"></label>
-            <label class="field" style="margin-top:6px"><span>모델</span><input id="local_ai_model" value="${esc(s.local_ai_url === 'builtin' ? '' : (s.local_ai_model || ''))}" list="la-models" placeholder="예: qwen3:8b"><datalist id="la-models"></datalist></label>
-            <div class="row" style="margin-top:8px"><button class="sm shrink" id="la-test-local">시험해 보기</button><button class="sm primary shrink" id="la-use-ext">이 앱으로 쓰기</button><span id="la-local-r" class="small"></span></div>
-          </div>
-        </details>
       </div>
       <div class="card" style="grid-column:1 / -1;order:2" id="google" data-pane="data">
         <div class="section-title"><h2>구글시트 자동 반영 · 구글 드라이브 백업</h2><span id="g-status" class="small"></span></div>
@@ -1732,7 +1707,6 @@ async function viewSettings(section) {
       <span class="save-chip" id="save-chip">바꾸면 바로 저장돼요</span></div>`;
   $('#open-data').onclick = e => { e.preventDefault(); api('/api/open_data', {}); };
   const collect = () => ({
-    [apiProv() + '_api_key']: $('#key').value, [apiProv() + '_model']: $('#model').value.trim(),
     area_limits: JSON.stringify(Object.fromEntries($$('.area-limit').map(i => [i.dataset.area, +i.value || 0]))),
     byte_limit: ($('.area-limit[data-area=subject]') || {}).value || s.byte_limit, ...readProfile(document, ''),
     draft_guidance: $('#draft_guidance').value, style_examples: $('#style_examples').value,
@@ -1744,7 +1718,6 @@ async function viewSettings(section) {
     update_check: $('#update_check').checked ? '1' : '0',
     drive_inbox: $('#drive_inbox').checked ? '1' : '0',
     auto_update: $('#auto_update').checked ? '1' : '0',
-    ...($('#draft_local') ? { draft_local: $('#draft_local').checked ? '1' : '0' } : {}),
     telemetry: $('#telemetry').checked ? '1' : '0',
   });
   const save = async () => { await api('/api/settings', collect()); };
@@ -1762,44 +1735,9 @@ async function viewSettings(section) {
     clearTimeout(saveT);
     saveT = setTimeout(async () => { try { await save(); flashSaved(el); updateModeBadge(); } catch (err) { /* toast 표시됨 */ } }, 250);
   });
-  // 외부 AI API: Gemini · ChatGPT · Claude 중 하나 골라 키·모델 넣기
-  const apiProv = () => ($('input[name=api_prov]:checked') || {}).value || 'gemini';
-  const API_HELP = {
-    gemini: { ph: 'AIza로 시작하는 키', get: '키 받기', note: '녹음 글이 구글 서버로 가요. 무료 등급은 구글이 서비스 개선에 쓸 수 있어서, AI Studio에서 결제 수단을 등록(유료 등급)하는 걸 권해요.' },
-    openai: { ph: 'sk-로 시작하는 키', get: '키 받기', note: '녹음 글이 OpenAI 서버로 가요. ChatGPT 구독(Plus)과 API는 따로라서, platform.openai.com 에서 결제(크레딧)를 넣어야 써요. API로 보낸 내용은 기본적으로 학습에 쓰이지 않아요.' },
-    claude: { ph: 'sk-ant-로 시작하는 키', get: '키 받기', note: '녹음 글이 Anthropic 서버로 가요. Claude 구독(Pro)과 API는 따로라서, console.anthropic.com 에서 결제(크레딧)를 넣어야 써요. API로 보낸 내용은 기본적으로 학습에 쓰이지 않아요.' },
-  };
-  const renderApiFields = () => {
-    const p = apiProv(), k = s.api_keys[p], h = API_HELP[p];
-    $('#api-fields').innerHTML = `
-      <label class="field" style="margin-top:8px"><span>${esc(k.label)} API 키 <a href="${esc(k.site)}" target="_blank" class="small">${h.get} ↗</a></span>
-        <input id="key" type="password" placeholder="${k.has ? esc(k.masked) + ' (저장됨 — 바꿀 때만 입력)' : h.ph}" autocomplete="off"></label>
-      <div class="row" style="margin-top:8px"><button class="shrink" id="test">연결 확인</button><button class="shrink primary" id="use-gemini">${esc(k.label)}로 쓰기</button>${k.has ? '<button class="shrink danger" id="clear-key">키 삭제</button>' : ''}<span id="test-result" class="small"></span></div>
-      <label class="field" style="margin-top:10px"><span>모델 <span class="small muted">— 연결 확인을 누르면 고를 수 있는 목록이 나와요${p === 'openai' ? ' (비워 두면 가장 좋은 모델)' : ''}</span></span><input id="model" value="${esc(k.model)}" list="model-list"><datalist id="model-list"></datalist></label>
-      <p class="help">${h.note}</p>`;
-    $('#test').onclick = async () => {
-      $('#test-result').textContent = '확인 중…';
-      try {
-        const r = await api('/api/settings/test', { provider: p, key: $('#key').value }, { silent: true });
-        $('#test-result').innerHTML = `<span style="color:var(--green)">✓ 연결 성공 (모델 ${r.models.length}개)</span>`;
-        $('#model-list').innerHTML = r.models.map(m => `<option value="${esc(m.name)}">${esc(m.display)}</option>`).join('');
-        if ($('#key').value) { await save(); k.has = true; flashSaved($('#key')); toast('키를 저장했어요 ✓'); updateModeBadge(); aiLoad(); }
-      } catch (e) { $('#test-result').innerHTML = `<span style="color:var(--red)">${esc(e.message)}</span>`; }
-    };
-    if ($('#clear-key')) $('#clear-key').onclick = async () => {
-      if (!confirmBox(`저장된 ${k.label} API 키를 삭제할까요?`)) return;
-      await api('/api/settings', { clear_key: p }); router(true); updateModeBadge();
-    };
-    $('#use-gemini').onclick = async () => {
-      if ($('#key').value.trim() || $('#model').value.trim() !== k.model) { await save(); }
-      await aiChoose('gemini', null, p);
-    };
-  };
-  renderApiFields();
-  $$('input[name=api_prov]').forEach(r => r.addEventListener('change', e => { e.stopPropagation(); renderApiFields(); }));
   // ── 🧠 AI 카드: 하나 고르면 바로 바뀜 ──
   const gb = n => (n / 1e9).toFixed(1) + 'GB';
-  const ENG_NAME = { plus: '쓰담 플러스로', builtin: '쓰담 AI 모델로', apple: '기기 안 AI로', gemini: '외부 AI API로', external: '내 맥 AI 앱으로', manual: 'AI 없이 쓰기로' };
+  const ENG_NAME = { plus: '쓰담 플러스로', apple: '기기 내 기록 정리로', manual: '이름 기준 기록 정리로' };
   let aiSt = null;
   const aiGen = ++AI_GEN;   // 설정 화면을 다시 열면 예전 화면의 갱신은 멈춤 (두 갱신이 번갈아 그려 깜빡이지 않게)
   const tileHtml = (id, icon, title, sub, status, on, disabled) => `
@@ -1807,56 +1745,22 @@ async function viewSettings(section) {
       <span class="ai-tile-check">${on ? '✓ 사용 중' : ''}</span>
       <span class="ai-tile-icon">${icon}</span><b>${title}</b><span class="small muted">${sub}</span>
       <span class="ai-tile-status small">${status}</span></button>`;
-  const modelName = id => ((aiSt.builtin.models.find(m => m.id === id) || {}).model || id);
   let plusSt = { loggedIn: false }, plusFresh = false, plusWait = null;
-  const dlPct = dd => Math.floor(100 * dd.done / Math.max(1, dd.total));
-  const dlAct = (m) => {
-    const dd = m.download || {}, pct = dlPct(dd);
-    return dd.stage ? `<span class="muted">${esc(dd.stage)}…</span>` : `<span class="bar wide"><i style="width:${pct}%"></i></span> ${pct}% · ${gb(dd.done)} / ${gb(dd.total)} <button class="sm ghost llm-stop" data-id="${m.id}">멈춤</button>`;
-  };
-  const bindStop = () => $$('.llm-stop').forEach(x => x.onclick = async () => { await api('/api/localai/models/cancel', { id: x.dataset.id }); toast('멈췄어요. 다시 누르면 이어서 받아요'); setTimeout(aiLoad, 800); });
   const aiLoad = async (tick) => {
     if (aiGen !== AI_GEN || !document.body.contains($('#ai-tiles'))) return;
     try { aiSt = await api('/api/ai/state', undefined, { silent: true }); } catch (e) { $('#ai-detail').textContent = e.message; return; }
     if (aiGen !== AI_GEN) return;
-    // 모델 받는 중의 주기 갱신: 진행 막대만 바꿈 (화면 전체를 다시 그리면 입력 중인 칸·스크롤이 튐)
-    const dlNow = aiSt.builtin.models.find(m => (m.download || {}).status === 'downloading');
-    if (tick && dlNow) {
-      const pct = dlPct(dlNow.download);
-      const ts = $('.ai-tile[data-choice="builtin"] .ai-tile-status');
-      if (ts) ts.innerHTML = `<span class="bar"><i style="width:${pct}%"></i></span> 받는 중 ${pct}%`;
-      const row = $(`.llm-act[data-id="${dlNow.id}"]`);
-      if (row) { row.innerHTML = dlAct(dlNow); bindStop(); }
-      clearTimeout(AI_TIMER);
-      AI_TIMER = setTimeout(() => aiLoad(true), 1500);
-      return;
-    }
     plusSt = aiSt.plus_enabled ? await api('/api/plus?refresh=' + (plusFresh ? '0' : '1'), undefined, { silent: true }).catch(() => ({ loggedIn: false })) : { loggedIn: false };
     plusFresh = true;
     if (aiGen !== AI_GEN) return;
-    const st = aiSt, b = st.builtin, mc = b.machine || {}, choice = st.choice;
+    const st = aiSt, choice = st.choice;
     const plusOn = !!(plusSt.loggedIn && plusSt.sub && plusSt.sub.active);
     const ymd = d => d ? new Date(d).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' }) : '';
-    const dl = b.models.find(m => (m.download || {}).status === 'downloading');
-    const inst = b.models.filter(m => m.installed);
-    const usingId = st.local_ai_url === 'builtin' ? st.local_ai_model : '';
-    let bStatus;
-    if (!b.supported) bStatus = '<span class="muted">이 컴퓨터는 지원 안 함</span>';
-    else if (dl) bStatus = `<span class="bar"><i style="width:${Math.floor(100 * dl.download.done / Math.max(1, dl.download.total))}%"></i></span> 받는 중 ${Math.floor(100 * dl.download.done / Math.max(1, dl.download.total))}%`;
-    else if (usingId && inst.some(m => m.id === usingId)) bStatus = '✓ ' + esc(modelName(usingId));
-    else if (inst.length) bStatus = '받아 둠 · ' + esc(modelName(inst[0].id));
-    else bStatus = mc.model ? `누르면 추천 모델 받기 (${gb((b.models.find(m => m.id === mc.model) || {}).size || 0)})` : '';
-    const isMac = mc.os === 'mac';
     $('#ai-tiles').innerHTML =
       (st.plus_enabled ? tileHtml('plus', '💜', '쓰담 플러스 <small class="muted">베타</small>', '로그인으로 연결 · 텍스트는 외부 AI로 처리', plusOn ? `✓ ${esc(plusSt.sub.planName)} · ${ymd(plusSt.sub.endsAt)}까지` : (plusSt.loggedIn ? (plusSt.betaRequested ? '베타 신청함 · 승인 기다리는 중' : '베타 신청하면 1달 무상') : '로그인하면 시작'), choice === 'plus', false) : '') +
-      tileHtml('builtin', '✨', '쓰담 AI 모델', '기록 처리도 이 컴퓨터에서 · 모델 설치 필요', bStatus, choice === 'builtin', !b.supported) +
-      (isMac ? tileHtml('apple', '🍎', '기기 안 AI', '기기 지원 필요 · 학생 나누기만', st.apple.state === 'ready' ? '✓ 바로 쓸 수 있어요' : '<span class="muted">이 맥에선 안 돼요</span>', choice === 'apple', st.apple.state !== 'ready') : '') +
-      tileHtml('manual', '✋', 'AI 없이', '이름 기준 나누기 · 초안은 프롬프트 복사', '', choice === 'manual', false) +
-      (choice === 'gemini' ? tileHtml('gemini', '🔑', esc(st.provider_label) + ' (외부 API)', '고급에서 연결함', st.has_key ? '✓ 키 연결됨' + (st.api_model ? ' · ' + esc(st.api_model) : '') : '키를 넣어야 해요', true, false) : '') +
-      (choice === 'external' ? tileHtml('external', '🖥️', '내 맥 AI 앱', 'Ollama · LM Studio', '✓ ' + esc(st.local_ai_model), true, false) : '');
-    const draftTxt = { gemini: choice === 'plus' ? '쓰담 플러스' : st.provider_label, local: choice === 'external' ? '내 맥 AI 앱' : '쓰담 AI 모델', manual: '프롬프트 복사(ChatGPT·Gemini 앱)' }[st.draft] || st.draft;
-    const segTxt = { gemini: choice === 'plus' ? '쓰담 플러스' : st.provider_label, local: choice === 'external' ? '내 맥 AI 앱' : '쓰담 AI 모델', apple: '기기 안 AI', rules: '이름 기준' }[st.active_seg] || st.active_seg;
-    $('#ai-now').innerHTML = `학생 나누기: <b>${esc(segTxt)}</b> · 세특 초안: <b>${esc(draftTxt)}</b>`;
+      tileHtml('apple', '🍎', '기기 내 기록 정리', '학생별 나누기 · 지원 기기에서 사용', st.apple.text, st.active_seg === 'apple', st.apple.state !== 'ready') +
+      tileHtml('manual', '✋', '이름 기준 기록 정리', 'AI 없이 학생 이름을 기준으로 나누기', '', st.active_seg === 'rules', false);
+    $('#ai-now').textContent = `기록 정리: ${st.active_seg === 'apple' ? '기기 안 AI' : '이름 기준'} · 세특 초안: ${st.draft === 'gemini' ? '플러스 클라우드 AI' : '외부에서 작성 후 붙여넣기'}`;
     // 고른 것에 맞는 설명·설정
     // Preserve the user's expanded/collapsed choice during refreshes.
     $('#ai-guidance').textContent = aiGuidance(st, plusSt);
@@ -1873,7 +1777,7 @@ async function viewSettings(section) {
         const u = plusSt.sub;
         const renew = !u.autoRenew && u.plan !== 'staff';   // 자동 결제가 없으면 연장하기 (미리 사도 남은 기간 뒤에 이어 붙음)
         d = `<div class="spec">💜 <b>${esc(plusSt.email)}</b> · ${esc(u.planName)} · <b>${ymd(u.endsAt)}</b>까지 (<b${renew && (u.daysToEnd ?? u.daysLeft) <= 7 ? ' style="color:var(--amber)"' : ''}>${u.daysToEnd ?? u.daysLeft}일 남음</b>)${u.autoRenew ? ' · 자동 결제' : ''}
-          <div class="small muted" style="margin-top:4px">초안 · 분리 무제한 · 정성 초안 ${(u.deepCap || 0) >= 1e8 ? '무제한' : Math.max(0, (u.deepCap || 0) - (u.deepUsed || 0)) + '회 남음'} · 등록된 컴퓨터 ${plusSt.devices.length}/${plusSt.deviceLimit}대 (${plusSt.devices.map(x => esc(x.device_name)).join(', ')})${plusSt.offline ? ' · 지금은 서버 확인이 안 돼서 마지막 상태를 보여요' : ''}</div>
+          <div class="small muted" style="margin-top:4px">클라우드 초안 무제한 · 정성 초안 ${(u.deepCap || 0) >= 1e8 ? '무제한' : Math.max(0, (u.deepCap || 0) - (u.deepUsed || 0)) + '회 남음'} · 등록된 컴퓨터 ${plusSt.devices.length}/${plusSt.deviceLimit}대 (${plusSt.devices.map(x => esc(x.device_name)).join(', ')})${plusSt.offline ? ' · 지금은 서버 확인이 안 돼서 마지막 상태를 보여요' : ''}</div>
           ${renew ? `<div class="small muted" style="margin-top:4px">자동 결제가 없는 이용권이에요. 미리 연장해도 <b>남은 기간 뒤에 이어 붙어서</b> 손해 없어요.</div>` : ''}
           <div class="row" style="margin-top:8px">${choice !== 'plus' ? '<button class="sm primary shrink" id="plus-use">쓰담 플러스로 쓰기</button>' : ''}${renew ? `<a class="btn sm primary shrink" href="${esc(plusSt.renewUrl || 'https://apps.seoriarts.com/sseudam/plus')}" target="_blank">연장하기 ↗</a>` : ''}<a class="btn sm shrink" href="https://apps.seoriarts.com/sseudam/plus" target="_blank">구독·결제 관리 ↗</a><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`;
       } else {
@@ -1890,32 +1794,9 @@ async function viewSettings(section) {
           <label class="field" style="margin-top:8px"><span>하고 싶은 말 (선택)</span><input id="plus-beta-msg" placeholder="예: 고2 과학 4개 반, 세특 정리에 쓰고 싶어요"></label>
           <div class="row" style="margin-top:8px"><button class="sm primary shrink" id="plus-beta">베타 신청하기</button><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button><span id="plus-r" class="small"></span></div></div>`;
       }
-    } else if (choice === 'builtin') {
-      const spec = `<div class="spec">💻 <b>${isMac ? '이 맥' : '이 컴퓨터'}</b>: ${esc(mc.chip || '')}${mc.ram ? ' · 메모리 ' + mc.ram + 'GB' : ''}<div class="small">${mc.model ? '→ <b>' + esc((b.models.find(m => m.id === mc.model) || {}).name) + '</b> 모델 추천 · ' : ''}${esc(mc.why || '')}</div></div>`;
-      const modelSettingsOpen = $('#ai-models')?.open || false;
-      const primaryId = usingId || b.recommended || mc.model;
-      const modelRows = b.models.map(m => {
-        const dd = m.download || {}, busy = dd.status === 'downloading', pct = busy ? Math.floor(100 * dd.done / Math.max(1, dd.total)) : 0;
-        const tag = m.id === b.recommended ? `<span class="pill rec">추천</span>` : '';
-        let act;
-        if (m.installed) act = m.id === usingId ? '<span class="ok-text">✓ 쓰는 중</span>'
-          : '<button class="sm primary llm-use" data-id="' + m.id + '">이걸로 쓰기</button> <button class="sm ghost llm-del" data-id="' + m.id + '">지우기</button>';
-        else if (busy) act = dlAct(m);
-        else act = `<button class="sm ${m.id === b.recommended ? 'primary' : ''} llm-get" data-id="${m.id}">${m.partial ? '이어 받기' : '받기'} (${gb(m.size)})</button>`;
-        const err = dd.status === 'error' && dd.error ? `<div class="small bad-text">${esc(dd.error)}</div>` : '';
-        const warn = !m.fits ? '<div class="small" style="color:var(--amber)">이 컴퓨터 메모리로는 느리거나 안 될 수 있어요</div>' : '';
-        return { id: m.id, html: `<div class="llm-row${m.id === usingId && m.installed ? ' using' : ''}"><div><b>${esc(m.name)}</b>${tag} · ${esc(m.model)}<div class="small muted">${esc(m.desc)}</div>${warn}${err}</div><div class="llm-act" data-id="${m.id}">${act}</div></div>` };
-      });
-      const primaryRows = modelRows.filter(m => m.id === primaryId || (b.models.find(x => x.id === m.id)?.download || {}).status === "downloading");
-      const otherRows = modelRows.filter(m => !primaryRows.includes(m));
-      d = spec + primaryRows.map(m => m.html).join('') + `<details id="ai-models" ${modelSettingsOpen ? "open" : ""}><summary>다른 모델 · 저장 공간 관리</summary>${otherRows.map(m => m.html).join('')}${usingId && inst.some(m => m.id === usingId) ? `<p class="small">현재 모델을 지우면 다시 내려받아야 해요. <button class="sm ghost llm-del" data-id="${esc(usingId)}">현재 모델 지우기</button></p>` : ""}</details>` + ((st.light || []).includes(usingId)
-        ? `<label class="check" style="margin-top:10px"><input type="checkbox" id="draft_light" ${st.draft_light_ok === '1' ? 'checked' : ''}> 세특 초안도 이 가벼운 모델로 쓰기</label>
-           <p class="small" style="margin:4px 0 0;color:var(--amber)">가벼운 모델은 기록에 없는 내용을 지어낼 수 있어요. 끄면 초안은 <b>ChatGPT·Gemini로 쓰기</b>(프롬프트 복사)로 해요. 메모리 16GB 이상이면 '추천' 모델이 훨씬 정확해요.</p>`
-        : `<label class="check" style="margin-top:10px"><input type="checkbox" id="draft_local" ${st.draft_local !== '0' ? 'checked' : ''}> 세특 초안도 이 모델로 쓰기</label>`) + `
-        <p class="small muted" style="margin:6px 0 0">모델은 이 컴퓨터에만 있고, 쓸 때만 켜졌다가 10분 쉬면 꺼져서 메모리를 돌려줘요.</p>`;
     } else if (choice === 'apple') {
       d = `<div class="spec">🍎 ${esc(st.apple.text)} <button class="sm" id="la-test-apple">시험해 보기</button> <span id="la-apple-r" class="small"></span>
-        <div class="small muted" style="margin-top:4px">학생 나누기에만 써요. 세특 초안은 쓰담 AI 모델을 받아 두면 그걸로, 아니면 프롬프트 복사로 써요.</div></div>`;
+        <div class="small muted" style="margin-top:4px">학생별 기록 정리에만 써요. 세특 초안은 플러스 클라우드 AI 또는 외부에서 작성한 결과 붙여넣기를 이용하세요.</div></div>`;
     } else if (choice === 'manual') {
       d = `<div class="spec">✋ 이름이 나온 곳을 기준으로 나눠요. 세특 초안은 <b>프롬프트 복사</b> 버튼을 눌러 ChatGPT·Gemini 앱에 붙여넣으면 돼요.</div>`;
     } else if (choice === 'gemini' && !st.has_key) {
@@ -1974,15 +1855,7 @@ async function viewSettings(section) {
     };
     if ($('#la-test-apple')) $('#la-test-apple').onclick = () => laTest('apple', $('#la-apple-r'));
     $$('.ai-tile').forEach(t => t.onclick = () => aiChoose(t.dataset.choice, t));
-    $$('.llm-get').forEach(x => x.onclick = async () => { await api('/api/localai/models/download', { id: x.dataset.id }); toast('받기 시작했어요. 다 받으면 자동으로 써요 ✨'); aiLoad(); });
-    bindStop();
-    $$('.llm-use').forEach(x => x.onclick = async () => { await api('/api/localai/models/use', { id: x.dataset.id }); await api('/api/ai/choose', { choice: 'builtin' }); toast(modelName(x.dataset.id) + '(으)로 바꿨어요 ✓'); flashSaved(x); aiLoad(); updateModeBadge(); });
-    $$('.llm-del').forEach(x => x.onclick = async () => { if (!confirmBox('받은 모델을 지울까요? 다시 쓰려면 또 받아야 해요.')) return; await api('/api/localai/models/delete', { id: x.dataset.id }); toast('지웠어요'); aiLoad(); updateModeBadge(); });
-    if ($('#draft_local')) $('#draft_local').onchange = async e => { await api('/api/settings', { draft_local: e.target.checked ? '1' : '0' }); flashSaved(e.target); aiLoad(); };
-    if ($('#draft_light')) $('#draft_light').onchange = async e => { await api('/api/settings', { draft_light_ok: e.target.checked ? '1' : '0', draft_local: '1' }); flashSaved(e.target); toast(e.target.checked ? '초안도 가벼운 모델로 써요' : '초안은 ChatGPT·Gemini로 쓰기로 해요 ✓'); aiLoad(); };
     clearTimeout(AI_TIMER);
-    if (dl && document.body.contains($('#ai-tiles'))) AI_TIMER = setTimeout(() => aiLoad(true), 1500);
-    else if (b.models.some(m => (m.download || {}).status === 'done')) updateModeBadge();
   };
   const aiChoose = async (choice, tile, provider) => {
     if (choice === 'plus' && !(plusSt.loggedIn && plusSt.sub && plusSt.sub.active)) { showPlus = true; aiLoad(); setTimeout(() => $('#plus-email') && $('#plus-email').focus(), 200); return; }
@@ -1993,7 +1866,7 @@ async function viewSettings(section) {
     try {
       const r = await api('/api/ai/choose', { choice, provider });
       const nm = choice === 'gemini' ? r.provider_label + '(으)로' : ENG_NAME[choice];
-      toast(r.started ? `${nm} 바꿨어요 ✓ 이 컴퓨터에 맞는 모델(${modelName(r.started)})을 받기 시작했어요` : `${nm} 바꿨어요 ✓`);
+      toast(`${nm} 바꿨어요 ✓`);
       flashSaved(tile);
       if (choice === 'gemini' && !r.has_key) setTimeout(() => $('#key') && $('#key').focus(), 300);
     } catch (e) { /* 오류 토스트 */ }
@@ -2002,26 +1875,11 @@ async function viewSettings(section) {
   const laTest = async (engine, out) => {
     out.textContent = '시험하는 중…';
     try {
-      const r = await api('/api/localai/test', { engine, local_ai_url: $('#local_ai_url').value.trim(), local_ai_model: $('#local_ai_model').value.trim() }, { silent: true });
+      const r = await api('/api/localai/test', { engine }, { silent: true });
       const good = r.correct === r.total;
       out.innerHTML = `<span class="${good ? 'ok-text' : ''}">${good ? '✓ ' : ''}${r.total}문장 중 ${r.correct}개 맞음 · ${r.seconds}초</span>${good ? '' : ' — 더 큰 모델이 더 정확해요'}`;
     } catch (e) { out.innerHTML = `<span class="bad-text">${esc(e.message)}</span>`; }
   };
-  // Ollama · LM Studio (고급)
-  const extLoad = async () => {
-    let st; try { st = await api('/api/localai/status', undefined, { silent: true }); } catch (e) { return; }
-    const run = st.detected.filter(d => d.running);
-    $('#la-detect').innerHTML = run.length
-      ? run.map(d => `<div>✓ <b>${esc(d.name)}</b> 켜져 있음 · 모델 ${d.models.length}개 <button class="sm la-fill" data-url="${esc(d.url)}" data-model="${esc(d.models[0] || '')}">주소 넣기</button></div>`).join('')
-      : '<span class="muted">켜진 Ollama · LM Studio가 없어요. 앱을 켜면 여기에 나와요.</span>';
-    $('#la-models').innerHTML = [...new Set(run.flatMap(d => d.models))].map(m => `<option value="${esc(m)}">`).join('');
-    $$('.la-fill').forEach(x => x.onclick = () => { $('#local_ai_url').value = x.dataset.url; if (!$('#local_ai_model').value) $('#local_ai_model').value = x.dataset.model; });
-  };
-  $('#la-test-local').onclick = () => laTest('local', $('#la-local-r'));
-  $('#la-use-ext').onclick = async () => {
-    try { await api('/api/ai/choose', { choice: 'external', url: $('#local_ai_url').value.trim(), model: $('#local_ai_model').value.trim() }); toast('내 맥 AI 앱으로 바꿨어요 ✓'); flashSaved($('#la-use-ext')); aiLoad(); updateModeBadge(); } catch (e) { /* */ }
-  };
-  $('#ai-ext').addEventListener('toggle', () => { if ($('#ai-ext').open) extLoad(); });
   aiLoad();
   // 📱 휴대폰 · 컴퓨터 조합별 안내 (모두 QR이 기본, 조합마다 덤으로 되는 것)
   const COMBO = {
@@ -2535,22 +2393,18 @@ function showOnboarding(s) {
       <p class="muted">아래 버튼 하나면 끝이에요. 받는 동안 바로 쓰기 시작해도 되고, 다 받으면 알아서 켜져요.</p>
       <div class="source" style="line-height:1.9">
         ✓ <b>받아쓰기</b> — 녹음을 이 컴퓨터 안에서 글자로 (Whisper, 550MB)<br>
-        ✓ <b>학생 나누기·세특 초안 AI</b> — <span id="ob-ai-pick">이 컴퓨터에 맞는 모델 고르는 중…</span><br>
+        ✓ <b>기기 내 기록 정리</b> — <span id="ob-ai-pick">기기 내 기록 정리 확인 중…</span><br>
         ✓ <b>자동 업데이트</b> — 새 버전이 나오면 쉬는 틈에 알아서
       </div>
-      <details style="margin-top:10px"><summary class="small">Gemini API 키가 이미 있어요</summary>
-        <input id="ob-key" type="password" placeholder="AIza로 시작하는 키" style="margin-top:8px">
-        <p class="small muted">넣으면 학생 나누기·초안을 Gemini로 해요. 비워 두면 이 컴퓨터 안의 AI를 써요.</p></details>`,
+      <p class="help">세특 초안은 플러스에서 바로 만들거나, 무료로 프롬프트를 복사해 외부에서 작성한 뒤 결과를 붙여넣어 저장해요.</p>`,
   };
   const render = () => {
     modal(`<div class="small muted" style="margin-bottom:6px">${st.step} / 3</div>${steps[st.step]()}
       <div class="modal-actions">${st.step > 1 ? '<button id="ob-back">이전</button>' : '<button id="ob-skip" class="ghost">건너뛰기</button>'}
         <button class="primary" id="ob-next">${st.step === 3 ? '✨ 한 번에 준비하기' : '다음'}</button></div>`, box => {
       if (st.step === 3) api('/api/ai/state', undefined, { silent: true }).then(a => {
-        const mc = a.builtin.machine || {}, m = a.builtin.models.find(x => x.id === mc.model);
-        st.aiPick = m ? 'builtin' : (a.apple.state === 'ready' ? 'apple' : 'manual');
-        $('#ob-ai-pick', box).innerHTML = m ? `<b>${esc(m.model)}</b> (${(m.size / 1e9).toFixed(1)}GB · ${esc(mc.chip || '')}${mc.ram ? ' · ' + mc.ram + 'GB' : ''}에 추천)`
-          : st.aiPick === 'apple' ? '기기 안 AI (설치 없음)' : '이 컴퓨터는 이름 기준으로 나누고, 초안은 프롬프트 복사로 써요';
+        st.aiPick = a.apple.state === 'ready' ? 'apple' : 'manual';
+        $('#ob-ai-pick', box).textContent = st.aiPick === 'apple' ? '기기 내 기록 정리 (별도 설치 없음)' : '이름 기준 기록 정리';
       }).catch(() => { st.aiPick = 'manual'; });
       if ($('#ob-skip', box)) $('#ob-skip', box).onclick = async () => { await api('/api/settings', { onboarded: '1' }); closeModal(); };
       if ($('#ob-back', box)) $('#ob-back', box).onclick = () => { st.step--; render(); };
@@ -2572,7 +2426,7 @@ function showOnboarding(s) {
           st.make = mk;
         }
         if (st.step === 3) {
-          const key = ($('#ob-key', box).value || '').trim();
+          const key = '';
           $('#ob-next', box).disabled = true; $('#ob-next', box).textContent = '준비하는 중…';
           // 선생님 정보(1단계) + 2단계에서 고른 과목·담임
           const pf = st.profile || {};
@@ -2588,7 +2442,7 @@ function showOnboarding(s) {
             try { await api('/api/ai/choose', { choice: c }, { silent: true }); pick = c; break; } catch (e) { /* 다음 후보 */ }
           }
           closeModal(); updateModeBadge();
-          toast(pick === 'builtin' ? '준비 시작! 받아쓰기·AI 모델을 받는 동안 학생 명단을 붙여넣어 주세요 ✨' : '준비됐어요! 각 학급에 학생 명단을 붙여넣어 주세요 ✨');
+          toast('준비됐어요! 각 학급에 학생 명단을 붙여넣어 주세요 ✨');
           await loadClasses();
           location.hash = state.classes.length ? '#/class/' + state.classes[0].id : '#/classes';
           return;
@@ -2605,13 +2459,7 @@ async function updateModeBadge() {
   if (!s) return;
   state.settings = s;
   const dot = c => `<span style="color:var(--${c})">●</span> `;
-  $('#mode-badge').innerHTML = s.active_seg === 'gemini' ? dot('green') + esc((s.api_keys[s.api_provider || 'gemini'] || {}).label || 'API') + ' · ' + esc((s.api_keys[s.api_provider || 'gemini'] || {}).model || '자동')
-    : s.active_seg === 'apple' ? dot('green') + '기기 안 AI'
-    : s.active_seg === 'local' ? dot('green') + (s.local_ai_url === 'builtin' ? '쓰담 AI 모델' : '내 맥 AI · ' + esc(s.local_ai_model || ''))
-    : s.ai_choice === 'builtin' ? dot('amber') + '쓰담 AI 모델 준비 중'
-    : s.ai_choice === 'plus' ? dot('amber') + '쓰담 플러스 구독 확인 필요 — <a href="#/settings/ai">설정</a>'
-    : s.ai_choice === 'gemini' ? dot('amber') + esc((s.api_keys[s.api_provider || 'gemini'] || {}).label || 'API') + ' 키 필요 — <a href="#/settings/ai">설정</a>'
-    : s.ai_choice === 'manual' || s.mode === 'manual' ? dot('muted') + 'AI 없이 (프롬프트 복사)' : dot('amber') + 'AI 없음 — <a href="#/settings">설정</a>';
+  $('#mode-badge').innerHTML = dot('green') + (s.active_seg === 'apple' ? '기기 내 기록 정리' : '이름 기준 기록 정리') + ' · ' + (s.active_draft === 'gemini' ? '플러스 초안' : '외부 초안 붙여넣기');
 }
 
 async function updatePending() {
