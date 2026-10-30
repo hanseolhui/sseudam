@@ -102,6 +102,16 @@ def _snapshot(conn, kind, rid, delete_notes=False):
     return {"rows": data, "links": links}, title, detail
 
 
+def remember_exclusion(conn, rid, payload):
+    # 제외 이력은 휴지통을 비워도 유지. 직접 파일 올리기는 이 이력을 조회하지 않는다.
+    import watcher
+    for item in db.rows(conn, "SELECT source, ext_id FROM imported WHERE recording_id=?", (rid,)):
+        conn.execute("INSERT OR IGNORE INTO auto_import_exclusions(source,ext_id) VALUES (?,?)", (item["source"], item["ext_id"]))
+    ap = payload["rows"]["recordings"][0].get("audio_path")
+    if ap and os.path.isfile(ap):
+        conn.execute("INSERT OR IGNORE INTO auto_import_exclusions(source,ext_id) VALUES ('file',?)", (watcher.file_identity(ap),))
+
+
 def move(conn, kind, rid, delete_notes=False, delete_audio=False):
     """kind 행을 휴지통으로 옮기고 지운다. 커밋은 호출한 쪽에서. 휴지통 id 반환(없으면 None)."""
     rid = int(rid)
@@ -109,6 +119,8 @@ def move(conn, kind, rid, delete_notes=False, delete_audio=False):
     if not snap:
         return None
     payload, title, detail = snap
+    if kind == "recording":
+        remember_exclusion(conn, rid, payload)
     if kind == "recording" and delete_audio:
         ap = payload["rows"]["recordings"][0].get("audio_path")
         if ap:

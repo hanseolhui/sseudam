@@ -220,6 +220,9 @@ CREATE TABLE IF NOT EXISTS student_targets (
     bytes INTEGER,
     PRIMARY KEY (student_id, area)
 );
+CREATE TABLE IF NOT EXISTS auto_import_exclusions (
+    source TEXT NOT NULL, ext_id TEXT NOT NULL, PRIMARY KEY(source, ext_id)
+);
 CREATE TABLE IF NOT EXISTS imported (
     source TEXT, ext_id TEXT, sig TEXT DEFAULT '', body TEXT DEFAULT '', recording_id INTEGER,
     created_at TEXT DEFAULT (datetime('now','localtime')),
@@ -285,6 +288,16 @@ def init():
     daily_backup()
     try:
         import trash  # 30일 지난 휴지통 항목 비우기
+        c = connect()
+        try:
+            import json
+            for item in rows(c, "SELECT payload FROM trash WHERE kind='recording'"):
+                payload = json.loads(item["payload"])
+                for recording in payload.get("rows", {}).get("recordings", []):
+                    trash.remember_exclusion(c, recording["id"], payload)
+            c.commit()
+        finally:
+            c.close()
         trash.purge()
     except Exception as e:  # noqa
         print("휴지통 정리 실패:", e)

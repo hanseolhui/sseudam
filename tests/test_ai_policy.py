@@ -84,3 +84,28 @@ class AIPolicyTests(unittest.TestCase):
         with connection() as c:self.assertEqual(db.row(c,'SELECT status FROM recordings WHERE id=?',(rid,))['status'],'확인필요')
         server.recordings_review(None,{}, {'ids':[rid,rid],'action':'general'})
         with connection() as c:self.assertEqual(db.row(c,'SELECT status FROM recordings WHERE id=?',(rid,))['status'],'일반메모')
+
+    def test_excluded_audio_skipped_automatically_but_manual_import_allowed(self):
+        import watcher, trash, tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as folder:
+            original=Path(folder)/'voice.wav';original.write_bytes(b'test audio')
+            with patch.object(watcher,'extract_iphone_transcript',return_value=''):
+                rid=watcher.import_file(str(original),auto=False)
+                with connection() as c:tid=trash.move(c,'recording',rid,delete_audio=False)
+                trash.purge(trash_id=tid)
+                renamed=Path(folder)/'renamed.wav';renamed.write_bytes(original.read_bytes())
+                self.assertIsNone(watcher.import_file(str(renamed),automatic=True,auto=False))
+                self.assertIsInstance(watcher.import_file(str(original),auto=False),int)
+                self.assertEqual(original.read_bytes(),b'test audio')
+
+    def test_inbox_keeps_original_in_place_and_does_not_repeat(self):
+        import watcher,tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as folder, patch.object(watcher.pipeline,'auto_process'):
+            original=Path(folder)/'memo.txt';original.write_text('시험 메모')
+            self.assertEqual(watcher._scan_folder(folder),0)
+            self.assertEqual(watcher._scan_folder(folder),1)
+            self.assertEqual(watcher._scan_folder(folder),0)
+            self.assertEqual(original.read_text(),'시험 메모')
+            self.assertFalse((Path(folder)/'처리완료').exists())

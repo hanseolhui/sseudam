@@ -637,7 +637,7 @@ async function viewRecordings(classFilter) {
         <select id="rec-filter" style="width:auto">${classOptions(classFilter || '', '전체 학급')}</select></div>
       <div class="row" style="margin-bottom:12px"><label class="field"><span>보기</span><select id="rec-inbox-filter"><option value="all">전체 녹음</option><option value="review">확인할 녹음 (${reviewCount})</option><option value="general">일반 메모</option></select></label></div>
       ${recordingInboxFilter === 'review' ? '<p class="help">학생 기록인지 확인할 녹음이에요. 열어서 듣고 일반 메모로 보관하거나 쓰담에서 제외할 수 있어요. 기술적인 처리 실패는 다시 시도할 수 있어요.</p>' : ''}
-      ${recordingInboxFilter === 'review' ? '<div class="row" style="margin-bottom:12px"><span id="review-count">0개 선택</span><button id="review-general" disabled>선택 항목 일반 메모로</button><button id="review-exclude" disabled>선택 항목 쓰담에서 제외</button></div><p class="help">제외해도 외부 원본과 쓰담의 녹음 파일은 그대로 남아요. 제외한 항목은 휴지통에서 30일 안에 복구할 수 있어요.</p>' : ''}
+      ${recordingInboxFilter === 'review' ? '<div class="row" style="margin-bottom:12px"><span id="review-count">0개 선택</span><button id="review-general" disabled>선택 항목 일반 메모로</button><button id="review-exclude" disabled>선택 항목 쓰담에서 제외</button></div><p class="help">제외해도 외부 원본과 쓰담의 녹음 파일은 그대로 남아요. 제외한 항목은 자동으로 다시 가져오지 않아요. 30일 안에는 휴지통에서 복구하거나, 나중에 ‘녹음 파일 올리기’로 원본을 직접 다시 가져올 수 있어요.</p>' : ''}
       ${recs.recordings.length ? `<div class="table-wrap"><table>
         <thead><tr>${recordingInboxFilter === 'review' ? '<th><input type="checkbox" id="review-all" aria-label="현재 목록 전체 선택"></th>' : ''}<th>일시</th><th>유형</th><th>제목</th><th>학급</th><th>상태</th><th class="right">학생기록</th>${recordingInboxFilter === 'review' ? '<th>빠른 정리</th>' : ''}</tr></thead>
         <tbody>${recs.recordings.map(r => `<tr class="clickable" data-href="#/recording/${r.id}">
@@ -663,7 +663,7 @@ async function viewRecordings(classFilter) {
     const noteCount = recs.recordings.filter(r => ids.includes(r.id)).reduce((n,r) => n + (+r.notes || 0), 0);
     const message = action === 'general'
       ? `${ids.length}개 녹음을 일반 메모로 옮길까요? 녹음 파일은 그대로 남아요.${noteCount ? ` 연결된 학생 기록 ${noteCount}개는 휴지통으로 옮겨져요.` : ''}`
-      : `${ids.length}개 녹음을 쓰담에서 제외할까요? 외부 원본과 쓰담의 녹음 파일, 학생 관찰기록은 그대로 남아요. 제외한 항목은 휴지통에서 30일 안에 복구할 수 있어요.`;
+      : `${ids.length}개 녹음을 쓰담에서 제외할까요? 외부 원본과 쓰담의 녹음 파일, 학생 관찰기록은 그대로 남아요. 제외한 항목은 자동으로 다시 가져오지 않아요. 30일 안에는 휴지통에서 복구하거나, 나중에 ‘녹음 파일 올리기’로 원본을 직접 다시 가져올 수 있어요.`;
     if (!confirmBox(message)) return;
     reviewBusy = true; refreshReview();
     $$('.review-action, .review-check, #review-all, #rec-inbox-filter, #rec-filter').forEach(el => el.disabled = true);

@@ -100,8 +100,27 @@ def create_recording(class_id=None, kind=None, title="", recorded_at=None, audio
     return rid
 
 
-def import_file(path, class_id=None, kind=None, title=None, recorded_at=None, auto=None, copy=True):
+def file_identity(path):
+    import hashlib
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def auto_excluded(source, key):
+    conn = db.connect()
+    try:
+        return bool(db.row(conn, "SELECT 1 FROM auto_import_exclusions WHERE source=? AND ext_id=?", (source, key)))
+    finally:
+        conn.close()
+
+
+def import_file(path, class_id=None, kind=None, title=None, recorded_at=None, auto=None, copy=True, automatic=False):
     """오디오/텍스트 파일을 보관함에 등록. 생성된 recording id 반환."""
+    if automatic and auto_excluded("file", file_identity(path)):
+        return None
     ext = os.path.splitext(path)[1].lower()
     recorded_at = recorded_at or _file_time(path)
     name = os.path.basename(path)
@@ -232,13 +251,18 @@ def _scan_folder(folder):
             _seen_sizes[path] = size
             continue
         try:
-            import_file(path, copy=True)
-            os.makedirs(done_dir, exist_ok=True)
-            dest = os.path.join(done_dir, name)
-            if os.path.exists(dest):
-                dest = os.path.join(done_dir, "%s_%d%s" % (os.path.splitext(name)[0], int(time.time()), ext))
-            os.rename(path, dest)
-            imported += 1
+            key = os.path.realpath(path) + "|" + file_identity(path)
+            conn = db.connect()
+            try:
+                seen = _imported(conn, "inbox", key)
+            finally:
+                conn.close()
+            if seen:
+                continue
+            rid = import_file(path, copy=True, automatic=True)
+            _mark("inbox", key, "ok" if rid else "excluded", rid=rid)
+            if rid:
+                imported += 1
         except Exception as e:  # noqa
             print("수신 폴더 가져오기 실패:", name, e)
         _seen_sizes.pop(path, None)
@@ -295,9 +319,10 @@ def scan_downloads():
                 _seen_sizes[path] = st.st_size
                 continue
             try:
-                import_file(path, copy=True)
-                _mark("downloads", key, "ok")
-                imported += 1
+                rid = import_file(path, copy=True, automatic=True)
+                _mark("downloads", key, "ok" if rid else "excluded", rid=rid)
+                if rid:
+                    imported += 1
             except Exception as e:  # noqa
                 print("다운로드 폴더 가져오기 실패:", name, e)
             _seen_sizes.pop(path, None)
@@ -378,7 +403,7 @@ def scan_voicememos():
     conn = db.connect()
     for path in sorted(files):
         name = os.path.basename(path)
-        if _imported(conn, "voicememo", name):
+        if _imported(conn, "voicememo", name) or auto_excluded("voicememo", name):
             continue
         rec_at = _file_time(path)
         if since and rec_at < since[:16]:
@@ -394,6 +419,9 @@ def scan_voicememos():
             _mark("voicememo", name, "skip")
             continue
         try:
+            if auto_excluded("file", file_identity(path)):
+                _mark("voicememo", name, "excluded")
+                continue
             text = extract_iphone_transcript(path)
             rid = create_recording(title=title, recorded_at=rec_at, audio_src=path, transcript=text,
                                    original_name=name, copy=True)
@@ -473,6 +501,8 @@ def scan_notes(force=False):
             continue
         sig = str(n["modified"])
         prev = _imported(conn, "notes", n["id"])
+        if auto_excluded("notes", n["id"]):
+            continue
         if prev and prev["sig"] == sig:
             continue
         rec_title, text, rec_at = title or "메모", body, _ms_to_local(n["created"])
