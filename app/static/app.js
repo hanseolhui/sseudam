@@ -239,10 +239,13 @@ function showManual(op, params, res, onDone) {
     <textarea class="prompt-box" readonly>${esc(res.prompt)}</textarea>
     <h3 style="margin-top:14px">결과 붙여넣기</h3>
     <textarea id="m-result" rows="9" placeholder="AI 답변을 여기에 붙여넣으세요"></textarea>
+    <p id="m-result-count" class="counter"></p>
+    <p class="small muted">초안은 새 버전으로 저장돼요. 이전 버전은 학생 화면에서 다시 불러올 수 있어요.</p>
     <div class="modal-actions">
       <button id="m-cancel">닫기</button>
       <button class="primary" id="m-apply">적용</button>
     </div>`, box => {
+    $('#m-result', box).oninput = e => { $('#m-result-count', box).textContent = `${e.target.value.length}자 · ${neisBytes(e.target.value)}바이트`; };
     $('#m-copy', box).onclick = () => copyText(res.prompt);
     $('#m-cancel', box).onclick = closeModal;
     if ($('#m-reveal', box)) $('#m-reveal', box).onclick = () => api('/api/recordings/reveal', { id: params.recording_id });
@@ -336,7 +339,7 @@ async function router(soft) {
   const hash = location.hash.replace(/^#/, '') || '/';
   const parts = hash.split('/').filter(Boolean);
   const nav = { '': 'dashboard', recordings: 'recordings', recording: 'recordings', classes: 'classes', class: 'classes',
-    student: 'classes', drafts: 'drafts', settings: 'settings', prompts: 'prompts', trash: 'trash', archive: 'archive' }[parts[0] || ''];
+    student: 'classes', 'term-review': 'drafts', drafts: 'drafts', settings: 'settings', prompts: 'prompts', trash: 'trash', archive: 'archive' }[parts[0] || ''];
   $$('.sidebar nav a').forEach(a => {
     a.classList.toggle('active', a.dataset.nav === nav);
     if (a.dataset.nav === nav) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
@@ -364,6 +367,7 @@ async function router(soft) {
       case 'classes': await viewClasses(); break;
       case 'class': await viewClass(parts[1]); break;
       case 'student': await viewStudent(parts[1], parts[2]); break;
+      case 'term-review': await viewTermReview(); break;
       case 'drafts': await viewDrafts(parts[1], parts[2]); break;
       case 'settings': await viewSettings(parts[1]); break;
       case 'prompts': await viewPrompts(); break;
@@ -1574,7 +1578,7 @@ async function viewDrafts(classId, areaParam) {
   const isApi = settings.active_draft === 'gemini';   // 반 전체를 AI로 바로 만들 수 있음
   const ctxPreview = [d.context.topic, d.context.competencies, d.context.philosophy].filter(x => (x || '').trim()).join(' · ');
   view.innerHTML = `
-    <div class="page-head"><div><h1>초안</h1><div class="muted">학급 전체의 초안을 만들고 구글시트·엑셀로 내보냅니다.</div></div>
+    <div class="page-head"><div><h1>초안</h1><a class="btn" href="#/term-review">학기 마감 점검</a><div class="muted">학급 전체의 초안을 만들고 구글시트·엑셀로 내보냅니다.</div></div>
       <div class="actions"><select id="dc" style="width:auto">${classOptions(classId)}</select></div></div>
     ${areas.length > 1 ? `<div class="tabs">${areas.map(a => `<button class="${a.id === area.id ? 'on' : ''}" data-area="${a.id}">${esc(a.name)}</button>`).join('')}</div>` : ''}
     <div class="card">
@@ -1601,7 +1605,7 @@ async function viewDrafts(classId, areaParam) {
           <button id="x-copy">표 복사</button><button id="x-csv">CSV</button><button id="x-xlsx">엑셀</button>
           <button id="x-sheet">구글시트 반영</button></div>
       </div>
-      <p class="help">${isApi ? '<b>✨</b>는 이 컴퓨터의 AI로 바로 만들어요. 더 다듬고 싶으면 ' : ''}<b>📋 반 전체 프롬프트 복사</b> → ChatGPT·Gemini 앱에 붙여넣기 → 나온 답을 통째로 <b>📥 외부에서 만든 초안 붙여넣기</b>에 넣으면 학생마다 초안이 한꺼번에 들어가요.</p>
+      <p class="help">${isApi ? '<b>✨</b>는 플러스 클라우드 AI로 만들어요. 더 다듬고 싶으면 ' : ''}<b>📋 반 전체 프롬프트 복사</b> → ChatGPT·Gemini 앱에 붙여넣기 → 나온 답을 통째로 <b>📥 외부에서 만든 초안 붙여넣기</b>에 넣으면 학생마다 초안이 한꺼번에 들어가요.</p>
       <details class="lesson-ctx" id="lesson-ctx" ${ctxPreview ? '' : 'open'}>
         <summary class="ctx-toggle"><span class="ctx-title">📚 수업 정보</span>
           <span class="ctx-preview">${ctxPreview ? esc(ctxPreview.length > 70 ? ctxPreview.slice(0, 70) + '…' : ctxPreview) : '종목·역량·교사 철학을 적어 두면 초안이 수업에 맞게 나와요'}</span>
@@ -1666,18 +1670,7 @@ async function viewDrafts(classId, areaParam) {
     copyText(r.prompt);
     toast(`${r.count}명 프롬프트를 복사했어요 ✓ ChatGPT·Gemini 앱에 붙여넣으세요`);
   };
-  if ($('#g-paste')) $('#g-paste').onclick = () => modal(`<h2>📥 외부에서 만든 초안 붙여넣기</h2>
-      <p class="muted">ChatGPT·Gemini가 쓴 답을 <b>통째로</b> 붙여넣으세요. "[3번] …" 줄마다 그 학생 초안으로 저장해요.</p>
-      <textarea id="bp-text" rows="14" placeholder="[1번] 토론 수업에서 …&#10;[2번] 실험 활동에서 …"></textarea>
-      <div class="modal-actions"><button id="bp-x">닫기</button><button class="primary" id="bp-go">학생별로 저장</button></div>`, box => {
-    $('#bp-x', box).onclick = closeModal;
-    $('#bp-go', box).onclick = async () => {
-      const r = await api('/api/drafts/batch_apply', { class_id: c.id, area: area.id, text: $('#bp-text', box).value });
-      closeModal();
-      toast(`${r.saved}명 초안을 저장했어요 ✓` + (r.missing.length ? ` (명단에 없는 번호: ${r.missing.join(', ')})` : ''));
-      router(true);
-    };
-  });
+  $('#g-paste').onclick = () => externalDraftReview(c.id, area.id);
   $('#x-copy').onclick = async () => { const t = await api('/api/export/table?class_id=' + c.id); copyText(t.tsv); };
   $('#x-xlsx').onclick = () => exportXlsx(c.id);
   $('#x-csv').onclick = async () => { const r = await api('/api/export/csv', { class_id: c.id }); toast(`다운로드 폴더에 저장했습니다: ${r.name}`); };
@@ -1686,6 +1679,56 @@ async function viewDrafts(classId, areaParam) {
     const r = await api('/api/export/sheets', {});
     toast(`구글시트에 반영했습니다 (시트 ${r.sheets}개)`);
   };
+}
+
+function externalDraftReview(classId, area) {
+  modal(`<h2>외부 AI 초안 비교·저장</h2><p>학생 번호별로 붙여넣은 뒤 내용을 확인해요. 기존 버전과 확정본은 남겨 두고 새 초안으로 저장해요.</p>
+    <textarea id="bp-text" rows="10" placeholder="[1번] 내용&#10;[2번] 내용"></textarea>
+    <button id="bp-preview">학생별로 비교하기</button><div id="bp-preview-list"></div>
+    <div class="modal-actions"><button id="bp-x">닫기</button><button id="bp-save" class="primary" disabled>선택한 초안 저장</button></div>`, box => {
+    let items = [];
+    $('#bp-x', box).onclick = closeModal;
+    $('#bp-text', box).oninput = () => { items = []; $('#bp-save', box).disabled = true; $('#bp-preview-list', box).textContent = '내용이 바뀌었어요. 다시 비교해 주세요.'; };
+    $('#bp-preview', box).onclick = async () => {
+      const source = $('#bp-text', box).value;
+      const r = await api('/api/drafts/batch_preview', {class_id: classId, area, text: source});
+      if ($('#bp-text', box).value !== source) return;
+      items = r.items;
+      $('#bp-preview-list', box).innerHTML = r.issues.map(x => `<p class="warn">${esc(x)}</p>`).join('') + items.map((it, i) => `<section class="card" data-bp="${i}">
+        <label class="check"><input type="checkbox" checked> ${it.number}번 ${esc(it.name)}</label>
+        <details><summary>이전 내용 비교</summary><div style="white-space:pre-wrap">${esc(it.previous || '저장된 초안 없음')}</div></details>
+        <textarea rows="5">${esc(it.content)}</textarea><p class="counter"></p></section>`).join('');
+      $$('[data-bp]', box).forEach(el => {
+        const it = items[+el.dataset.bp], input = $('textarea', el);
+        const count = () => { const n = neisBytes(input.value); $('.counter', el).textContent = `${input.value.length}자 · ${n} / ${it.limit}바이트${n > it.limit ? ' · 분량 초과' : ''}`; };
+        input.oninput = count; count();
+      });
+      $('#bp-save', box).disabled = false;
+    };
+    $('#bp-save', box).onclick = async () => {
+      const selected = $$('[data-bp]', box).filter(el => $('input', el).checked).map(el => ({...items[+el.dataset.bp], content: $('textarea', el).value}));
+      if (!selected.length) return toast('저장할 학생을 골라 주세요', true);
+      $('#bp-save', box).disabled = true;
+      try { const r = await api('/api/drafts/batch_reviewed_save', {class_id: classId, area, items: selected}); closeModal(); toast(`${r.saved}명 새 버전을 저장했어요. 기존 버전은 그대로예요.`); router(true); }
+      finally { if ($('#bp-save', box)) $('#bp-save', box).disabled = false; }
+    };
+  });
+}
+
+function termReviewState(s) {
+  if (s.draft_bytes > s.limit) return 'over';
+  if (s.draft_status === '확정' && !s.has_newer_draft) return 'done';
+  if (s.draft) return 'review';
+  return s.area_notes ? 'missing' : 'no-notes';
+}
+async function viewTermReview() {
+  const {items} = await api(`/api/term_review?year=${state.term.year}&semester=${state.term.semester}`);
+  const labels = {'no-notes':'기록 없음', missing:'초안 없음', review:'검토 필요', over:'분량 초과', done:'완료'};
+  view.innerHTML = `<div class="page-head"><div><h1>학기 마감 점검</h1><p>${termLabel(state.term)} · 학생의 기재 영역별로 점검해요.</p></div></div>
+    <div class="card"><label>상태 <select id="tr-filter"><option value="all">전체 ${items.length}건</option>${Object.entries(labels).map(([k,v]) => `<option value="${k}">${v} ${items.filter(s => termReviewState(s) === k).length}건</option>`).join('')}</select></label>
+    <p class="help">완료는 확정된 버전이 있고 이후 새 초안이 없는 상태예요. 기록의 충분함과 내용의 정확성은 직접 확인해 주세요.</p>
+    <div class="table-wrap"><table><thead><tr><th>학급·영역</th><th>학생</th><th>기록</th><th>상태</th><th></th></tr></thead><tbody>${items.map(s => `<tr data-review-state="${termReviewState(s)}"><td>${esc(s.class_label)} · ${esc(s.area_name)}</td><td>${s.number ?? ''} ${esc(s.name)}</td><td>${s.area_notes}건</td><td>${labels[termReviewState(s)]}</td><td><a href="#/student/${s.id}/${s.area}">검토하기</a></td></tr>`).join('')}</tbody></table></div><p id="tr-empty" hidden>해당하는 항목이 없어요.</p></div>`;
+  $('#tr-filter').onchange = () => { let n=0; $$('[data-review-state]').forEach(el => { el.hidden = $('#tr-filter').value !== 'all' && el.dataset.reviewState !== $('#tr-filter').value; if (!el.hidden) n++; }); $('#tr-empty').hidden = n > 0; };
 }
 
 // ───────────────────────── 설정 ─────────────────────────

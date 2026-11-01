@@ -399,8 +399,10 @@ def class_detail(h, q, b, cid):
             notes = db.rows(conn, "SELECT area FROM notes WHERE student_id=?", (st["id"],))
             st["notes"] = len(notes)
             st["area_notes"] = sum(1 for n in notes if db.note_in_area(n, kind, area))
-            d = db.row(conn, "SELECT status, bytes, content FROM drafts WHERE student_id=? AND area=? "
+            d = db.row(conn, "SELECT id, status, bytes, content FROM drafts WHERE student_id=? AND area=? "
                              "ORDER BY (status='확정') DESC, id DESC LIMIT 1", (st["id"], area))
+            latest = db.row(conn, "SELECT MAX(id) AS id FROM drafts WHERE student_id=? AND area=?", (st["id"], area))
+            st["has_newer_draft"] = bool(d and latest["id"] > d["id"])
             st["draft_status"] = d["status"] if d else None
             st["draft_bytes"] = d["bytes"] if d else None
             st["draft"] = d["content"] if d else None
@@ -1017,6 +1019,77 @@ def drafts_batch_prompt(h, q, b):
         return {"prompt": prompts.draft_batch(ci, items, db.get_settings(), area, context=ctx), "count": len(items)}
     finally:
         conn.close()
+
+
+@route("GET", "/api/term_review")
+def term_review(h, q, b):
+    year, semester = _int(q.get("year")), _int(q.get("semester"))
+    if not year or semester not in (1, 2):
+        raise ApiError("학기를 고르세요.")
+    with db.connect() as conn:
+        classes = db.rows(conn, "SELECT * FROM classes WHERE year=? AND semester=?", (year, semester))
+    result = []
+    for c in classes:
+        for a in db.areas_for_kind(c.get("kind") or "교과"):
+            detail = class_detail(h, {"area": a["id"]}, None, c["id"])
+            for st in detail["students"]:
+                result.append({**st, "class_label": detail["class"]["label"], "area": a["id"],
+                               "area_name": a["name"], "limit": st["byte_target"] or detail["byte_limit"]})
+    return {"items": result}
+
+
+@route("POST", "/api/drafts/batch_preview")
+def drafts_batch_preview(h, q, b):
+    with db.connect() as conn:
+        c = db.row(conn, "SELECT * FROM classes WHERE id=?", (int(b["class_id"]),))
+        if not c: raise ApiError("학급이 없습니다.", 404)
+        area = b.get("area") or "subject"
+        if area not in [a["id"] for a in db.areas_for_kind(c.get("kind") or "교과")]:
+            raise ApiError("기재 영역을 확인하세요.")
+        students = db.rows(conn, "SELECT * FROM students WHERE class_id=?", (c["id"],))
+        text = (b.get("text") or "").replace("**", "")
+        parts = re.split(r"(?m)^\s*(?:#+\s*)?\[?\s*(\d{1,5})\s*번\s*\]?\s*[:：.)-]?\s*", text)
+        items, issues, seen = [], [], set()
+        for i in range(1, len(parts) - 1, 2):
+            num, content = int(parts[i]), parts[i + 1].strip()
+            matches = [st for st in students if st["number"] == num]
+            if len(matches) != 1 or not content or num in seen:
+                issues.append(f"{num}번: 없는 번호·중복 번호·빈 내용인지 확인하세요.")
+                continue
+            seen.add(num)
+            st = matches[0]
+            previous = db.row(conn, "SELECT id, content, status FROM drafts WHERE student_id=? AND area=? ORDER BY id DESC LIMIT 1", (st["id"], area)) or {}
+            target = db.row(conn, "SELECT bytes FROM student_targets WHERE student_id=? AND area=?", (st["id"], area)) or {}
+            items.append({"student_id": st["id"], "name": st["name"], "number": num, "content": content,
+                          "previous": previous.get("content", ""), "expected_id": previous.get("id"),
+                          "limit": target.get("bytes") or db.area_limit(area, db.get_settings(conn))})
+        if not items: raise ApiError("[1번] 내용 형식으로 붙여넣어 주세요.")
+        return {"items": items, "issues": issues}
+
+
+@route("POST", "/api/drafts/batch_reviewed_save")
+def drafts_batch_reviewed_save(h, q, b):
+    items = b.get("items") or []
+    if not items or len(items) > 500: raise ApiError("저장할 학생을 골라 주세요.")
+    area = b.get("area") or "subject"
+    with db.connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        c = db.row(conn, "SELECT * FROM classes WHERE id=?", (int(b["class_id"]),))
+        if not c or area not in [a["id"] for a in db.areas_for_kind(c.get("kind") or "교과")]:
+            raise ApiError("학급과 기재 영역을 확인하세요.")
+        seen = set()
+        for item in items:
+            sid = int(item["student_id"])
+            content = (item.get("content") or "").strip()
+            st = db.row(conn, "SELECT id FROM students WHERE id=? AND class_id=?", (sid, c["id"]))
+            latest = db.row(conn, "SELECT id FROM drafts WHERE student_id=? AND area=? ORDER BY id DESC LIMIT 1", (sid, area)) or {}
+            if not st or sid in seen or not content: raise ApiError("학생과 내용을 확인하세요.")
+            if latest.get("id") != item.get("expected_id"):
+                raise ApiError("미리보기 후 초안이 바뀌었어요. 다시 비교해 주세요.", 409)
+            seen.add(sid)
+            conn.execute("INSERT INTO drafts(student_id,content,bytes,status,area,origin,sources) VALUES(?,?,?,'초안',?,'external','[]')", (sid, content, db.neis_bytes(content), area))
+        conn.commit()
+    return {"saved": len(items)}
 
 
 @route("POST", "/api/drafts/batch_apply")
