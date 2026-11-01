@@ -1424,7 +1424,8 @@ async function viewStudent(id, areaParam) {
   const idx = d.siblings.findIndex(x => x.id === s.id);
   const prev = d.siblings[idx - 1], next = d.siblings[idx + 1];
   const drafts = d.drafts.filter(x => (x.area || 'subject') === area.id);
-  const current = drafts.find(x => x.status === '확정') || drafts[0];
+  const current = drafts[0]; // 검토 화면은 최신 버전, 내보내기는 기존 확정본을 유지
+  const olderFinal = drafts.find(x => x.status === '확정' && x.id !== current?.id);
   let sourceDraft = current;
   const notesInArea = d.notes.filter(n => n.area_eff === area.id);
   const sib = x => `#/student/${x.id}${multi ? '/' + area.id : ''}`;
@@ -1455,6 +1456,7 @@ async function viewStudent(id, areaParam) {
           <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap"><button class="primary shrink${paidDraft ? '' : ' hidden'}" id="d-gen" ${notesInArea.length ? '' : 'disabled'}>✨ 플러스로 초안 만들기</button>
             <button class="shrink hidden" id="d-deep" ${notesInArea.length ? '' : 'disabled'} title="쓰담 플러스: 더 깊게 쓰는 AI로 한 번 더">💜 정성 초안</button>
             <button class="shrink" id="d-ext" ${notesInArea.length ? '' : 'disabled'} title="프롬프트를 복사해서 ChatGPT·Gemini 앱에서 쓰고, 답을 붙여넣어 저장">📋 ChatGPT·Gemini로 쓰기</button><span id="d-deep-left" class="small muted"></span></div>
+          ${olderFinal ? '<p class="info-box">최신 초안을 검토하고 있어요. 기존 확정본은 버전 기록에 남아 있으며, 이 내용을 확정하기 전까지 내보내기에 사용돼요.</p>' : ''}
           <textarea id="d-text" rows="12" style="margin-top:12px" placeholder="ChatGPT·Gemini에서 만든 세특 초안을 여기에 붙여넣으세요. 직접 작성·수정한 뒤 아래 저장 버튼을 누르세요.">${esc(current ? current.content : '')}</textarea>
           <div class="row" style="margin-top:6px;align-items:center"><span class="counter" id="d-count"></span><span></span>
             ${current && current.ai_text ? `<span class="small muted" id="d-rate">AI 초안 어땠나요? <button class="shrink sm ghost" data-rate="1" title="좋아요">👍</button><button class="shrink sm ghost" data-rate="0" title="아쉬워요">👎</button></span>` : ''}
