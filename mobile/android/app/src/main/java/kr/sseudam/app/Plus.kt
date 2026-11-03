@@ -348,7 +348,7 @@ private fun PlusAccount() {
             Text("구글 플레이 계정으로 결제되고, 끄지 않으면 같은 기간으로 자동 갱신돼요. 플레이 스토어 → 프로필 → 결제 및 정기 결제 → 정기 결제에서 언제든 해지할 수 있어요.",
                 fontSize = 11.sp, color = T.soft)
         } else {
-            Text("구독은 플레이 스토어판 쓰담이나 apps.seoriarts.com/sseudam/plus에서 할 수 있어요. 여기서 같은 계정으로 로그인하면 구독 상태가 보여요.",
+            Text("구독은 App Store · Google Play에서 받은 쓰담 앱에서 할 수 있어요. 여기서 같은 계정으로 로그인하면 구독 상태가 보여요.",
                 fontSize = 12.sp, color = T.soft)
         }
         // 계정 삭제 (스토어 정책: 앱 안에서 계정을 지울 수 있어야 함)

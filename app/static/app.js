@@ -1978,13 +1978,13 @@ async function viewSettings(section) {
         const renew = !u.autoRenew && u.plan !== 'staff';   // 자동 결제가 없으면 연장하기 (미리 사도 남은 기간 뒤에 이어 붙음)
         d = `<div class="spec">💜 <b>${esc(plusSt.email)}</b> · ${esc(u.planName)} · <b>${ymd(u.endsAt)}</b>까지 (<b${renew && (u.daysToEnd ?? u.daysLeft) <= 7 ? ' style="color:var(--amber)"' : ''}>${u.daysToEnd ?? u.daysLeft}일 남음</b>)${u.autoRenew ? ' · 자동 결제' : ''}
           <div class="small muted" style="margin-top:4px">클라우드 초안 무제한 · 정성 초안 ${(u.deepCap || 0) >= 1e8 ? '무제한' : Math.max(0, (u.deepCap || 0) - (u.deepUsed || 0)) + '회 남음'} · 등록된 컴퓨터 ${plusSt.devices.length}/${plusSt.deviceLimit}대 (${plusSt.devices.map(x => esc(x.device_name)).join(', ')})${plusSt.offline ? ' · 지금은 서버 확인이 안 돼서 마지막 상태를 보여요' : ''}</div>
-          ${renew ? `<div class="small muted" style="margin-top:4px">자동 결제가 없는 이용권이에요. 미리 연장해도 <b>남은 기간 뒤에 이어 붙어서</b> 손해 없어요.</div>` : ''}
-          <div class="row" style="margin-top:8px">${choice !== 'plus' ? '<button class="sm primary shrink" id="plus-use">쓰담 플러스로 쓰기</button>' : ''}${renew ? `<a class="btn sm primary shrink" href="${esc(plusSt.renewUrl || 'https://apps.seoriarts.com/sseudam/plus')}" target="_blank">연장하기 ↗</a>` : ''}<a class="btn sm shrink" href="https://apps.seoriarts.com/sseudam/plus" target="_blank">구독·결제 관리 ↗</a><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`;
+          ${renew ? `<div class="small muted" style="margin-top:4px">현재 이용 기간은 그대로 유지돼요. 새 구독은 휴대폰 쓰담의 App Store · Google Play에서 구매해 주세요.</div>` : ''}
+          <div class="row" style="margin-top:8px">${choice !== 'plus' ? '<button class="sm primary shrink" id="plus-use">쓰담 플러스로 쓰기</button>' : ''}${renew ? `<a class="btn sm primary shrink" href="${esc(plusSt.renewUrl || 'https://apps.seoriarts.com/sseudam/plus')}" target="_blank">구매·복원 안내 ↗</a>` : ''}<a class="btn sm shrink" href="https://apps.seoriarts.com/sseudam/plus" target="_blank">구독·결제 관리 ↗</a><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`;
       } else {
         d = plusSt.pay
           ? `<div class="spec">💜 <b>${esc(plusSt.email)}</b>로 로그인했어요. 지금은 구독 기간이 아니에요.
-          <div class="small muted" style="margin-top:4px">월 9,900원 · 반년 29,000원 · 1년 49,000원. 카드를 등록하면 처음 1주는 체험이에요(계정당 한 번 · 체험 중 기본 AI 200회 · 정성 초안 10회).</div>
-          <div class="row" style="margin-top:8px"><a class="btn sm primary shrink" href="https://apps.seoriarts.com/sseudam/plus" target="_blank">구독 시작하기 ↗</a><button class="sm shrink" id="plus-refresh">구독 다시 확인</button><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`
+          <div class="small muted" style="margin-top:4px">휴대폰 쓰담의 App Store · Google Play에서 구매·복원한 뒤 같은 쓰담 계정으로 로그인해 주세요. 관리자가 부여한 이용권도 여기서 사용할 수 있어요.</div>
+          <div class="row" style="margin-top:8px"><a class="btn sm primary shrink" href="https://apps.seoriarts.com/sseudam/plus" target="_blank">스토어 구매 안내 ↗</a><button class="sm shrink" id="plus-refresh">구독 다시 확인</button><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`
           : plusSt.betaRequested
           ? `<div class="spec">💜 <b>${esc(plusSt.email)}</b> · <b>베타 신청을 받았어요.</b>
           <div class="small muted" style="margin-top:4px">승인되면 메일로 알려 드리고, 1달 동안 결제 없이 쓰실 수 있어요. 승인 메일을 받으면 아래 '구독 다시 확인'을 눌러 주세요.</div>
@@ -2428,8 +2428,8 @@ async function checkPlusRenew() {
     const key = 'plus-renew-hide-' + new Date().toISOString().slice(0, 10);
     try { if (localStorage.getItem(key)) return; } catch (e) { /* */ }
     const end = new Date(u.endsAt).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
-    b.innerHTML = `<b>💜 쓰담 플러스가 ${u.daysToEnd ? u.daysToEnd + '일 뒤' : '오늘'}(${end}) 끝나요</b> 미리 연장해도 남은 기간 뒤에 이어 붙어요.
-      <a class="btn sm primary" href="${esc(p.renewUrl || 'https://apps.seoriarts.com/sseudam/plus')}" target="_blank">연장하기 ↗</a> <button class="sm ghost" id="pb-x">닫기</button>`;
+    b.innerHTML = `<b>💜 쓰담 플러스가 ${u.daysToEnd ? u.daysToEnd + '일 뒤' : '오늘'}(${end}) 끝나요</b> 새 구독은 App Store · Google Play에서 구매해 주세요.
+      <a class="btn sm primary" href="${esc(p.renewUrl || 'https://apps.seoriarts.com/sseudam/plus')}" target="_blank">구매·복원 안내 ↗</a> <button class="sm ghost" id="pb-x">닫기</button>`;
     b.classList.remove('hidden');
     $('#pb-x').onclick = () => { b.classList.add('hidden'); try { localStorage.setItem(key, '1'); } catch (e) { /* */ } };
   } catch (e) { /* 로그인 안 함 · 인터넷 없음 */ }
