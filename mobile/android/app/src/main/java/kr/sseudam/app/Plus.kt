@@ -115,7 +115,7 @@ object Plus {
     }
 
     private fun apply(j: JSONObject) {
-        j.optString("email").ifEmpty { null }?.let { _email.value = it; prefs.edit().putString("plusEmail", it).apply() }
+        j.optString("email").ifEmpty { null }?.let { if (_email.value != it) accountToken = null; _email.value = it; prefs.edit().putString("plusEmail", it).apply() }
         j.optString("token").ifEmpty { null }?.let { token = it }
         j.optJSONObject("sub")?.let { s ->
             _status.value = Status(s.optBoolean("active"), s.optString("planName"), s.optString("endsAt"),
@@ -131,6 +131,7 @@ object Plus {
     private suspend fun call(f: suspend () -> JSONObject) {
         busy.value = true
         try { apply(f()); message.value = ""; loadProducts() }
+        catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (e: Exception) { message.value = e.message ?: "서버에 연결하지 못했어요." }
         finally { busy.value = false }
     }
@@ -200,6 +201,7 @@ object Plus {
     suspend fun loadProducts() {
         val t = token
         if (accountToken == null && t != null) runCatching { post(JSONObject().put("action", "iap-config").put("token", t)) }.onSuccess { j ->
+            if (token != t) return@onSuccess
             accountToken = j.optString("accountToken").ifEmpty { null }
             j.optJSONObject("google")?.optJSONArray("basePlans")?.let { a ->
                 basePlans = (0 until a.length()).map { a.getString(it) }.ifEmpty { basePlans }
@@ -211,6 +213,7 @@ object Plus {
     suspend fun buy(activity: Activity, offer: PlusOffer) {
         if (token == null) { message.value = "먼저 로그인해 주세요."; return }
         busy.value = true
+        message.value = ""
         try {
             loadProducts()
             val acc = accountToken ?: run { message.value = "계정 정보를 받지 못했어요. 잠시 후 다시 해 주세요."; return }
@@ -225,7 +228,9 @@ object Plus {
     suspend fun sendPurchase(purchaseToken: String): Boolean {
         val t = token ?: return false
         return try {
-            apply(post(JSONObject().put("action", "iap-google").put("token", t).put("purchaseToken", purchaseToken)))
+            val response = post(JSONObject().put("action", "iap-google").put("token", t).put("purchaseToken", purchaseToken))
+            if (token != t) return false
+            apply(response)
             message.value = "✓ 쓰담 플러스가 시작됐어요. 컴퓨터 쓰담에서 같은 계정으로 로그인하세요."
             true
         } catch (e: Exception) { message.value = e.message ?: "서버에 연결하지 못했어요."; false }
@@ -235,6 +240,7 @@ object Plus {
         busy.value = true
         message.value = ""   // 지난 오류 문구가 남아 있지 않게
         try {
+            loadProducts()
             PlusBilling.resendPurchases(all = true); refresh()
             if (message.value.isEmpty() && !status.value.active) message.value = "복원할 구독이 없어요."
         } finally { busy.value = false }
@@ -252,6 +258,8 @@ tailrec fun Context.findActivity(): Activity? = when (this) {
 @Composable
 fun PlusCard() {
     val ctx = LocalContext.current
+    // 로그인 폼이 계정 화면으로 바뀌어도 로그인 후 상품 조회를 마친다.
+    val accountScope = rememberCoroutineScope()
     remember { Plus.init(ctx) }
     val loggedIn by Plus.loggedIn.collectAsStateWithLifecycle()
     val message by Plus.message.collectAsStateWithLifecycle()
@@ -266,7 +274,7 @@ fun PlusCard() {
         // 알림 문구는 위쪽에 (✓ 로 시작하면 성공 = 초록, 아니면 빨강)
         if (message.isNotEmpty()) Text(message, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
             color = if (message.startsWith("✓")) T.mint else T.coral)
-        if (loggedIn) PlusAccount() else PlusLogin()
+        if (loggedIn) PlusAccount() else PlusLogin(accountScope)
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("이용약관", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = T.blue,
                 modifier = Modifier.padding(vertical = 4.dp).clickable { openUrl(ctx, Plus.TERMS_URL) })
@@ -275,13 +283,12 @@ fun PlusCard() {
         }
     }
     // 처음 화면에 나올 때 끝나지 않은 결제를 서버로 (결제 라이브러리 연결 뒤)
-    LaunchedEffect(loggedIn) { if (loggedIn) PlusBilling.resendPurchases() }
+    LaunchedEffect(loggedIn) { if (loggedIn) { Plus.loadProducts(); PlusBilling.resendPurchases() } }
 }
 
 @Composable
-private fun PlusLogin() {
+private fun PlusLogin(scope: kotlinx.coroutines.CoroutineScope) {
     val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
     val busy by Plus.busy.collectAsStateWithLifecycle()
     var mail by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
