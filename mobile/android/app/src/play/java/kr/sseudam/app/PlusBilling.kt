@@ -68,6 +68,7 @@ object PlusBilling {
 
     /** 플레이에서 상품·가격 받기 (가격은 기기 나라 통화로) */
     suspend fun loadOffers(basePlans: List<String>) {
+        if (!Plus.SALES_ENABLED) { _offers.value = emptyList(); details.clear(); return }
         if (!connected()) return
         val params = QueryProductDetailsParams.newBuilder().setProductList(listOf(
             QueryProductDetailsParams.Product.newBuilder().setProductId(PRODUCT).setProductType(BillingClient.ProductType.SUBS).build())).build()
@@ -91,6 +92,7 @@ object PlusBilling {
 
     /** 결제 화면 열기. 문제가 있으면 안내 문구를 돌려준다 */
     suspend fun launch(activity: Activity, offer: PlusOffer, accountId: String): String? {
+        if (!Plus.SALES_ENABLED) return Plus.SALES_NOTICE
         if (!connected()) return "플레이 스토어에 연결하지 못했어요. 잠시 후 다시 해 주세요."
         val (pd, offerToken) = details[offer.basePlanId] ?: return "상품 정보를 받지 못했어요. 잠시 후 다시 해 주세요."
         val params = BillingFlowParams.newBuilder()

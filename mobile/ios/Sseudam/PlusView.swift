@@ -7,6 +7,9 @@ import SwiftUI
 /// 같은 계정으로 컴퓨터 쓰담에 로그인하면 AI 정리 · 초안을 쓴다. 결제 확인은 서리아트 서버가 애플 서명으로 한다.
 @MainActor
 final class Plus: ObservableObject {
+    // New sales are paused; existing entitlements, transaction handling and restore stay available.
+    static let salesEnabled = false
+    static let salesNotice = "유료 상품 곧 오픈"
     static let shared = Plus()
     static let api = URL(string: "https://apps.seoriarts.com/api/sseudam-plus")!
     static let productIDs = ["kr.sseudam.plus.month", "kr.sseudam.plus.half", "kr.sseudam.plus.year"]
@@ -144,6 +147,7 @@ final class Plus: ObservableObject {
 
     // MARK: 구독 (StoreKit 2)
     func loadProducts() async {
+        guard Plus.salesEnabled else { products = []; return }
         if products.isEmpty, let p = try? await Product.products(for: Plus.productIDs) {
             products = p.sorted { $0.price < $1.price }
         }
@@ -152,6 +156,7 @@ final class Plus: ObservableObject {
     }
 
     func buy(_ p: Product) async {
+        guard Plus.salesEnabled else { message = Plus.salesNotice; return }
         guard loggedIn else { message = "먼저 로그인해 주세요."; return }
         busy = true; defer { busy = false }
         await loadProducts()
@@ -210,7 +215,8 @@ struct PlusCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("쓰담 플러스", systemImage: "sparkles").font(Theme.font(17, .bold)).foregroundStyle(Theme.lavender)
-            Text("컴퓨터 쓰담이 녹음을 학생별로 나누고 생기부 초안까지 AI로 써 줘요. 키나 설치 없이, 같은 계정으로 컴퓨터에서 로그인하면 돼요.")
+            Text(Plus.salesNotice).font(Theme.font(14, .semibold))
+            Text("녹음과 기록 등 기존 무료 기능을 이용해 주세요. 기존 이용권은 그대로 유지되며, 로그인 후 구매 복원과 구독 관리를 할 수 있어요.")
                 .font(Theme.font(12)).foregroundStyle(Theme.soft).fixedSize(horizontal: false, vertical: true)
             if plus.loggedIn { account } else { login }
             if !plus.message.isEmpty {
@@ -254,7 +260,7 @@ struct PlusCard: View {
             } else {
                 Text("지금은 구독 중이 아니에요.").font(Theme.font(13)).foregroundStyle(Theme.soft)
             }
-            ForEach(plus.products, id: \.id) { p in
+            ForEach(Plus.salesEnabled ? plus.products : [], id: \.id) { p in
                 Button { Task { await plus.buy(p) } } label: {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
