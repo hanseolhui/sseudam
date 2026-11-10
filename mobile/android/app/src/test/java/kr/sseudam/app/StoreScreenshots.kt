@@ -128,6 +128,11 @@ class StoreScreenshots {
             }
             rule.mainClock.advanceTimeBy(400); rule.waitForIdle()
             rule.onRoot().captureRoboImage(File(out, s.file).absolutePath)
+            if (s.tab == 3) {
+                // New-sales notice must remain reachable in the real connection screen.
+                scrollTo(Plus.SALES_NOTICE)
+                rule.onRoot().captureRoboImage(File(out, "07_유료상품_준비중.png").absolutePath)
+            }
         }
     }
 }
