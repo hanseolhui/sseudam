@@ -111,7 +111,9 @@ fun App(startTab: Int = 0, startRoute: Route? = null) {
     LaunchedEffect(hfReq) { if (hfReq) { tab.intValue = 0; stacks[0].clear() } }   // 손 없이 녹음은 담기 탭에서 시작
     BackHandler(enabled = nav.stack.isNotEmpty()) { nav.back() }
 
-    Scaffold(containerColor = T.bg, bottomBar = {
+    // Edge-to-edge에서는 adjustResize만으로 Compose 콘텐츠가 키보드를 피하지 않는다.
+    // 공통 컨테이너를 줄여 각 화면의 스크롤과 입력칸 포커스 이동이 작동하게 한다.
+    Scaffold(modifier = Modifier.imePadding(), containerColor = T.bg, bottomBar = {
         NavigationBar(containerColor = T.card) {
             val items = listOf(Triple("담기", Icons.Filled.Mic, 0), Triple("기록함", Icons.Filled.Inventory2, 1),
                 Triple("학생", Icons.Filled.People, 2), Triple("연결", Icons.Filled.Sync, 3))
@@ -123,7 +125,7 @@ fun App(startTab: Int = 0, startRoute: Route? = null) {
             }
         }
     }) { pad ->
-        Box(Modifier.padding(pad).fillMaxSize().background(T.bg)) {
+        Box(Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize().background(T.bg)) {
             when (val r = nav.stack.lastOrNull()) {
                 null -> when (tab.intValue) {
                     0 -> HomeScreen(nav); 1 -> RecordsScreen(nav); 2 -> StudentsScreen(nav); else -> ConnectScreen()

@@ -45,6 +45,18 @@ test('restore, receipt ingestion, renewals and management remain reachable', () 
   assert.doesNotMatch(play.slice(play.indexOf('    private fun onPurchases')), /SALES_ENABLED/);
 });
 
+test('paused Android sales still load account identity for 1.10.31 purchase restoration', () => {
+  const loader = android.slice(android.indexOf('    suspend fun loadProducts()'), android.indexOf('    suspend fun buy('));
+  assert.doesNotMatch(loader, /if \(!SALES_ENABLED\) return/);
+  assert.ok(loader.indexOf('"iap-config"') < loader.indexOf('PlusBilling.loadOffers(basePlans)'));
+  assert.match(loader, /if \(token != t\) return@onSuccess/);
+  assert.match(loader, /accountToken = j.optString\("accountToken"\)/);
+  const restore = android.slice(android.indexOf('    suspend fun restore()'));
+  assert.ok(restore.indexOf('loadProducts()') < restore.indexOf('PlusBilling.resendPurchases(all = true)'));
+  assert.match(play, /purchaseAccountMismatch\(owner, Plus.accountToken\)/);
+  assert.match(android, /if \(_email.value != it\) accountToken = null/);
+});
+
 test('desktop no longer advertises new purchases or beta enrollment', () => {
   assert.doesNotMatch(js, /새 구독은|스토어 구매 안내|구매·복원 안내|베타 신청하면 1달|id="plus-beta"/);
   assert.match(js, /유료 상품 곧 오픈/);
