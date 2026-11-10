@@ -68,6 +68,7 @@ object PlusBilling {
 
     /** 플레이에서 상품·가격 받기 (가격은 기기 나라 통화로) */
     suspend fun loadOffers(basePlans: List<String>) {
+        if (!Plus.SALES_ENABLED) { _offers.value = emptyList(); details.clear(); return }
         if (!connected()) return
         val params = QueryProductDetailsParams.newBuilder().setProductList(listOf(
             QueryProductDetailsParams.Product.newBuilder().setProductId(PRODUCT).setProductType(BillingClient.ProductType.SUBS).build())).build()
@@ -91,7 +92,19 @@ object PlusBilling {
 
     /** 결제 화면 열기. 문제가 있으면 안내 문구를 돌려준다 */
     suspend fun launch(activity: Activity, offer: PlusOffer, accountId: String): String? {
+        if (!Plus.SALES_ENABLED) return Plus.SALES_NOTICE
         if (!connected()) return "플레이 스토어에 연결하지 못했어요. 잠시 후 다시 해 주세요."
+        // 이미 소유한 상품은 결제창을 다시 열지 않고 현재 쓰담 계정과 대조한다.
+        val owned = client.queryPurchasesAsync(QueryPurchasesParams.newBuilder()
+            .setProductType(BillingClient.ProductType.SUBS).build())
+        if (owned.billingResult.responseCode != BillingClient.BillingResponseCode.OK)
+            return "기존 구매를 확인하지 못했어요. 잠시 후 다시 시도해 주세요."
+        val existing = owned.purchasesList.filter { PRODUCT in it.products }
+        if (existing.isNotEmpty()) {
+            existing.forEach { handle(it, all = true) }
+            return null
+        }
+        if (Plus.accountToken != accountId) return "로그인 계정이 바뀌었어요. 다시 눌러 주세요."
         val (pd, offerToken) = details[offer.basePlanId] ?: return "상품 정보를 받지 못했어요. 잠시 후 다시 해 주세요."
         val params = BillingFlowParams.newBuilder()
             .setProductDetailsParamsList(listOf(BillingFlowParams.ProductDetailsParams.newBuilder()
@@ -101,7 +114,7 @@ object PlusBilling {
         val r = client.launchBillingFlow(activity, params)
         return when (r.responseCode) {
             BillingClient.BillingResponseCode.OK, BillingClient.BillingResponseCode.USER_CANCELED -> null
-            BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> { resendPurchases(); "이미 구독 중이에요. 구독 상태를 다시 확인했어요." }
+            BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> { resendPurchases(all = true); null }
             else -> "결제하지 못했어요: ${r.debugMessage.ifEmpty { "오류 ${r.responseCode}" }}"
         }
     }
@@ -110,12 +123,19 @@ object PlusBilling {
         when (r.responseCode) {
             BillingClient.BillingResponseCode.OK -> scope.launch { purchases?.forEach { handle(it) } }
             BillingClient.BillingResponseCode.USER_CANCELED -> {}
+            BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> scope.launch { resendPurchases(all = true) }
             else -> Plus.message.value = "결제하지 못했어요: ${r.debugMessage.ifEmpty { "오류 ${r.responseCode}" }}"
         }
     }
 
     /** 결제 하나를 서버로. 확인 안 된 것만 (이미 확인된 것은 서버가 받은 것) */
     private suspend fun handle(p: Purchase, all: Boolean = false) {
+        if (PRODUCT !in p.products) return
+        val owner = p.accountIdentifiers?.obfuscatedAccountId
+        if (purchaseAccountMismatch(owner, Plus.accountToken)) {
+            Plus.message.value = "이 Google Play 구독은 다른 쓰담 계정에 연결되어 있어요. 구매할 때 사용한 쓰담 계정으로 로그인해 주세요. 현재 계정으로 새로 구매하려면 기존 구독이 없는 Play 계정을 사용해 주세요. 중복 결제는 진행하지 않았어요."
+            return
+        }
         when (p.purchaseState) {
             Purchase.PurchaseState.PENDING -> { Plus.message.value = "결제 승인을 기다리는 중이에요."; return }
             Purchase.PurchaseState.PURCHASED -> {}
@@ -136,9 +156,9 @@ object PlusBilling {
 
     /** 앱을 켤 때: 아직 서버에 안 간(확인 안 된) 결제를 다시 보낸다. 구매 복원(all)은 지금 구독 중인 결제를 모두 */
     suspend fun resendPurchases(all: Boolean = false) {
-        if (!connected()) return
+        if (!connected()) { Plus.message.value = "Play 구매 내역에 연결하지 못했어요. 다시 시도해 주세요."; return }
         val r = client.queryPurchasesAsync(QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.SUBS).build())
-        if (r.billingResult.responseCode != BillingClient.BillingResponseCode.OK) return
+        if (r.billingResult.responseCode != BillingClient.BillingResponseCode.OK) { Plus.message.value = "Play 구매 내역을 확인하지 못했어요. 다시 시도해 주세요."; return }
         r.purchasesList.forEach { handle(it, all) }
     }
 }

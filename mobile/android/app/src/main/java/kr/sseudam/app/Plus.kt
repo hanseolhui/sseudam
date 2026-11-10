@@ -50,6 +50,9 @@ data class PlusOffer(val basePlanId: String, val title: String, val price: Strin
  * 결제(플레이 결제 라이브러리)는 배포판별 PlusBilling (src/play · src/github).
  */
 object Plus {
+    // Keep billing available for receipt processing and restore, but pause new sales.
+    const val SALES_ENABLED = false
+    const val SALES_NOTICE = "유료 상품 곧 오픈"
     const val API = "https://apps.seoriarts.com/api/sseudam-plus"
     const val MANAGE_URL = "https://play.google.com/store/account/subscriptions?sku=plus&package=kr.sseudam.app"
     const val TERMS_URL = "https://apps.seoriarts.com/sseudam-plus-terms"
@@ -115,7 +118,7 @@ object Plus {
     }
 
     private fun apply(j: JSONObject) {
-        j.optString("email").ifEmpty { null }?.let { _email.value = it; prefs.edit().putString("plusEmail", it).apply() }
+        j.optString("email").ifEmpty { null }?.let { if (_email.value != it) accountToken = null; _email.value = it; prefs.edit().putString("plusEmail", it).apply() }
         j.optString("token").ifEmpty { null }?.let { token = it }
         j.optJSONObject("sub")?.let { s ->
             _status.value = Status(s.optBoolean("active"), s.optString("planName"), s.optString("endsAt"),
@@ -131,6 +134,7 @@ object Plus {
     private suspend fun call(f: suspend () -> JSONObject) {
         busy.value = true
         try { apply(f()); message.value = ""; loadProducts() }
+        catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (e: Exception) { message.value = e.message ?: "서버에 연결하지 못했어요." }
         finally { busy.value = false }
     }
@@ -198,8 +202,11 @@ object Plus {
 
     // 구독 (플레이 결제)
     suspend fun loadProducts() {
+        // Restore still needs the current account identity while new sales are paused.
+        // PlusBilling.loadOffers clears offers without querying the store when paused.
         val t = token
         if (accountToken == null && t != null) runCatching { post(JSONObject().put("action", "iap-config").put("token", t)) }.onSuccess { j ->
+            if (token != t) return@onSuccess
             accountToken = j.optString("accountToken").ifEmpty { null }
             j.optJSONObject("google")?.optJSONArray("basePlans")?.let { a ->
                 basePlans = (0 until a.length()).map { a.getString(it) }.ifEmpty { basePlans }
@@ -209,8 +216,10 @@ object Plus {
     }
 
     suspend fun buy(activity: Activity, offer: PlusOffer) {
+        if (!SALES_ENABLED) { message.value = SALES_NOTICE; return }
         if (token == null) { message.value = "먼저 로그인해 주세요."; return }
         busy.value = true
+        message.value = ""
         try {
             loadProducts()
             val acc = accountToken ?: run { message.value = "계정 정보를 받지 못했어요. 잠시 후 다시 해 주세요."; return }
@@ -225,7 +234,9 @@ object Plus {
     suspend fun sendPurchase(purchaseToken: String): Boolean {
         val t = token ?: return false
         return try {
-            apply(post(JSONObject().put("action", "iap-google").put("token", t).put("purchaseToken", purchaseToken)))
+            val response = post(JSONObject().put("action", "iap-google").put("token", t).put("purchaseToken", purchaseToken))
+            if (token != t) return false
+            apply(response)
             message.value = "✓ 쓰담 플러스가 시작됐어요. 컴퓨터 쓰담에서 같은 계정으로 로그인하세요."
             true
         } catch (e: Exception) { message.value = e.message ?: "서버에 연결하지 못했어요."; false }
@@ -235,6 +246,7 @@ object Plus {
         busy.value = true
         message.value = ""   // 지난 오류 문구가 남아 있지 않게
         try {
+            loadProducts()
             PlusBilling.resendPurchases(all = true); refresh()
             if (message.value.isEmpty() && !status.value.active) message.value = "복원할 구독이 없어요."
         } finally { busy.value = false }
@@ -252,6 +264,8 @@ tailrec fun Context.findActivity(): Activity? = when (this) {
 @Composable
 fun PlusCard() {
     val ctx = LocalContext.current
+    // 로그인 폼이 계정 화면으로 바뀌어도 로그인 후 상품 조회를 마친다.
+    val accountScope = rememberCoroutineScope()
     remember { Plus.init(ctx) }
     val loggedIn by Plus.loggedIn.collectAsStateWithLifecycle()
     val message by Plus.message.collectAsStateWithLifecycle()
@@ -261,12 +275,13 @@ fun PlusCard() {
 
     Column(Modifier.fillMaxWidth().card(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("✨ 쓰담 플러스", fontWeight = FontWeight.Bold, color = T.lavender, fontSize = 17.sp)
-        Text("컴퓨터 쓰담이 녹음을 학생별로 나누고 생기부 초안까지 AI로 써 줘요. 키나 설치 없이, 같은 계정으로 컴퓨터에서 로그인하면 돼요.",
+        Text(Plus.SALES_NOTICE, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        Text("녹음과 기록 등 기존 무료 기능을 이용해 주세요. 기존 이용권은 그대로 유지되며, 로그인 후 구매 복원과 구독 관리를 할 수 있어요.",
             fontSize = 12.sp, color = T.soft)
         // 알림 문구는 위쪽에 (✓ 로 시작하면 성공 = 초록, 아니면 빨강)
         if (message.isNotEmpty()) Text(message, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
             color = if (message.startsWith("✓")) T.mint else T.coral)
-        if (loggedIn) PlusAccount() else PlusLogin()
+        if (loggedIn) PlusAccount() else PlusLogin(accountScope)
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("이용약관", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = T.blue,
                 modifier = Modifier.padding(vertical = 4.dp).clickable { openUrl(ctx, Plus.TERMS_URL) })
@@ -275,13 +290,12 @@ fun PlusCard() {
         }
     }
     // 처음 화면에 나올 때 끝나지 않은 결제를 서버로 (결제 라이브러리 연결 뒤)
-    LaunchedEffect(loggedIn) { if (loggedIn) PlusBilling.resendPurchases() }
+    LaunchedEffect(loggedIn) { if (loggedIn) { Plus.loadProducts(); PlusBilling.resendPurchases() } }
 }
 
 @Composable
-private fun PlusLogin() {
+private fun PlusLogin(scope: kotlinx.coroutines.CoroutineScope) {
     val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
     val busy by Plus.busy.collectAsStateWithLifecycle()
     var mail by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
@@ -332,7 +346,7 @@ private fun PlusAccount() {
         if (status.active) Pill("✓ ${status.planName} · ${status.daysToEnd}일 남음", T.mint)
         else Text("지금은 구독 중이 아니에요.", fontSize = 13.sp, color = T.soft)
         if (PlusBilling.AVAILABLE) {
-            offers.forEach { o ->
+            (if (Plus.SALES_ENABLED) offers else emptyList()).forEach { o ->
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
                     .then(if (busy) Modifier.background(Color.Gray.copy(alpha = 0.3f)) else Modifier.background(T.brand))
                     .clickable(enabled = !busy) { ctx.findActivity()?.let { a -> scope.launch { Plus.buy(a, o) } } }
@@ -348,7 +362,7 @@ private fun PlusAccount() {
             Text("구글 플레이 계정으로 결제되고, 끄지 않으면 같은 기간으로 자동 갱신돼요. 플레이 스토어 → 프로필 → 결제 및 정기 결제 → 정기 결제에서 언제든 해지할 수 있어요.",
                 fontSize = 11.sp, color = T.soft)
         } else {
-            Text("구독은 App Store · Google Play에서 받은 쓰담 앱에서 할 수 있어요. 여기서 같은 계정으로 로그인하면 구독 상태가 보여요.",
+            Text("기존 이용권이 있으면 같은 계정으로 로그인해 주세요. 구독 관리와 구매 복원은 구매한 스토어의 쓰담 앱에서 할 수 있어요.",
                 fontSize = 12.sp, color = T.soft)
         }
         // 계정 삭제 (스토어 정책: 앱 안에서 계정을 지울 수 있어야 함)
