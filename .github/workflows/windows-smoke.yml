@@ -54,6 +54,14 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: 백업 보존 · 연결 정보 · 클라우드 폴더 시험
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p "test_backup*.py"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p "test_cloud_folder.py"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: 쓰담 서버 켜고 핵심 기능 시험 (한 단계 안에서)
         shell: pwsh
         run: |
