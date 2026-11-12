@@ -100,6 +100,32 @@ jobs:
           '@ | python -
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Windows 합성 파일의 경로·핸들 식별 정보 진단
+        shell: pwsh
+        run: |
+          @'
+          import json, os, pathlib, sys, tempfile
+          fields = ("st_ino", "st_dev", "st_size", "st_mtime_ns", "st_ctime_ns", "st_birthtime_ns")
+          def values(info):
+              return {field: getattr(info, field, None) for field in fields}
+          result = {"python": sys.version, "platform": sys.platform, "cases": []}
+          with tempfile.TemporaryDirectory(prefix="sseudam-stat-diagnostic-") as temporary:
+              path = pathlib.Path(temporary) / "synthetic.wav"
+              for content in (b"synthetic-audio-A", b"synthetic-audio-B-longer"):
+                  path.write_bytes(content)
+                  before = os.lstat(path)
+                  with path.open("rb") as source:
+                      opened = os.fstat(source.fileno())
+                      source.read()
+                      after = os.fstat(source.fileno())
+                  result["cases"].append({"lstat_before": values(before), "fstat_opened": values(opened),
+                                          "fstat_after": values(after), "lstat_after": values(os.lstat(path)),
+                                          "same_file": os.path.samestat(before, opened)})
+          pathlib.Path("windows-stat-diagnostic.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+          print(json.dumps(result))
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: 전체 Python 시험 (백업 · 음성 · 클라우드 통합 포함)
         shell: pwsh
         run: |
@@ -205,3 +231,4 @@ jobs:
             smoke-report.txt
             source-tests.log
             release-verification.json
+            windows-stat-diagnostic.json
