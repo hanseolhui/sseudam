@@ -467,6 +467,17 @@ audio { width: 100%; margin: 8px 0; }
 .nc-count { margin-left: auto; min-width: 26px; height: 26px; border-radius: 50%; display: grid; place-content: center; font-weight: 800; font-size: 12px; background: var(--amber-soft); color: var(--amber); }
 .nc-count.zero { background: var(--red-soft); color: var(--red); }
 
+/* 홈의 반 폭 카드에서도 긴 파일명과 상태를 모두 읽을 수 있게 */
+.dashboard-grid > .card { min-width: 0; }
+.recent-recordings-list { list-style: none; margin: 0; padding: 0; }
+.recent-recordings-list > li + li { border-top: 1px solid var(--line); }
+.recent-recording { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px; padding: 12px 0; color: var(--text); }
+.recent-recording:hover { background: var(--panel-2); text-decoration: none; }
+.recent-recording-main { min-width: 0; display: grid; gap: 3px; overflow-wrap: anywhere; }
+.recent-recording-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+.recent-recording-title { display: block; overflow-wrap: anywhere; }
+.recent-recording-status { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; white-space: nowrap; }
+
 @media (prefers-reduced-motion: reduce) {
   .pop, .cp-row { opacity: 1; transform: none; animation: none !important; }
   .dots i, .weekly .col { transform: none; animation: none !important; }

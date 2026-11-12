@@ -452,7 +452,7 @@ async function viewDashboard() {
       <div class="stat pop ring-stat" style="--d:4">
         ${donut(pct(t.drafted, t.students), 'var(--mint)', '세특 초안', `확정 ${t.finalized}명`)}</div>
     </div>
-    <div class="grid grid-2">
+    <div class="grid grid-2 dashboard-grid">
       <div class="card">
         <div class="section-title"><h2>학급별 진행</h2><div class="legend"><span><i style="background:var(--grad)"></i>기록 있음</span><span><i style="background:var(--mint)"></i>초안 작성</span></div></div>
         <div class="class-progress">${d.classes.map((c, i) => {
@@ -477,11 +477,13 @@ async function viewDashboard() {
           <span class="nc-face">${s.notes ? '🌿' : '🌱'}</span><span><b>${esc(s.name)}</b><small>${esc(s.label)} · ${s.number}번</small></span>
           <span class="nc-count ${s.notes ? '' : 'zero'}">${s.notes}</span></a>`).join('')}</div>
       </div>
-      <div class="card">
-        <div class="section-title"><h2>최근 녹음</h2><a href="#/recordings" class="small">전체 보기</a></div>
-        <table><tbody>${d.recent.map(r => `<tr class="clickable" data-href="#/recording/${r.id}">
-          <td class="small muted nowrap">${esc(fmtDate(r.recorded_at))}</td><td>${kindBadge(r.kind)} ${esc(r.title)}<div class="small muted">${esc(r.label)}</div></td>
-          <td class="right nowrap">${badge(r.status)}<div class="small muted">학생기록 ${r.notes}</div></td></tr>`).join('') || '<tr><td class="muted">아직 녹음이 없습니다</td></tr>'}</tbody></table>
+      <div class="card recent-recordings">
+        <div class="section-title"><h2 id="recent-recordings-title">최근 녹음</h2><a href="#/recordings" class="small">전체 보기</a></div>
+        <ul class="recent-recordings-list" aria-labelledby="recent-recordings-title">${d.recent.map(r => `<li><a class="recent-recording" href="#/recording/${r.id}">
+          <span class="recent-recording-main"><span class="recent-recording-meta small muted">${kindBadge(r.kind)}<span>${esc(fmtDate(r.recorded_at))}</span></span>
+            <span class="recent-recording-title">${esc(r.title)}</span><span class="small muted">${esc(r.label)}</span></span>
+          <span class="recent-recording-status">${badge(r.status)}<span class="small muted">학생기록 ${r.notes}</span></span>
+        </a></li>`).join('') || '<li class="muted small">아직 녹음이 없습니다</li>'}</ul>
       </div>
     </div>`;
   bindRowLinks();
