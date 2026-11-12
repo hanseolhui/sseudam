@@ -1,5 +1,6 @@
 """녹음 원본 증분 사본. 임시 폴더와 가짜 바이트만 사용한다."""
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -161,8 +162,90 @@ class CloudAudioTests(unittest.TestCase):
     def changed_stat(info, **changes):
         values = {name: getattr(info, name) for name in
                   ('st_mode', 'st_size', 'st_mtime_ns', 'st_ctime_ns', 'st_dev', 'st_ino')}
+        if hasattr(info, 'st_birthtime_ns'):
+            values['st_birthtime_ns'] = info.st_birthtime_ns
         values.update(changes)
         return types.SimpleNamespace(**values)
+
+    def test_windows_path_birthtime_and_handle_changetime_can_differ(self):
+        source = self.audio()
+        regular, fstat = cloudaudio._regular, os.fstat
+        def by_path(path, root):
+            return self.changed_stat(regular(path, root), st_ctime_ns=100, st_birthtime_ns=100)
+        def by_handle(fd):
+            return self.changed_stat(fstat(fd), st_ctime_ns=200, st_birthtime_ns=100)
+        with patch.object(cloudaudio, '_WINDOWS', True), \
+                patch.object(cloudaudio, '_regular', side_effect=by_path), \
+                patch.object(cloudaudio.os, 'fstat', side_effect=by_handle):
+            digest, info = cloudaudio._stream(str(source.resolve()), str(self.source.resolve()))
+        self.assertEqual(digest, hashlib.sha256(source.read_bytes()).hexdigest())
+        self.assertEqual(info.st_ctime_ns, 100)  # Cache uses the same lstat domain as the next scan.
+
+    def test_windows_handle_changetime_mutation_is_still_rejected(self):
+        source = self.audio()
+        regular, fstat = cloudaudio._regular, os.fstat
+        calls = []
+        def by_path(path, root):
+            return self.changed_stat(regular(path, root), st_ctime_ns=100, st_birthtime_ns=100)
+        def changed_handle(fd):
+            calls.append(fd)
+            return self.changed_stat(fstat(fd), st_ctime_ns=200 + len(calls), st_birthtime_ns=100)
+        with patch.object(cloudaudio, '_WINDOWS', True), \
+                patch.object(cloudaudio, '_regular', side_effect=by_path), \
+                patch.object(cloudaudio.os, 'fstat', side_effect=changed_handle):
+            with self.assertRaises(cloudaudio.CloudAudioError):
+                cloudaudio._stream(str(source.resolve()), str(self.source.resolve()))
+        self.assertEqual(len(calls), 2)
+
+    def test_windows_path_handle_identity_and_content_mismatch_is_rejected_before_read(self):
+        source = self.audio()
+        regular, fstat = cloudaudio._regular, os.fstat
+        def by_path(path, root):
+            return self.changed_stat(regular(path, root), st_ctime_ns=100, st_birthtime_ns=100)
+        for field in ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns', 'st_birthtime_ns'):
+            with self.subTest(field=field):
+                output = io.BytesIO()
+                def wrong_handle(fd):
+                    info = self.changed_stat(fstat(fd), st_ctime_ns=200, st_birthtime_ns=100)
+                    return self.changed_stat(info, **{field: getattr(info, field) + 1})
+                with patch.object(cloudaudio, '_WINDOWS', True), \
+                        patch.object(cloudaudio, '_regular', side_effect=by_path), \
+                        patch.object(cloudaudio.os, 'fstat', side_effect=wrong_handle):
+                    with self.assertRaises(cloudaudio.CloudAudioError):
+                        cloudaudio._stream(str(source.resolve()), str(self.source.resolve()), output)
+                self.assertEqual(output.getvalue(), b'')
+
+    def test_windows_different_ctime_domains_do_not_break_unchanged_cache(self):
+        source = self.audio()
+        fstat = os.fstat
+        def by_handle(fd):
+            info = fstat(fd)
+            return self.changed_stat(info, st_ctime_ns=info.st_ctime_ns + 123456)
+        with patch.object(cloudaudio, '_WINDOWS', True), \
+                patch.object(cloudaudio.os, 'fstat', side_effect=by_handle):
+            self.assertEqual(self.run_sync()['copied'], 1)
+        with patch.object(cloudaudio, '_stream', side_effect=AssertionError('unchanged audio must not be read')):
+            result = self.run_sync()
+        self.assertEqual((result['copied'], result['unchanged']), (0, 1))
+        self.assertEqual(self.saved(source).read_bytes(), source.read_bytes())
+
+    def test_file_replaced_between_path_check_and_open_is_rejected_before_read(self):
+        source = self.audio(data=b'same-bytes')
+        replacement = self.audio('replacement.wav', data=b'same-bytes')
+        original = source.stat()
+        os.utime(replacement, ns=(original.st_atime_ns, original.st_mtime_ns))
+        real_open = os.open
+        def open_other_file(path, flags, *args, **kwargs):
+            actual = replacement if Path(path) == source.resolve() else path
+            return real_open(actual, flags, *args, **kwargs)
+        for windows in (False, True):
+            with self.subTest(windows=windows):
+                output = io.BytesIO()
+                with patch.object(cloudaudio, '_WINDOWS', windows), \
+                        patch.object(cloudaudio.os, 'open', side_effect=open_other_file):
+                    with self.assertRaises(cloudaudio.CloudAudioError):
+                        cloudaudio._stream(str(source.resolve()), str(self.source.resolve()), output)
+                self.assertEqual(output.getvalue(), b'')
 
     def test_cloud_stream_allows_ctime_only_change_during_read(self):
         cloud_file = self.cloud/'synthetic.m4a'; cloud_file.write_bytes(b'unchanged-audio')

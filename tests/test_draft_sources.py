@@ -20,17 +20,17 @@ def connection():
 class DraftSourcesTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.patches = [patch.object(db, 'DATA_DIR', self.tmp.name), patch.object(db, 'DB_PATH', str(Path(self.tmp.name)/'test.db')), patch.object(db, 'BACKUP_DIR', str(Path(self.tmp.name)/'backups')), patch.object(db, 'AUDIO_DIR', str(Path(self.tmp.name)/'audio'))]
-        for p in self.patches: p.start()
+        for p in self.patches:
+            p.start()
+            self.addCleanup(p.stop)
         db.init()
         with connection() as c:
             cid = c.execute("INSERT INTO classes(year,semester,grade,class_no,subject,kind) VALUES(2026,2,2,3,'과학','교과')").lastrowid
             self.sid = c.execute("INSERT INTO students(class_id,number,name) VALUES(?,1,'가상학생')", (cid,)).lastrowid
             self.nid = c.execute("INSERT INTO notes(student_id,date,content,use_in_draft,area) VALUES(?,'2026-10-29','실험 결과를 표로 정리함',1,'subject')",(self.sid,)).lastrowid
             c.execute("INSERT INTO notes(student_id,date,content,use_in_draft,area) VALUES(?,'2026-10-29','초안 제외 기록',0,'subject')",(self.sid,))
-    def tearDown(self):
-        for p in reversed(self.patches): p.stop()
-        self.tmp.cleanup()
     def test_input_snapshot_survives_later_edits(self):
         params={'student_id':self.sid,'area':'subject'}
         pipeline.build_prompt('draft',params)

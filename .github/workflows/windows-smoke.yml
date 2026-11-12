@@ -104,14 +104,16 @@ jobs:
         shell: pwsh
         run: |
           @'
-          import json, os, pathlib, sys, tempfile
+          import json, os, pathlib, sys, tempfile, time
           fields = ("st_ino", "st_dev", "st_size", "st_mtime_ns", "st_ctime_ns", "st_birthtime_ns")
           def values(info):
               return {field: getattr(info, field, None) for field in fields}
           result = {"python": sys.version, "platform": sys.platform, "cases": []}
           with tempfile.TemporaryDirectory(prefix="sseudam-stat-diagnostic-") as temporary:
               path = pathlib.Path(temporary) / "synthetic.wav"
-              for content in (b"synthetic-audio-A", b"synthetic-audio-B-longer"):
+              for index, content in enumerate((b"synthetic-audio-A", b"synthetic-audio-B-longer")):
+                  if index:
+                      time.sleep(0.1)  # NTFS의 생성 시각과 변경 시각이 같은 tick이 되지 않게 한다.
                   path.write_bytes(content)
                   before = os.lstat(path)
                   with path.open("rb") as source:

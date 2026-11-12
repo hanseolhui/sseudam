@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """쓰담 로컬 서버. 실행: python3 app/server.py"""
 import datetime
+from contextlib import closing
 import json
 import mimetypes
 import os
@@ -1038,7 +1039,7 @@ def term_review(h, q, b):
     year, semester = _int(q.get("year")), _int(q.get("semester"))
     if not year or semester not in (1, 2):
         raise ApiError("학기를 고르세요.")
-    with db.connect() as conn:
+    with closing(db.connect()) as conn, conn:
         classes = db.rows(conn, "SELECT * FROM classes WHERE year=? AND semester=?", (year, semester))
     result = []
     for c in classes:
@@ -1052,7 +1053,7 @@ def term_review(h, q, b):
 
 @route("POST", "/api/drafts/batch_preview")
 def drafts_batch_preview(h, q, b):
-    with db.connect() as conn:
+    with closing(db.connect()) as conn, conn:
         c = db.row(conn, "SELECT * FROM classes WHERE id=?", (int(b["class_id"]),))
         if not c: raise ApiError("학급이 없습니다.", 404)
         area = b.get("area") or "subject"
@@ -1084,7 +1085,7 @@ def drafts_batch_reviewed_save(h, q, b):
     items = b.get("items") or []
     if not items or len(items) > 500: raise ApiError("저장할 학생을 골라 주세요.")
     area = b.get("area") or "subject"
-    with db.connect() as conn:
+    with closing(db.connect()) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
         c = db.row(conn, "SELECT * FROM classes WHERE id=?", (int(b["class_id"]),))
         if not c or area not in [a["id"] for a in db.areas_for_kind(c.get("kind") or "교과")]:

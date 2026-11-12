@@ -13,6 +13,7 @@ import db
 
 AUDIO_EXTS = {".m4a", ".mp3", ".wav", ".aac", ".mp4", ".caf", ".aiff", ".aif", ".flac", ".ogg", ".qta", ".3gp"}
 CHUNK_SIZE = 1024 * 1024
+_WINDOWS = os.name == "nt"
 _lock = threading.Lock()
 RESTORE_GUIDE = """쓰담 녹음 원본 사본\n\n기록 ZIP과 이 폴더의 audio/ 원본 녹음은 별도입니다. 복원에 대비해 함께 보관하세요.\n같은 컴퓨터에서 복원할 때는 쓰담을 종료하고, 기존 data/audio를 별도로 보존한 뒤 audio/의 상대 폴더 구조를 유지하여 data/audio에 복사하세요.\n다른 컴퓨터에서는 기록 DB의 녹음 경로를 다시 연결해야 합니다. 그대로 덮어쓰지 말고 지원을 요청하세요.\n.history/는 변경 전 사본이며 manifest.json은 상대경로·크기·SHA-256 검증 정보입니다.\n원본을 삭제해도 이곳의 녹음 사본과 이전 버전은 자동 삭제하지 않습니다.\n이 폴더에 저장됐다는 사실과 iCloud·OneDrive의 업로드 완료는 다릅니다. 업로드 상태는 해당 클라우드 앱에서 확인하세요.\n"""
 
@@ -86,6 +87,17 @@ def _content_signature(info):
     return {"size": info.st_size, "mtime_ns": info.st_mtime_ns, "dev": info.st_dev, "ino": info.st_ino}
 
 
+def _path_handle_signature(info, cloud=False):
+    if _WINDOWS:
+        # CPython 3.12 Windows: lstat의 ctime은 생성 시각, fstat의 ctime은 변경 시각이다.
+        # 서로 다른 의미의 시각을 비교하지 않는다. 기기/파일 ID와 내용 상태는 그대로 검사하고,
+        # 동일 API의 읽기 전후 ctime 검사는 _stream에서 별도로 유지한다.
+        result = _content_signature(info)
+        result["birthtime_ns"] = getattr(info, "st_birthtime_ns", None)
+        return result
+    return _content_signature(info) if cloud else _signature(info)
+
+
 def _destination_signature(info):
     # 클라우드의 온라인 전용 전환은 inode/ctime을 바꿀 수 있다. 본문 재다운로드를 강제하지 않는다.
     return {"size": info.st_size, "mtime_ns": info.st_mtime_ns}
@@ -106,7 +118,7 @@ def _stream(path, root, output=None, cloud=False):
     digest = hashlib.sha256()
     with os.fdopen(os.open(path, flags), "rb") as source:
         opened = os.fstat(source.fileno())
-        if signature(opened) != signature(before):
+        if _path_handle_signature(opened, cloud) != _path_handle_signature(before, cloud):
             raise CloudAudioError("녹음 파일이 바뀌고 있어요. 잠시 후 다시 시도해 주세요.")
         _guard(path, root)
         for chunk in iter(lambda: source.read(CHUNK_SIZE), b""):
@@ -115,9 +127,10 @@ def _stream(path, root, output=None, cloud=False):
                 output.write(chunk)
         after = os.fstat(source.fileno())
     named = _regular(path, root)
-    if signature(before) != signature(after) or signature(after) != signature(named):
+    if signature(opened) != signature(after) or signature(before) != signature(named):
         raise CloudAudioError("복사 중 녹음 파일이 바뀌었어요. 기존 사본을 유지했어요.")
-    return digest.hexdigest(), after
+    # 다음 탐색도 lstat을 쓰므로 manifest에는 경로 기준의 동일한 메타데이터를 저장한다.
+    return digest.hexdigest(), named
 
 
 def _stage(source, source_root, destination, destination_root, expected=None, source_is_cloud=False):
