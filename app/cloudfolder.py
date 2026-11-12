@@ -7,11 +7,13 @@
                                    (전체 엑셀로 저장의 시트 + 초안 전체 버전 + 녹음 받아쓴 글)
 
 쓰담 서버로는 아무것도 보내지 않는다. 폴더를 클라우드에 올리는 일은 그 클라우드 프로그램이 한다.
+원본 음성은 따로 켰을 때만 cloudaudio가 기기별 폴더에 증분 보관한다 (자동 삭제 없음).
 이름이 같은 컴퓨터도 기기ID로 구분한다. 예전 이름만 있는 백업은 소유 기기를 확정할 수 없어 그대로 보존한다.
 """
 import datetime
 import glob
 import hashlib
+import json
 import os
 import re
 import socket
@@ -32,6 +34,7 @@ CHECK_SECONDS = 3600
 KINDS = (("쓰담-백업-", ".zip"), ("쓰담-기록-", ".xlsx"))
 _lock = threading.Lock()
 _identity_lock = threading.Lock()
+_audio_busy = threading.Event()
 
 
 def _nfc(s):
@@ -144,9 +147,29 @@ def folder():
 def status():
     s = db.get_settings()
     f = (s.get("backup_folder") or "").strip()
+    try:
+        summary = json.loads(s.get("backup_audio_summary") or "{}")
+    except (ValueError, TypeError):
+        summary = {}
     return {"folder": f, "exists": bool(f) and os.path.isdir(f), "last": s.get("backup_folder_last") or "",
             "error": s.get("backup_folder_error") or "", "device": device_name(),
+            "audio_enabled": bool(f) and s.get("backup_audio") == "1", "audio_busy": _audio_busy.is_set(),
+            "audio_last": s.get("backup_audio_last") or "", "audio_error": s.get("backup_audio_error") or "",
+            "audio_summary": summary,
             "candidates": [] if f else candidates()}
+
+
+def set_audio_enabled(enabled):
+    """음성은 별도 선택. 켜면 즉시 복사하고 다음 자동 확인에도 새 음성을 보관한다."""
+    if type(enabled) is not bool:
+        raise ValueError("녹음 원본 백업 여부를 선택해 주세요.")
+    with _lock:
+        if enabled and not folder():
+            raise ValueError("먼저 백업할 클라우드 폴더를 골라 주세요.")
+        db.set_settings({"backup_audio": "1" if enabled else "0"})
+    if enabled:
+        copy_now(force=True)
+    return status()
 
 
 def _inside(path, parent):
@@ -166,7 +189,10 @@ def set_folder(path="", candidate=""):
         os.makedirs(path, exist_ok=True)
     path = os.path.expanduser((path or "").strip().strip('"'))
     if not path:
-        db.set_settings({"backup_folder": "", "backup_folder_last": "", "backup_folder_error": ""})
+        with _lock:
+            db.set_settings({"backup_folder": "", "backup_folder_last": "", "backup_folder_error": "",
+                             "backup_audio": "0", "backup_audio_last": "", "backup_audio_error": "",
+                             "backup_audio_summary": ""})
         return status()
     if not os.path.isabs(path) or not os.path.isdir(path):
         raise ValueError("폴더를 찾을 수 없어요. 탐색기 · Finder 에서 폴더 주소를 복사해 붙여넣어 주세요.")
@@ -179,7 +205,12 @@ def set_folder(path="", candidate=""):
         os.remove(probe)
     except OSError:
         raise ValueError("이 폴더에 파일을 쓸 수 없어요. 다른 폴더를 골라 주세요.")
-    db.set_settings({"backup_folder": path, "backup_folder_last": "", "backup_folder_error": ""})
+    with _lock:
+        vals = {"backup_folder": path, "backup_folder_last": "", "backup_folder_error": ""}
+        if os.path.realpath(folder()) != os.path.realpath(path):
+            vals.update({"backup_audio": "0", "backup_audio_last": "", "backup_audio_error": "",
+                         "backup_audio_summary": ""})
+        db.set_settings(vals)
     copy_now(force=True)
     return status()
 
@@ -286,10 +317,11 @@ def _xlsx_bytes():
 
 def copy_now(force=False):
     """오늘 사본이 없으면(또는 force) 만들어 둔다. 실패해도 예외를 내지 않고 설정에 이유를 적는다."""
-    f = folder()
-    if not f:
-        return {"ok": False, "off": True}
     with _lock:
+        f = folder()
+        if not f:
+            return {"ok": False, "off": True}
+        audio_stage = False
         try:
             if not os.path.isdir(f):
                 raise OSError("폴더를 찾을 수 없어요 (%s). 클라우드 프로그램이 켜져 있는지, USB 가 꽂혀 있는지 확인해 주세요." % f)
@@ -307,10 +339,25 @@ def copy_now(force=False):
                         pass
             if made:
                 db.set_settings({"backup_folder_last": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), "backup_folder_error": ""})
+            audio = None
+            if db.get_settings().get("backup_audio") == "1":
+                import cloudaudio
+                audio_stage = True
+                _audio_busy.set()
+                try:
+                    audio = cloudaudio.sync(f, _device_id())
+                    db.set_settings({"backup_audio_last": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                     "backup_audio_error": "", "backup_audio_summary": json.dumps(audio, ensure_ascii=False)})
+                except Exception as e:
+                    db.set_settings({"backup_audio_error": str(e)})
+                    raise
+                finally:
+                    _audio_busy.clear()
             # 오늘 파일이 있어 쓰기를 건너뛴 경우에는 앞선 실패가 복구됐다고 판단하지 않는다.
-            return {"ok": True, "made": made}
+            return {"ok": True, "made": made, "audio": audio}
         except Exception as e:  # noqa — 폴더 없음 · 권한 · 디스크 가득 등. 다음 차례에 다시
-            db.set_settings({"backup_folder_error": "%s · %s" % (datetime.datetime.now().strftime("%m-%d %H:%M"), e)})
+            if not audio_stage:
+                db.set_settings({"backup_folder_error": "%s · %s" % (datetime.datetime.now().strftime("%m-%d %H:%M"), e)})
             return {"ok": False, "error": str(e)}
 
 

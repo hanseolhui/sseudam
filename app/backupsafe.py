@@ -20,7 +20,8 @@ CONNECTIONS = (
                    "relay_doc_sig", "relay_peer_sig", "relay_peer_at")),
     ("school_link_token", ("school_link_token", "school_link_device", "school_link_name", "school_link_teacher")),
     # 비밀은 아니지만 이 컴퓨터의 폴더 주소라 다른 컴퓨터로 따라가면 안 된다
-    ("backup_folder", ("backup_folder", "backup_folder_last", "backup_folder_error")),
+    ("backup_folder", ("backup_folder", "backup_folder_last", "backup_folder_error",
+                       "backup_audio", "backup_audio_last", "backup_audio_error", "backup_audio_summary")),
 )
 # 구글 연결은 백업에 그대로 둔다. 백업이 놓이는 곳이 바로 그 구글 드라이브이고, 같은 토큰이 그 계정의
 # Apps Script 에 적혀 있어 빼도 지켜지는 것이 없다. 빼면 새 컴퓨터에서 스크립트를 다시 배포해야 한다.
@@ -51,7 +52,10 @@ def remember(conn):
         return {}
     keep = {}
     for marker, keys in CONNECTIONS + (GOOGLE,):
-        if now.get(marker):
+        if marker == "backup_folder":
+            # 꺼둔 상태도 이 컴퓨터의 선택이다. 옛 로컬 백업의 음성 전송 동의를 되살리지 않는다.
+            keep.update({k: now.get(k, db.DEFAULT_SETTINGS.get(k, "")) for k in keys})
+        elif now.get(marker):
             keep.update({k: now[k] for k in keys if k in now})
     return keep
 

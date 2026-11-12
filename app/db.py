@@ -5,6 +5,8 @@ import shutil
 import sqlite3
 import datetime
 import json
+import tempfile
+import threading
 
 import platform_util
 
@@ -16,6 +18,7 @@ DATA_DIR = os.environ.get("SETEUK_DATA") or os.path.join(SUPPORT_DIR, "data")
 AUDIO_DIR = os.path.join(DATA_DIR, "audio")
 BACKUP_DIR = os.path.join(DATA_DIR, "backups")
 DB_PATH = os.path.join(DATA_DIR, "seteuk.db")
+_audio_archive_lock = threading.Lock()
 
 DEFAULT_SETTINGS = {
     "mode": "api",                      # api | manual
@@ -94,6 +97,10 @@ DEFAULT_SETTINGS = {
     "backup_folder": "",
     "backup_folder_last": "",
     "backup_folder_error": "",
+    "backup_audio": "0",                 # 따로 동의한 경우에만 원본 음성도 고른 폴더에 보관
+    "backup_audio_last": "",
+    "backup_audio_error": "",
+    "backup_audio_summary": "",
     # 휴대폰 앱(아이폰·안드로이드) → 구글 드라이브 → 이 컴퓨터
     "drive_inbox": "1",
     "upload_token": "",
@@ -514,13 +521,27 @@ def move_audio_into_archive(src_path, recorded_at, class_hint, kind, copy=True):
     ext = os.path.splitext(src_path)[1].lower() or ".m4a"
     safe_hint = "".join(ch for ch in (class_hint or "") if ch.isalnum() or ch in "-_")
     base = "%s_%s%s" % (dt.strftime("%Y%m%d-%H%M"), kind, ("_" + safe_hint) if safe_hint else "")
-    dest = os.path.join(folder, base + ext)
-    i = 2
-    while os.path.exists(dest):
-        dest = os.path.join(folder, "%s-%d%s" % (base, i, ext))
-        i += 1
-    if copy:
-        shutil.copy2(src_path, dest)
-    else:
-        shutil.move(src_path, dest)
-    return dest
+    # 복사 중인 파일을 자동 백업이 완성된 녹음으로 읽지 않도록 .tmp로 다 쓴 뒤 공개한다.
+    with _audio_archive_lock:
+        fd, tmp = tempfile.mkstemp(prefix=".recording-", suffix=".tmp", dir=folder)
+        try:
+            try:
+                shutil.copy2(src_path, tmp)
+                os.fsync(fd)  # mkstemp의 쓰기 가능한 핸들을 유지 (Windows _commit 호환)
+            finally:
+                os.close(fd)
+            dest = os.path.join(folder, base + ext)
+            i = 2
+            while True:
+                try:
+                    os.link(tmp, dest)  # 다른 프로세스도 같은 이름을 골랐다면 덮어쓰지 않는다
+                    break
+                except FileExistsError:
+                    dest = os.path.join(folder, "%s-%d%s" % (base, i, ext))
+                    i += 1
+            if not copy:
+                os.remove(src_path)
+            return dest
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)

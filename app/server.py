@@ -1653,6 +1653,15 @@ def backup_folder_now(h, q, b):
     return dict(cloudfolder.status(), made=r["made"])
 
 
+@route("POST", "/api/backup-folder/audio")
+def backup_folder_audio(h, q, b):
+    import cloudfolder
+    try:
+        return cloudfolder.set_audio_enabled(b.get("enabled"))
+    except ValueError as e:
+        raise ApiError(str(e))
+
+
 @route("POST", "/api/backup-folder/open")
 def backup_folder_open(h, q, b):
     import cloudfolder

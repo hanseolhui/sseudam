@@ -1900,7 +1900,7 @@ async function viewSettings(section) {
       <div class="card" style="grid-column:1 / -1;order:1" id="backup-card" data-pane="data">
         <div class="section-title"><h2>백업 · 복원 · 엑셀</h2>
           <span style="display:flex;gap:6px;flex-wrap:wrap"><button id="backup">지금 백업 (이 맥)</button><button id="xlsx-all" class="primary">전체 엑셀로 저장</button></span></div>
-        <p class="help" style="margin-top:-4px">이 맥에는 매일 자동 백업(30일)됩니다. 구글 드라이브 백업까지 켜 두면 맥이 고장 나도 복원할 수 있습니다. 녹음 원본(오디오)은 용량 때문에 이 맥에만 보관되니, 타임머신 백업을 함께 쓰면 가장 안전합니다.</p>
+        <p class="help" style="margin-top:-4px">이 컴퓨터에는 매일 기록이 자동 백업(30일)됩니다. 클라우드 백업을 켜 두면 컴퓨터 밖에도 기록 사본을 보관할 수 있습니다. 녹음 원본은 아래 ‘녹음 원본도 이 클라우드 폴더에 자동 백업’을 따로 켜야 함께 보관됩니다.</p>
         <p class="help">백업은 이 컴퓨터와, 선생님이 켠 경우 본인의 클라우드 폴더 · 구글 드라이브에만 저장됩니다. 쓰담 서버에는 백업되지 않으니, 컴퓨터 고장에 대비하려면 아래의 클라우드 폴더 백업이나 구글 드라이브 백업을 켜 두세요. 컴퓨터 밖으로 나가는 백업에는 쓰담 플러스 로그인 · 휴대폰 연결 · AI 키가 들어가지 않아, 새 컴퓨터에서 복원한 뒤에는 다시 연결해야 합니다.</p>
         <div class="source" id="cf-box" style="margin-top:10px"></div>
         <div class="split" style="margin-top:8px">
@@ -1948,7 +1948,7 @@ async function viewSettings(section) {
   let saveT = null;
   $('#settings-grid').addEventListener('change', e => {
     const el = e.target;
-    if (!el.matches('input, select, textarea') || el.closest('#ai-ext') || el.closest('#ai-detail') || el.closest('#fb-card') || el.name === 'stt_engine' || el.id === 'restore-file' || el.id === 'key') return;
+    if (!el.matches('input, select, textarea') || el.closest('#cf-box') || el.closest('#ai-ext') || el.closest('#ai-detail') || el.closest('#fb-card') || el.name === 'stt_engine' || el.id === 'restore-file' || el.id === 'key') return;
     clearTimeout(saveT);
     saveT = setTimeout(async () => { try { await save(); flashSaved(el); updateModeBadge(); } catch (err) { /* toast 표시됨 */ } }, 250);
   });
@@ -2280,10 +2280,20 @@ async function renderCloudFolder(d) {
     box.innerHTML = `<div class="section-title"><h3 style="margin:0">내 클라우드 폴더에도 백업</h3><span class="badge blue">켜짐</span></div>
       <p class="help"><code>${esc(d.folder)}</code><br>날마다 복원용 파일(.zip)과 엑셀 파일(.xlsx)을 이 폴더에 둡니다 (이 기기의 파일을 종류별로 최근 30개씩). 엑셀은 쓰담이 없어도 열 수 있고, 관찰 기록 · 초안의 모든 버전 · 녹음을 받아쓴 글이 들어 있습니다.${d.last ? ` 마지막 폴더 저장: ${esc(d.last)}` : ''}<br>클라우드 업로드 완료 여부는 OneDrive · iCloud 등 해당 앱에서 확인해 주세요. 쓰담은 이 폴더에 파일을 저장한 것까지만 확인합니다. 기기 번호가 없는 예전 백업은 그대로 보관합니다.</p>
       ${d.error ? `<p class="bad-text small">백업하지 못했습니다: ${esc(d.error)}</p>` : ''}
-      <div class="row" style="margin-top:8px"><button class="shrink" id="cf-now">지금 백업</button><button class="shrink" id="cf-open">폴더 열기</button><button class="shrink" id="cf-off">끄기</button></div>`;
+      <label class="check"><input type="checkbox" id="cf-audio" ${d.audio_enabled ? 'checked' : ''} ${d.audio_busy ? 'disabled' : ''}>녹음 원본도 이 클라우드 폴더에 자동 백업</label>
+      <p class="help">켜면 이 컴퓨터에 보관된 음성 파일도 본인의 클라우드로 전송됩니다. 앱 실행 중 한 시간마다 새 파일과 바뀐 파일을 확인해 기기별 녹음 폴더에 보관합니다. 같은 음성을 날마다 중복 저장하지 않고, 원본을 지워도 백업 사본과 변경 전 파일은 자동으로 지우지 않습니다. 클라우드 저장 공간을 사용합니다.<br>녹음은 ZIP과 별도로 저장됩니다. 다른 컴퓨터로 옮길 때는 녹음 폴더의 복원 안내도 함께 확인해 주세요.</p>
+      ${d.audio_enabled ? `<p class="small">${d.audio_busy ? '녹음 원본을 폴더에 저장하는 중…' : d.audio_last ? `마지막 녹음 확인: ${esc(d.audio_last)} · ${(d.audio_summary || {}).files || 0}개 · ${(((d.audio_summary || {}).bytes || 0) / 1e9).toFixed(2)}GB` : '첫 녹음 백업을 기다리고 있습니다.'}</p>` : ''}
+      ${d.audio_error ? `<p class="bad-text small">녹음 백업을 완료하지 못했습니다: ${esc(d.audio_error)}</p>` : ''}
+      <div class="row" style="margin-top:8px"><button class="shrink" id="cf-now" ${d.audio_busy ? 'disabled' : ''}>지금 백업</button><button class="shrink" id="cf-open">폴더 열기</button><button class="shrink" id="cf-off" ${d.audio_busy ? 'disabled' : ''}>끄기</button></div>`;
     $('#cf-now').onclick = e => run(e.target, '/api/backup-folder/now', {}, r => `폴더에 저장했습니다 (파일 ${r.made.length}개) · 클라우드 업로드는 해당 앱에서 확인해 주세요`);
     $('#cf-open').onclick = () => api('/api/backup-folder/open', {});
+    $('#cf-audio').onchange = e => {
+      const checked = e.target.checked;
+      if (checked && !confirmBox('지금까지 보관된 녹음 원본과 앞으로 추가하는 녹음을 이 클라우드 폴더에 백업합니다. 클라우드 저장 공간을 사용하며, 음성 내용도 해당 클라우드에 올라갑니다. 켤까요?')) { e.target.checked = false; return; }
+      run(e.target, '/api/backup-folder/audio', { enabled: checked }, r => r.audio_error || r.error ? '백업 오류를 확인해 주세요' : checked ? '녹음 원본 자동 백업을 켰습니다' : '녹음 원본 자동 백업을 껐습니다 (기존 사본은 유지)');
+    };
     $('#cf-off').onclick = e => { if (confirmBox('이 폴더에 백업하는 것을 끌까요?\n(이미 둔 파일은 지우지 않습니다)')) run(e.target, '/api/backup-folder', { path: '' }); };
+    if (d.audio_busy) setTimeout(() => { if ($('#cf-box') === box) renderCloudFolder(); }, 3000);
     return;
   }
   box.innerHTML = `<div class="section-title"><h3 style="margin:0">내 클라우드 폴더에도 백업</h3><span class="badge">꺼짐</span></div>
