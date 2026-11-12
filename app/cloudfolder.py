@@ -2,20 +2,26 @@
 """내 클라우드 폴더 백업 — 선생님이 고른 폴더(OneDrive · iCloud Drive · 구글 드라이브 폴더 · USB 등)에
 날마다 사본 두 개를 둔다. 무료 · 플러스 모두 쓸 수 있다.
 
-  쓰담-백업-<컴퓨터>-YYYYMMDD.zip   복원용. 구글 드라이브 백업과 같은 형식이고 연결 정보(AI 키 · 로그인 · 휴대폰 열쇠)는 빠진다
-  쓰담-기록-<컴퓨터>-YYYYMMDD.xlsx  쓰담이 없어도 엑셀로 열어 볼 수 있는 기록
+  쓰담-백업-<컴퓨터>-<기기ID>-YYYYMMDD.zip   복원용. 구글 드라이브 백업과 같은 형식이고 연결 정보(AI 키 · 로그인 · 휴대폰 열쇠)는 빠진다
+  쓰담-기록-<컴퓨터>-<기기ID>-YYYYMMDD.xlsx  쓰담이 없어도 엑셀로 열어 볼 수 있는 기록
                                    (전체 엑셀로 저장의 시트 + 초안 전체 버전 + 녹음 받아쓴 글)
 
 쓰담 서버로는 아무것도 보내지 않는다. 폴더를 클라우드에 올리는 일은 그 클라우드 프로그램이 한다.
-파일 이름에 컴퓨터 이름을 넣어, 집과 학교 컴퓨터가 같은 폴더를 써도 서로의 사본을 덮어쓰지 않는다.
+이름이 같은 컴퓨터도 기기ID로 구분한다. 예전 이름만 있는 백업은 소유 기기를 확정할 수 없어 그대로 보존한다.
 """
 import datetime
 import glob
+import hashlib
 import os
+import re
 import socket
+import subprocess
+import tempfile
 import threading
 import time
 import unicodedata
+import uuid
+from functools import lru_cache
 
 import db
 import platform_util
@@ -25,6 +31,7 @@ SUBFOLDER = "쓰담 백업"
 CHECK_SECONDS = 3600
 KINDS = (("쓰담-백업-", ".zip"), ("쓰담-기록-", ".xlsx"))
 _lock = threading.Lock()
+_identity_lock = threading.Lock()
 
 
 def _nfc(s):
@@ -36,6 +43,66 @@ def device_name():
     host = _nfc(socket.gethostname().replace(".local", ""))
     safe = "".join(ch if (ch.isalnum() or ch in "-_") else "-" for ch in host).strip("-")
     return safe[:30] or "PC"
+
+
+@lru_cache(maxsize=1)
+def _machine_fingerprint():
+    """로컬에서만 쓰는 OS 기기 식별값의 해시. 원문이나 해시는 서버로 보내지 않는다."""
+    raw = ""
+    try:
+        if platform_util.IS_WIN:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography", 0,
+                                winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
+                raw = str(winreg.QueryValueEx(key, "MachineGuid")[0])
+        elif platform_util.IS_MAC:
+            result = subprocess.run(["/usr/sbin/ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                                    capture_output=True, text=True, timeout=3)
+            match = re.search(r'"IOPlatformUUID"\s*=\s*"([0-9A-Fa-f-]+)"', result.stdout)
+            raw = match.group(1) if match else ""
+    except (OSError, subprocess.SubprocessError):
+        pass
+    # OS 식별값을 못 읽어도 네트워크에 접속하지 않는다. 실제 MAC이 있으면 보조 식별값으로 쓴다.
+    if not raw:
+        node = uuid.getnode()
+        if not (node & (1 << 40)):  # uuid.getnode가 만든 임의값은 실행마다 바뀔 수 있어 쓰지 않는다
+            raw = "node:%012x" % node
+    return hashlib.sha256(raw.lower().encode("utf-8")).hexdigest() if raw else ""
+
+
+def _device_id():
+    """DB/백업에 넣지 않는 설치 ID. DB 복원·설정 복사로 다른 컴퓨터의 ID를 물려받지 않는다.
+    데이터 폴더 전체를 복사한 경우도 OS 기기값과 로컬 경로를 섞어 새 기기와 구분한다.
+    OS/MAC 식별값이 모두 없으면 로컬 무작위 ID를 유지한다(완전한 디스크 복제까지 식별하지는 못함).
+    """
+    path = os.path.join(db.DATA_DIR, ".cloud-backup-id")
+    with _identity_lock:
+        try:
+            with open(path, encoding="ascii") as f:
+                seed = f.read(128).strip()
+        except FileNotFoundError:
+            seed = uuid.uuid4().hex
+            created = False
+            try:
+                with open(path, "x", encoding="ascii") as f:
+                    created = True
+                    f.write(seed)
+                    f.flush()
+                    os.fsync(f.fileno())
+            except FileExistsError:  # 다른 쓰담 프로세스가 먼저 만들었으면 그 ID를 쓴다
+                with open(path, encoding="ascii") as f:
+                    seed = f.read(128).strip()
+            except OSError:
+                if created:
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        pass
+                raise
+        if not re.fullmatch(r"[0-9a-f]{32}", seed):
+            raise OSError("이 컴퓨터의 백업 기기 번호를 읽지 못했어요.")
+    material = "\0".join((seed, _machine_fingerprint(), os.path.realpath(db.DATA_DIR)))
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
 
 
 # ───────────────────────── 이 컴퓨터에서 찾은 클라우드 폴더 ─────────────────────────
@@ -121,28 +188,39 @@ def set_folder(path="", candidate=""):
 
 def _name(kind, day=None):
     prefix, ext = kind
-    return "%s%s-%s%s" % (prefix, device_name(), (day or datetime.date.today()).strftime("%Y%m%d"), ext)
+    return "%s%s-%s-%s%s" % (prefix, device_name(), _device_id(), (day or datetime.date.today()).strftime("%Y%m%d"), ext)
 
 
 def _mine(folder_path, kind):
     """이 컴퓨터가 이 폴더에 둔 사본 이름들 (날짜순)."""
     prefix, ext = kind
-    head = "%s%s-" % (prefix, device_name())
+    # 컴퓨터 이름을 바꿔도 같은 ID의 사본은 찾는다. ID가 없는 예전 파일은 지우지 않는다.
+    pattern = re.compile(r"^%s.+-%s-(\d{8})%s$" % (re.escape(prefix), _device_id(), re.escape(ext)))
     out = []
     for raw in os.listdir(folder_path):
         name = _nfc(raw)
-        stamp = name[len(head):-len(ext)]
-        if name.startswith(head) and name.endswith(ext) and len(stamp) == 8 and stamp.isdigit():
-            out.append((stamp, raw))
+        match = pattern.fullmatch(name)
+        if match and os.path.isfile(os.path.join(folder_path, raw)):
+            out.append((match.group(1), raw))
     return [raw for _, raw in sorted(out)]
 
 
 def _write(folder_path, name, data):
     """임시 이름으로 다 쓴 뒤 제 이름을 붙인다 — 쓰는 도중의 덜 쓴 파일이 그날 사본이 되지 않게."""
-    tmp = os.path.join(folder_path, name + ".tmp")
-    with open(tmp, "wb") as f:
-        f.write(data)
-    os.replace(tmp, os.path.join(folder_path, name))
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="wb", dir=folder_path, prefix="." + name + ".", suffix=".tmp", delete=False) as f:
+            tmp = f.name
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, os.path.join(folder_path, name))
+    finally:
+        if tmp:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass  # 교체 성공 시 이미 없어짐. 실패 원인은 원래 예외로 전달한다.
 
 
 CELL_CHARS = 30000   # 엑셀 한 칸은 32,767자까지 — 긴 글은 여러 줄로 나눠 담는다
@@ -229,8 +307,7 @@ def copy_now(force=False):
                         pass
             if made:
                 db.set_settings({"backup_folder_last": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), "backup_folder_error": ""})
-            elif db.get_settings().get("backup_folder_error"):
-                db.set_settings({"backup_folder_error": ""})
+            # 오늘 파일이 있어 쓰기를 건너뛴 경우에는 앞선 실패가 복구됐다고 판단하지 않는다.
             return {"ok": True, "made": made}
         except Exception as e:  # noqa — 폴더 없음 · 권한 · 디스크 가득 등. 다음 차례에 다시
             db.set_settings({"backup_folder_error": "%s · %s" % (datetime.datetime.now().strftime("%m-%d %H:%M"), e)})

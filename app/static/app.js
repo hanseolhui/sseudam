@@ -2278,10 +2278,10 @@ async function renderCloudFolder(d) {
   };
   if (d.folder) {
     box.innerHTML = `<div class="section-title"><h3 style="margin:0">내 클라우드 폴더에도 백업</h3><span class="badge blue">켜짐</span></div>
-      <p class="help"><code>${esc(d.folder)}</code><br>날마다 복원용 파일(.zip)과 엑셀 파일(.xlsx)을 이 폴더에 둡니다 (30일치). 엑셀은 쓰담이 없어도 열 수 있고, 관찰 기록 · 초안의 모든 버전 · 녹음을 받아쓴 글이 들어 있습니다.${d.last ? ` 마지막 백업: ${esc(d.last)}` : ''}</p>
+      <p class="help"><code>${esc(d.folder)}</code><br>날마다 복원용 파일(.zip)과 엑셀 파일(.xlsx)을 이 폴더에 둡니다 (이 기기의 파일을 종류별로 최근 30개씩). 엑셀은 쓰담이 없어도 열 수 있고, 관찰 기록 · 초안의 모든 버전 · 녹음을 받아쓴 글이 들어 있습니다.${d.last ? ` 마지막 폴더 저장: ${esc(d.last)}` : ''}<br>클라우드 업로드 완료 여부는 OneDrive · iCloud 등 해당 앱에서 확인해 주세요. 쓰담은 이 폴더에 파일을 저장한 것까지만 확인합니다. 기기 번호가 없는 예전 백업은 그대로 보관합니다.</p>
       ${d.error ? `<p class="bad-text small">백업하지 못했습니다: ${esc(d.error)}</p>` : ''}
       <div class="row" style="margin-top:8px"><button class="shrink" id="cf-now">지금 백업</button><button class="shrink" id="cf-open">폴더 열기</button><button class="shrink" id="cf-off">끄기</button></div>`;
-    $('#cf-now').onclick = e => run(e.target, '/api/backup-folder/now', {}, r => `폴더에 백업했습니다 (파일 ${r.made.length}개)`);
+    $('#cf-now').onclick = e => run(e.target, '/api/backup-folder/now', {}, r => `폴더에 저장했습니다 (파일 ${r.made.length}개) · 클라우드 업로드는 해당 앱에서 확인해 주세요`);
     $('#cf-open').onclick = () => api('/api/backup-folder/open', {});
     $('#cf-off').onclick = e => { if (confirmBox('이 폴더에 백업하는 것을 끌까요?\n(이미 둔 파일은 지우지 않습니다)')) run(e.target, '/api/backup-folder', { path: '' }); };
     return;
