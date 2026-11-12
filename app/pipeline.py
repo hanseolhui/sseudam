@@ -121,9 +121,11 @@ def build_prompt(op, params):
             ctx = db.row(conn, "SELECT topic, competencies, philosophy FROM class_context WHERE class_id=? AND area=?",
                          (s["class_id"], area)) or {}
             t = db.row(conn, "SELECT bytes FROM student_targets WHERE student_id=? AND area=?", (s["id"], area))
+            # 쓰담 AI(작은 모델)로 보낼 때는 짧은 요청문, 복사해서 다른 AI에 붙일 때는 자세한 요청문
+            compact = bool(params.get("_compact")) and area not in prompts.OTHER_GUIDE
             return {"prompt": prompts.draft(s, c, notes, settings, params.get("extra", ""), area,
-                                            context=ctx, target=(t or {}).get("bytes"), deep=bool(params.get("deep"))),
-                    "system": prompts.draft_system(area)}
+                                            context=ctx, target=(t or {}).get("bytes"), deep=bool(params.get("deep")), compact=compact),
+                    "system": prompts.COMPACT_SYSTEM if compact else prompts.draft_system(area)}
         if op == "shorten":
             text = params.get("text", "")
             parent = db.row(conn, "SELECT sources FROM drafts WHERE id=? AND student_id=? AND area=?",
@@ -135,8 +137,9 @@ def build_prompt(op, params):
                            (params["student_id"], params.get("area") or "subject"))
                 if t and t["bytes"]:
                     limit = t["bytes"]
-            return {"prompt": prompts.shorten(text, limit, db.neis_bytes(text)),
-                    "system": prompts.DRAFT_SYSTEM}
+            shorten = prompts.shorten_compact if params.get("_compact") else prompts.shorten
+            return {"prompt": shorten(text, limit, db.neis_bytes(text), keep_weak=not prompts.omit_weak(settings)),
+                    "system": prompts.COMPACT_SYSTEM if params.get("_compact") else prompts.DRAFT_SYSTEM, "target_bytes": limit}
         raise ValueError("알 수 없는 작업: %s" % op)
     finally:
         conn.close()
@@ -149,6 +152,9 @@ def apply(op, params, text):
         return apply_transcript(params["recording_id"], text, params.get("chain"))
     if op == "segment":
         return apply_segment(params["recording_id"], text)
+    if op == "draft" and params.get("_compact"):   # 쓰담 AI(작은 모델) 초안: 기록에 없는 꾸밈말은 저장 전에 지운다
+        source_text = "\n".join(str(n.get("content", "")) + " " + str(n.get("evidence", "")) for n in params.get("_sources") or [])
+        text, _ = prompts.drop_unsupported(text, source_text)
     if op in ("draft", "shorten"):
         return apply_draft(params["student_id"], text, params.get("area") or "subject",
                            op=op, engine=params.get("_engine") or "manual", t0=params.get("_t0"), sources=params.get("_sources"))
@@ -233,6 +239,23 @@ def apply_segment(rid, text):
         conn.close()
 
 
+def shorten_local(params):
+    """줄이기를 AI 없이: 문장을 통째로 덜어내 분량을 맞춘다 (횟수 · 요금제와 무관).
+    문장을 덜어내는 것만으로 맞출 수 없으면 None — 부르는 쪽이 요청문 복사로 안내한다."""
+    import trim
+    settings = db.get_settings()
+    p = build_prompt("shorten", params)
+    text, limit = params.get("text", ""), p["target_bytes"]
+    before = db.neis_bytes(text)
+    if before <= limit:
+        return {"ok": True, "local": True, "unchanged": True, "before": before, "bytes": before, "limit": limit, "removed": []}
+    out, removed = trim.fit(text, limit, keep_weak=not prompts.omit_weak(settings))
+    if out is None:
+        return None
+    r = apply("shorten", dict(params, _engine="local", _t0=time.time()), out)
+    return {"ok": True, "local": True, "before": before, "bytes": r["bytes"], "limit": limit, "removed": removed}
+
+
 def apply_draft(student_id, text, area="subject", op="draft", engine="manual", t0=None, sources=None):
     import quality
     conn = db.connect()
@@ -247,7 +270,8 @@ def apply_draft(student_id, text, area="subject", op="draft", engine="manual", t
         event = "regen" if db.row(conn, "SELECT id FROM drafts WHERE student_id=? AND area=? AND ai_text<>''",
                                   (student_id, area)) else "draft"
     conn.execute("INSERT INTO drafts(student_id, content, bytes, area, ai_text, origin, sources) VALUES (?,?,?,?,?,?,?)",
-                 (student_id, text, db.neis_bytes(text), area, text, engine, json.dumps(sources or [], ensure_ascii=False)))
+                 (student_id, text, db.neis_bytes(text), area, "" if engine == "local" else text, engine,   # 문장 덜어 줄이기는 AI 글이 아님
+                  json.dumps(sources or [], ensure_ascii=False)))
     quality.record(conn, event, engine, area, ms=(time.time() - t0) * 1000 if t0 else None)
     conn.commit()
     conn.close()
@@ -935,6 +959,7 @@ def _run_api(op, params, job_id=None):
         if not draft_engine(settings):
             raise ValueError("앱에서 초안을 만들려면 쓰담 플러스가 필요해요. 프롬프트를 복사해 ChatGPT·Gemini에서 작성한 뒤 결과를 붙여넣어 저장할 수 있어요.")
         settings = dict(settings, api_provider="plus", mode="api")
+        params = dict(params, _compact=True)   # 쓰담 AI는 작은 모델: 짧은 요청문으로
     import cloudai
     p = build_prompt(op, params)
     if op == "transcribe":   # 녹음 파일 받아쓰기는 Gemini만 (고른 외부 AI와 상관없이 Gemini 키 필요)
@@ -978,12 +1003,12 @@ def _run_api(op, params, job_id=None):
         db.set_settings({cloudai.PROVIDERS[prov]["model"]: new_model})
 
     try:
-        # 쓰담 플러스: 정성 초안만 깊게 쓰는 AI, 나머지(분리 · 기본 초안 · 줄이기)는 가벼운 AI. 초안은 다시 뽑기 대비 캐시
-        deep = op == "draft" and bool(params.get("deep"))
+        # 쓰담 AI는 한 가지 모델만 쓴다 (2026-11-12). 정성 초안(비싼 모델)은 서버가 받지 않는다
+        deep = False
         text = cloudai.generate(settings, p["prompt"], system=p.get("system"), json_mode=p.get("json", False),
                                 temperature=0.2 if op == "segment" else 0.6, on_model_change=on_model,
                                 deep=deep, cache=op == "draft")
-        if op == "draft":
+        if op == "draft" and prov != "plus":   # 쓰담 AI 초안은 한 번으로 끝낸다 (짧다고 한 번 더 부르지 않는다)
             text = _expand_if_short(text, params, settings, lambda pr: cloudai.generate(
                 settings, pr, system=p.get("system"), temperature=0.6, on_model_change=on_model, deep=deep))
     except cloudai.CloudError as e:

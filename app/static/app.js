@@ -219,7 +219,13 @@ async function runAI(op, params, label, onDone, opts) {
     }
     toast(e.message, true); return;
   }
-  if (res.manual) return showManual(op, { ...params, _sources: res.sources || [] }, res, onDone);
+  if (res.manual) { if (res.note) toast(res.note, true); return showManual(op, { ...params, _sources: res.sources || [] }, res, onDone); }
+  if (res.local) {   // 줄이기: AI 없이 문장 단위로 끝남
+    toast(res.unchanged ? `이미 ${res.limit.toLocaleString()}바이트 이내예요`
+      : `문장 ${res.removed.length}개를 덜어 ${res.before.toLocaleString()} → ${res.bytes.toLocaleString()}바이트로 줄였어요. 덜어내기 전 글은 버전 기록에 있어요.`);
+    if (onDone) onDone();
+    return;
+  }
   toast('AI 작업을 시작했습니다. 오른쪽 아래에서 진행 상황을 볼 수 있어요.');
   pollJobs(true);
 }
@@ -1460,7 +1466,7 @@ async function viewStudent(id, areaParam) {
           <textarea id="d-text" rows="12" style="margin-top:12px" placeholder="ChatGPT·Gemini에서 만든 세특 초안을 여기에 붙여넣으세요. 직접 작성·수정한 뒤 아래 저장 버튼을 누르세요.">${esc(current ? current.content : '')}</textarea>
           <div class="row" style="margin-top:6px;align-items:center"><span class="counter" id="d-count"></span><span></span>
             ${current && current.ai_text ? `<span class="small muted" id="d-rate">AI 초안 어땠나요? <button class="shrink sm ghost" data-rate="1" title="좋아요">👍</button><button class="shrink sm ghost" data-rate="0" title="아쉬워요">👎</button></span>` : ''}
-            <button class="shrink sm" id="d-short">${paidDraft ? '플러스로 줄이기' : '줄이기 요청문 복사'}</button><button class="shrink sm" id="d-copy">복사</button></div>
+            <button class="shrink sm" id="d-short" title="문장을 고치지 않고 통째로 덜어내 분량을 맞춰요. AI를 쓰지 않아요.">문장 덜어 줄이기</button><button class="shrink sm" id="d-copy">복사</button></div>
           <div id="d-warn"></div>
           <details style="margin-top:12px"><summary>초안의 관찰 근거 확인</summary>
             <p class="small muted">생성 당시 입력한 기록입니다. 초안에서 문장을 선택하면 비슷한 표현이 있는 기록을 먼저 보여 줍니다. 일치 후보가 사실을 증명하는 것은 아니므로 원문과 비교해 주세요.</p>
@@ -1500,7 +1506,13 @@ async function viewStudent(id, areaParam) {
     let warn = '';
     if (found.length) warn += `<div class="warn">기재 금지 가능성이 있는 표현: <b>${found.map(esc).join(', ')}</b> — 학생부 기재요령을 확인하세요.</div>`;
     if (nameHit) warn += `<div class="warn">본문에 학생 이름이 들어 있습니다. 학생부에는 이름을 쓰지 않습니다.</div>`;
-    if (b > limit) warn += `<div class="warn">${(b - limit).toLocaleString()}바이트 초과 — 'AI로 줄이기'를 사용하거나 직접 다듬으세요.</div>`;
+    // 저장된 초안 그대로일 때만: 관찰기록에 견줘 확인할 거리
+    const rv = (current && text.value.trim() === (current.content || '').trim() && current.review) || {};
+    if ((rv.missing || []).length) warn += `<div class="warn">관찰기록의 이 내용이 초안에 빠졌을 수 있어요: <b>${rv.missing.map(esc).join(' / ')}</b></div>`;
+    if ((rv.added || []).length) warn += `<div class="warn">관찰기록에 없는 변화 표현일 수 있어요: <b>${rv.added.map(esc).join(', ')}</b> — 근거를 확인하세요.</div>`;
+    if ((rv.negative || []).length) warn += `<div class="warn">관찰기록에 없는 부정 표현일 수 있어요: <b>${rv.negative.map(esc).join(' / ')}</b> — 근거를 확인하세요.</div>`;
+    if ((rv.uncovered || []).length) warn += `<div class="warn">초안에 들어가지 않은 것으로 보이는 기록: <b>${rv.uncovered.map(esc).join(' / ')}</b></div>`;
+    if (b > limit) warn += `<div class="warn">${(b - limit).toLocaleString()}바이트 초과 — '문장 덜어 줄이기'를 누르거나 직접 다듬으세요.</div>`;
     $('#d-warn').innerHTML = warn;
   };
   text.addEventListener('input', update); update();
@@ -1521,7 +1533,7 @@ async function viewStudent(id, areaParam) {
   $('#d-ext').onclick = () => runAI('draft', { student_id: s.id, extra: $('#d-extra').value, area: area.id }, `${area.name} ${s.name}`, reload, { manual: true });
   // 쓰담 플러스를 쓰는 중이면: 정성 초안 버튼 + 남은 횟수
   plusDeep().then(p => {
-    if (!p || !$('#d-deep')) return;
+    if (!p || !$('#d-deep') || !p.deepCap) return;   // 정성 초안이 없는 이용권이면 버튼을 보이지 않는다
     const left = Math.max(0, p.deepCap - p.deepUsed);
     $('#d-deep').classList.remove('hidden');
     $('#d-deep-left').textContent = p.deepCap >= 1e8 ? '정성 초안 무제한' : `정성 초안 ${left}회 남음`;
@@ -1794,6 +1806,9 @@ async function viewSettings(section) {
         <p class="help">한글 3바이트, 영문·숫자·공백 1바이트, 줄바꿈 2바이트. 기재요령은 학년도·학교급마다 다를 수 있으니 우리 학교 기준에 맞게 고치세요.</p>
         <label class="field" style="margin-top:12px"><span>추가 작성 지침</span>
           <textarea id="draft_guidance" rows="4" placeholder="예: 성취기준과 연결해서 쓰기, 마지막 문장은 성장 가능성으로 마무리">${esc(s.draft_guidance)}</textarea></label>
+        <label class="field" style="margin-top:12px"><span>미흡한 관찰 (늦게 낸 과제, 틀린 문항, 하지 않은 활동)</span>
+          <select id="weak_notes"><option value="keep" ${s.weak_notes === 'omit' ? '' : 'selected'}>초안에 그대로 적기</option><option value="omit" ${s.weak_notes === 'omit' ? 'selected' : ''}>초안에서 빼기</option></select></label>
+        <p class="help">어느 쪽이든 기록에 없는 내용을 만들거나 잘한 것처럼 바꿔 쓰지 않아요. 틀렸다가 고친 과정은 그대로 적어요.</p>
         <label class="field" style="margin-top:12px"><span>내 문체 예시 (예전에 쓴 세특 2~3개 붙여넣기)</span>
           <textarea id="style_examples" rows="6" placeholder="AI가 이 문체를 따라 씁니다. 학생 이름은 지우고 넣으세요.">${esc(s.style_examples)}</textarea></label>
       </div>
@@ -1909,7 +1924,7 @@ async function viewSettings(section) {
   const collect = () => ({
     area_limits: JSON.stringify(Object.fromEntries($$('.area-limit').map(i => [i.dataset.area, +i.value || 0]))),
     byte_limit: ($('.area-limit[data-area=subject]') || {}).value || s.byte_limit, ...readProfile(document, ''),
-    draft_guidance: $('#draft_guidance').value, style_examples: $('#style_examples').value,
+    draft_guidance: $('#draft_guidance').value, weak_notes: $('#weak_notes').value, style_examples: $('#style_examples').value,
     auto_process: $('#auto_process').checked ? '1' : '0',
     sheets_url: $('#sheets_url').value.trim(),
     sheets_auto: $('#sheets_auto').checked ? '1' : '0', drive_backup: $('#drive_backup').checked ? '1' : '0',
@@ -1972,18 +1987,20 @@ async function viewSettings(section) {
           ${plusSt.googleUrl ? `<div class="row" style="margin-top:10px"><a class="btn sm primary shrink" id="plus-google" href="${esc(plusSt.googleUrl)}" target="_blank">구글로 로그인 ↗</a><span class="small muted">브라우저에서 로그인하면 여기로 돌아와요 · 또는 아래 이메일 인증번호로</span></div>` : ''}
           <div class="row" style="margin-top:10px"><input id="plus-email" type="email" placeholder="이메일 주소" value="${esc(plusEmail)}" style="max-width:260px"><button class="sm primary shrink" id="plus-send">인증번호 받기</button></div>
           <div class="row${plusCodeSent ? '' : ' hidden'}" id="plus-code-row" style="margin-top:8px"><input id="plus-code" inputmode="numeric" placeholder="메일로 온 인증번호" style="max-width:180px"><button class="sm primary shrink" id="plus-login">로그인</button></div>
-          <div id="plus-r" class="small" style="margin-top:6px">${plusSt.error ? esc(plusSt.error) : ''}</div></div>`;
+          <div id="plus-r" class="small" style="margin-top:6px">${plusSt.error ? esc(plusSt.error) : ''}</div>
+          <div class="small muted" style="margin-top:6px">학교에서 학교 코드를 받았다면 <a href="https://apps.seoriarts.com/sseudam/school" target="_blank">학교 코드로 좌석 받기 ↗</a>를 먼저 한 뒤 같은 이메일로 로그인해 주세요.</div></div>`;
       } else if (plusOn) {
         const u = plusSt.sub;
-        const renew = !u.autoRenew && u.plan !== 'staff';   // 자동 결제가 없으면 연장하기 (미리 사도 남은 기간 뒤에 이어 붙음)
+        const school = u.plan === 'school';                 // 학교 계약으로 받은 좌석
+        const renew = !u.autoRenew && u.plan !== 'staff' && !school;   // 자동 결제가 없으면 연장하기 (미리 사도 남은 기간 뒤에 이어 붙음)
         d = `<div class="spec">💜 <b>${esc(plusSt.email)}</b> · ${esc(u.planName)} · <b>${ymd(u.endsAt)}</b>까지 (<b${renew && (u.daysToEnd ?? u.daysLeft) <= 7 ? ' style="color:var(--amber)"' : ''}>${u.daysToEnd ?? u.daysLeft}일 남음</b>)${u.autoRenew ? ' · 자동 결제' : ''}
-          <div class="small muted" style="margin-top:4px">클라우드 초안 무제한 · 정성 초안 ${(u.deepCap || 0) >= 1e8 ? '무제한' : Math.max(0, (u.deepCap || 0) - (u.deepUsed || 0)) + '회 남음'} · 등록된 컴퓨터 ${plusSt.devices.length}/${plusSt.deviceLimit}대 (${plusSt.devices.map(x => esc(x.device_name)).join(', ')})${plusSt.offline ? ' · 지금은 서버 확인이 안 돼서 마지막 상태를 보여요' : ''}</div>
-          <div class="small muted" style="margin-top:4px">유료 상품 곧 오픈 · 현재 이용 기간은 그대로 유지돼요.</div>
+          <div class="small muted" style="margin-top:4px">AI 초안 ${(u.cap || 0) >= 1e8 ? '무제한' : Math.max(0, (u.cap || 0) - (u.used || 0)).toLocaleString() + '회 남음'}${(u.deepCap || 0) > 0 ? ' · 정성 초안 ' + ((u.deepCap || 0) >= 1e8 ? '무제한' : Math.max(0, (u.deepCap || 0) - (u.deepUsed || 0)) + '회 남음') : ''} · 등록된 컴퓨터 ${plusSt.devices.length}/${plusSt.deviceLimit}대 (${plusSt.devices.map(x => esc(x.device_name)).join(', ')})${plusSt.offline ? ' · 지금은 서버 확인이 안 돼서 마지막 상태를 보여요' : ''}</div>
+          <div class="small muted" style="margin-top:4px">${school ? '학교에서 받은 좌석이에요. 좌석에 대한 문의는 학교 담당 선생님께 해 주세요.' : '유료 상품 곧 오픈 · 현재 이용 기간은 그대로 유지돼요.'}</div>
           <div class="row" style="margin-top:8px">${choice !== 'plus' ? '<button class="sm primary shrink" id="plus-use">쓰담 플러스로 쓰기</button>' : ''}<a class="btn sm shrink" href="https://apps.seoriarts.com/sseudam/plus" target="_blank">구독·결제 관리 ↗</a><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`;
       } else {
         d = `<div class="spec">💜 <b>유료 상품 곧 오픈</b>
           <div class="small muted" style="margin-top:4px">이름 기준 기록 정리와 프롬프트 복사·결과 붙여넣기 등 기존 무료 기능을 이용해 주세요. 기존 이용권은 구매한 스토어의 앱에서 복원한 뒤 다시 확인할 수 있어요.</div>
-          <div class="row" style="margin-top:8px"><button class="sm shrink" id="plus-refresh">구독 다시 확인</button><a class="btn sm shrink" href="https://apps.seoriarts.com/sseudam/plus" target="_blank">구독·결제 관리 ↗</a><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`;
+          <div class="row" style="margin-top:8px"><button class="sm shrink" id="plus-refresh">구독 다시 확인</button><a class="btn sm shrink" href="https://apps.seoriarts.com/sseudam/school" target="_blank">학교 코드가 있어요 ↗</a><a class="btn sm shrink" href="https://apps.seoriarts.com/sseudam/plus" target="_blank">구독·결제 관리 ↗</a><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`;
       }
     } else if (choice === 'apple') {
       d = `<div class="spec">🍎 ${esc(st.apple.text)} <button class="sm" id="la-test-apple">시험해 보기</button> <span id="la-apple-r" class="small"></span>

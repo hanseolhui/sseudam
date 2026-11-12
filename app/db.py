@@ -39,6 +39,7 @@ DEFAULT_SETTINGS = {
     "teacher_subject": "",
     "style_examples": "",
     "draft_guidance": "",
+    "weak_notes": "keep",              # 미흡한 관찰: keep = 초안에 그대로 / omit = 초안에서 빼기
     "inbox_dir": os.path.join(platform_util.icloud_drive_dir(), "쓰담 녹음"),
     "auto_process": "1",                # 수신 폴더 파일을 자동 전사·분리
     "sheets_url": "",

@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """AI 프롬프트. API 모드와 수동(복사·붙여넣기) 모드가 같은 문구를 사용한다."""
 
+import re
+
 FORBIDDEN_TERMS = [
     "토익", "TOEIC", "토플", "TOEFL", "텝스", "TEPS", "HSK", "JLPT", "DELF", "IELTS",
     "교외", "외부 대회", "올림피아드", "경시대회", "공모전", "수상", "입상", "금상", "은상", "동상", "대상을",
@@ -191,6 +193,20 @@ def draft_other(student, class_info, notes, settings, extra, area, context, targ
     return out
 
 
+WEAK_KEEP = "- '발표하지 않음', '아직 원인을 설명하지 못함'처럼 수행 범위를 한정하는 기록은 삭제하여 더 잘 수행한 것처럼 보이게 하지 말 것."
+WEAK_OMIT = ("- 늦게 낸 과제, 틀린 문항 수, 하지 않은 활동처럼 미흡함만 적힌 기록은 초안에 쓰지 말 것.\n"
+             "  다만 그 기록을 빼면서 잘한 것처럼 바꿔 쓰지 말 것(예: '발표하지 않음'을 '발표함'으로). 틀렸다가 고친 과정은 성장 과정이므로 그대로 쓸 것.")
+
+
+def omit_weak(settings):
+    """설정 '미흡한 관찰'(weak_notes): keep = 그대로 적기(기본) / omit = 초안에서 빼기."""
+    return ((settings or {}).get("weak_notes") or "keep") == "omit"
+
+
+def weak_rule(settings):
+    return WEAK_OMIT if omit_weak(settings) else WEAK_KEEP
+
+
 def strip_names(text, student):
     """관찰기록 속 학생 이름(성 뺀 이름 포함)을 지워서 AI가 본문에 이름을 쓰지 않게."""
     import re
@@ -221,10 +237,158 @@ def clean_draft(text, student=None):
     return t
 
 
-def draft(student, class_info, notes, settings, extra="", area="subject", context=None, target=None, deep=False):
+# ── 쓰담 AI(작고 빠른 모델)용 짧은 요청문 ──
+# 규칙을 짧고 단단하게 둔다. 2026-11-12 운영 확인(생각 토큰 끔): 10번 모두 2~4초에 끝났고 한 번 약 0.3원.
+# 줄이기는 이 모델이 바이트를 못 맞춘다 — shorten_compact 는 아직 그대로 쓰면 안 된다 (docs/s2b/prompt-check-20261112).
+COMPACT_SYSTEM = "교사의 관찰기록을 학교생활기록부 문장으로 옮기는 조수다. 기록에 없는 내용은 쓰지 않는다."
+COMPACT_FOCUS = {
+    "subject": "수업 중 활동에서 드러난 학업 역량과 사고 과정",
+    "individual": "교과 수업 밖에서 드러난 학업 관련 특기사항",
+    "behavior": "1년 동안 관찰된 인성·태도·공동체 역량. 비슷한 기록끼리 묶어 쓴다",
+    "autonomy": "학급 회의·자치·행사에서 맡은 역할과 참여 과정",
+    "career": "진로 탐색 활동과 관심 분야를 알아본 과정",
+    "club": "동아리에서 맡은 역할, 참여 과정, 결과물",
+}
+
+
+def draft_compact(student, class_info, notes, settings, extra="", area="subject", context=None, target=None):
+    import db, pipeline
+    limit = int(target) if target else db.area_limit(area, settings)
+    subject = (class_info.get("subject") or settings.get("teacher_subject") or "해당 교과")
+    title_t, _ = AREA_GUIDE.get(area, AREA_GUIDE["subject"])
+    title = title_t % {"subject": subject, "club": ""}
+    weak = ("단, 늦게 낸 과제·틀린 문항·하지 않은 활동처럼 미흡함만 적힌 기록은 쓰지 않는다. 틀렸다가 고친 과정은 쓴다. 뺀 기록을 잘한 것처럼 바꾸지 않는다."
+            if omit_weak(settings) else "특히 '하지 않음', '못함', '늦게 냄'처럼 한정하는 기록을 빼지 않는다.")
+    # 학년은 넣지 않는다 (넣으면 작은 모델이 '1학년 …'으로 글을 시작한다)
+    out = """학교생활기록부 %s 초안을 쓴다.
+
+[규칙]
+1. 다음은 관찰기록에 있어도 쓰지 않는다: 교외 대회·수상, 어학시험 점수, 사교육, 대학·기관 이름, 가정사·건강, 친구와의 다툼·사과 같은 교우 갈등.
+2. 1번을 뺀 관찰기록의 항목은 빠뜨리지 않는다. 한 항목에 문장이 둘이면 둘 다 쓴다. %s
+3. 관찰기록에 적힌 사실만 쓴다. 기록에 없는 장면·도구·방법·대화·이유·결과는 쓰지 않는다.
+4. 기록의 낱말을 바꾸지 않는다: 숫자, 횟수, 용어, 누가 했는지, 한 일과 하지 않은 일. '말함'을 '설명함'으로 바꾸는 것도 안 된다.
+5. 기록끼리 이어 붙여 이야기를 만들지 않는다. '처음에는 하지 않음'이라는 기록만 있으면 그 뒤에 달라졌다고 쓰지 않는다. '점차', '이후', '변화가 있었음', '나아짐'은 기록에 그 변화가 적혀 있을 때만 쓴다. 앞으로의 기대나 조언은 쓰지 않는다.
+6. 기록에 없는 꾸밈말을 붙이지 않는다: 스스로, 직접, 적극적으로, 주도적으로, 꾸준히, 정확히, 함께.
+7. 문장은 '~함', '~임', '~보임'으로 끝낸다. 학생 이름·번호·학년, '학생은', 날짜, '오늘'은 쓰지 않는다. 수업 소개로 시작하지 않고 첫 기록의 사실로 바로 시작한다.
+8. 사실 뒤에 그 행동이 보여 주는 태도나 역량을 짧게 붙일 수 있다. 글 전체에서 두 번까지만.
+9. 한 문단, 줄바꿈 없이 %d바이트(한글 약 %d자) 이내. 기록이 적으면 한두 문장으로 끝낸다. 분량을 채우려고 늘리지 않는다.
+10. 머리말·설명 없이 본문만 출력한다.
+
+[초점] %s
+""" % (title, weak, limit, int(limit / 3 * 0.95), COMPACT_FOCUS.get(area, COMPACT_FOCUS["subject"]))
+    ctx = context or {}
+    if (ctx.get("topic") or "").strip():
+        out += "[수업 내용] %s\n" % ctx["topic"].strip()
+    if (ctx.get("competencies") or "").strip():
+        out += "[이 수업에서 기르는 역량] %s\n" % ctx["competencies"].strip()
+    guidance = (settings.get("draft_guidance") or "").strip()
+    if guidance:
+        out += "[교사의 추가 지침] %s\n" % guidance
+    if extra:
+        out += "[특히 강조할 점] %s\n" % extra
+    out += "[학교급] %s\n" % (settings.get("school_level") or "고등학교")
+    lines = []
+    for n in notes:
+        tag = "[%s%s]" % (n.get("kind") or "", ("/" + n["category"]) if n.get("category") else "")
+        lines.append("- %s %s" % (tag, mask_institutions(strip_names(pipeline.strip_class_words(n["content"]), student))))
+    out += "\n[관찰기록 %d건]\n%s\n" % (len(notes), "\n".join(lines) if lines else "(기록 없음)")
+    return out
+
+
+def mask_institutions(text):
+    """'한국대학교 임상병리학과' → '대학 임상병리학과'. 대학 이름은 기재 금지라 AI에 보내기 전에 지운다."""
+    import re
+    return re.sub(r"[가-힣A-Za-z]{2,}대학교", "대학", text or "")
+
+
+# 저장된 초안과 관찰기록을 견줘 교사가 확인할 거리를 찾는다 (글은 고치지 않는다)
+_LIMIT_KEY = re.compile(r"(\S+?)(?:하지|지)\s*(않|못)")
+_CHANGE_WORDS = ("변화가 있었", "나아지", "나아졌", "나아짐", "향상", "개선", "발전하", "점차", "점점")
+_PARTICLE = re.compile(r"[을를이가은는도에서의로와과]+$")
+
+
+def _stem(word):
+    return _PARTICLE.sub("", word)[-3:] or word[-1:]
+
+
+def _negated_near(stem, flat):
+    """flat(공백 없는 글)에서 stem 가까이에 부정(않 · 못 · 없 · 안)이 있는가. '못 구하자'·'안 세웠다'처럼 앞에 오는 꼴도 본다."""
+    for cand in dict.fromkeys([stem[:2], stem[:1]]):
+        i = flat.find(cand)
+        while cand and i >= 0:
+            if any(ch in flat[max(0, i - 6): i + len(cand) + 8] for ch in "않못없안"):
+                return True
+            i = flat.find(cand, i + 1)
+    return False
+
+
+def review_hints(text, sources, keep_weak=True):
+    """저장된 초안을 관찰기록에 견줘 교사가 확인할 거리를 찾는다. 글은 고치지 않는다.
+    missing: 초안에 빠졌을 수 있는 한정 문장 / added: 기록에 없는 변화 표현 /
+    negative: 기록에 없는 부정 표현이 든 초안 문장 / uncovered: 초안에 들어가지 않은 것으로 보이는 기록"""
+    import trim
+    draft = re.sub(r"\s+", "", text or "")
+    notes = [str((n or {}).get("content", "")) for n in (sources or [])]
+    src = "\n".join(notes)
+    src_flat = re.sub(r"\s+", "", src)
+    missing = []
+    if keep_weak:
+        for sent in trim.sentences(src.replace("\n", ". ")):
+            hit = any(not _negated_near(_stem(w), draft) for w, _ in _LIMIT_KEY.findall(sent))
+            if "늦게" in sent and "늦" not in draft:
+                hit = True
+            if hit and sent.strip(". ") not in missing:
+                missing.append(sent.strip(". "))
+    added = [w for w in _CHANGE_WORDS if w.replace(" ", "") in draft and w not in src]
+    negative = []
+    for sent in trim.sentences(text or ""):
+        for w, _ in _LIMIT_KEY.findall(sent):
+            if not _negated_near(_stem(w), src_flat):
+                negative.append(sent.strip())
+                break
+    uncovered = []
+    for note in notes:
+        if check_forbidden(note):      # 기재 금지라 일부러 뺀 기록은 알리지 않는다
+            continue
+        words = [w for w in re.findall(r"[가-힣A-Za-z0-9]{2,}", note)]
+        if len(words) >= 3 and sum(1 for w in words if w[:2] in draft) / len(words) < 0.4:
+            uncovered.append(note.strip()[:40])
+    return {"missing": missing[:3], "added": added, "negative": negative[:3], "uncovered": uncovered[:3]}
+
+
+# 작은 모델이 자주 덧붙이는 꾸밈말. 관찰기록에 그 말이 없을 때만 지운다 (문장의 사실은 그대로 남는다).
+UNSUPPORTED_ADVERBS = ("스스로", "직접", "적극적으로", "주도적으로", "능동적으로", "자발적으로", "꾸준히", "성실히", "성실하게",
+                       "원활하게", "효과적으로", "점차", "점점")   # '정확히' · '빠짐없이'처럼 뜻을 담는 말은 넣지 않는다
+
+
+def drop_unsupported(text, source_text):
+    """초안에서 관찰기록에 없는 꾸밈말을 지운다. 돌려주는 값: (고친 글, 지운 말 목록)."""
+    import re
+    t, dropped = text or "", []
+    for w in UNSUPPORTED_ADVERBS:
+        if w in t and w not in (source_text or ""):
+            t = re.sub(r"\s*" + re.escape(w) + r"(?=[\s,.])", "", t)
+            dropped.append(w)
+    return re.sub(r" {2,}", " ", t).strip(), dropped
+
+
+def shorten_compact(text, target_bytes, current_bytes, keep_weak=True):
+    keep = "3. '하지 않음', '못함', '늦게 냄'처럼 한정하는 문장은 지우지 않는다. 꾸미는 말과 겹치는 설명부터 덜어낸다.\n" if keep_weak else ""
+    return """다음 글을 %d바이트(한글 약 %d자) 이하로 줄인다. 지금 %d바이트다.
+1. 목표의 90~100%%(약 %d~%d바이트)로 맞춘다. 너무 많이 줄이지 않는다.
+2. 숫자·횟수·용어·누가 했는지는 바꾸지 않는다. 새 내용을 넣지 않는다.
+%s4. '~함', '~임'으로 끝내고 본문만 출력한다.
+
+%s
+""" % (target_bytes, int(target_bytes / 3 * 0.95), current_bytes, int(target_bytes * 0.9), target_bytes, keep, text)
+
+
+def draft(student, class_info, notes, settings, extra="", area="subject", context=None, target=None, deep=False, compact=False):
     import db
     if area in OTHER_GUIDE:
         return draft_other(student, class_info, notes, settings, extra, area, context, target)
+    if compact:
+        return draft_compact(student, class_info, notes, settings, extra, area, context, target)
     limit = db.area_limit(area, settings)
     if target:   # 학생별로 정한 분량이 있으면 그걸 씀
         limit = int(target)
@@ -268,8 +432,9 @@ def draft(student, class_info, notes, settings, extra="", area="subject", contex
   **기록이 적으면 그만큼 짧게** 쓸 것 (분량을 채우려고 내용을 만들어 내지 말 것).
 - 예시(형식만 참고, 내용은 쓰지 말 것) — 관찰: "모둠 실험에서 측정값이 이상하자 다시 재 보자고 함"
   → 세특: "산과 염기 중화 실험에서 모둠의 측정값이 예상과 다르게 나오자 오차의 원인을 짚어 보고 측정을 다시 하자고 제안함. 결과를 그대로 받아들이기보다 근거를 확인하려는 태도에서 과학적 탐구 역량이 돋보이며, 모둠원과 측정 절차를 함께 점검하며 협력적으로 문제를 해결하는 모습을 보임."
+%s
 - 머리말·설명·따옴표 없이 본문만 출력.
-""" % (grade, title, guide_t, limit, approx_chars)
+""" % (grade, title, guide_t, limit, approx_chars, weak_rule(settings))
     ctx = context or {}
     lesson = []
     if (ctx.get("topic") or "").strip():
@@ -306,13 +471,18 @@ def draft(student, class_info, notes, settings, extra="", area="subject", contex
     return out
 
 
-def shorten(text, target_bytes, current_bytes):
+def shorten(text, target_bytes, current_bytes, keep_weak=True):
+    """줄이기. keep_weak: 초안 규칙과 맞춰 '하지 않음 · 못함' 같은 한정하는 문장을 지우지 않게 (설정이 '빼기'면 False)."""
+    keep = ("- '발표하지 않음', '아직 설명하지 못함', '기한 뒤에 제출함'처럼 수행 범위를 한정하는 문장은 지우지 말 것. "
+            "분량이 모자라면 수식어와 겹치는 설명부터 덜어내기.\n") if keep_weak else ""
     return """다음 학교생활기록부 세특 문장을 NEIS 기준 %d바이트 이하(한글 약 %d자 이하)로 줄여 주세요.
 현재 %d바이트입니다. 핵심 활동과 역량 서술은 남기고 중복·수식어를 덜어내세요.
-명사형 종결(~함, ~임)을 유지하고, 새로운 내용을 추가하지 말고, 본문만 출력하세요.
+- 너무 많이 줄이지 말 것: 목표의 90~100%%(약 %d~%d바이트)에 맞추기.
+- 수치·횟수·행동 주체·오류를 고친 전후는 바꾸지 말 것.
+%s명사형 종결(~함, ~임)을 유지하고, 새로운 내용을 추가하지 말고, 본문만 출력하세요.
 
 %s
-""" % (target_bytes, int(target_bytes / 3 * 0.95), current_bytes, text)
+""" % (target_bytes, int(target_bytes / 3 * 0.95), current_bytes, int(target_bytes * 0.9), target_bytes, keep, text)
 
 
 def check_forbidden(text):

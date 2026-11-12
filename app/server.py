@@ -554,6 +554,10 @@ def student_detail(h, q, b, sid):
         drafts = db.rows(conn, "SELECT * FROM drafts WHERE student_id=? ORDER BY id DESC", (int(sid),))
         for d in drafts:
             d["forbidden"] = prompts.check_forbidden(d["content"]) if (d.get("area") or "subject") in db.SCHOOL_AREA_IDS else []
+            try:   # 관찰기록에 견줘 확인할 거리 (빠진 한정 기록 · 기록에 없는 변화 표현)
+                d["review"] = prompts.review_hints(d["content"], json.loads(d.get("sources") or "[]"), keep_weak=not prompts.omit_weak(db.get_settings(conn)))
+            except Exception:
+                d["review"] = {"missing": [], "added": [], "negative": [], "uncovered": []}
         siblings = db.rows(conn, "SELECT id, number, name FROM students WHERE class_id=? ORDER BY number, name",
                            (s["class_id"],))
         kind = c.get("kind") or "교과"
@@ -961,6 +965,14 @@ def ai_run(h, q, b):
     if b.get("manual"):
         p = pipeline.build_prompt(op, params)
         return {"manual": True, "prompt": p["prompt"], "has_audio": bool(p.get("audio_path")), "sources": params.get("_sources", [])}
+    if op == "shorten":
+        # 줄이기는 AI 없이 문장 단위로 (요금제 · 횟수와 무관). 맞출 수 없을 때만 요청문 복사로
+        local = pipeline.shorten_local(params)
+        if local:
+            return local
+        p = pipeline.build_prompt(op, params)
+        return {"manual": True, "prompt": p["prompt"], "has_audio": False, "sources": params.get("_sources", []),
+                "note": "문장을 덜어내는 것만으로는 분량을 맞출 수 없어요. 요청문을 복사해 쓰던 AI에서 줄여 주세요."}
     # 내 맥 AI (기기 안 AI · Ollama · LM Studio) — 키 없이, 기록이 맥 밖으로 나가지 않음
     if op == "segment" and pipeline.seg_engine(settings) in ("apple", "local"):
         eng = pipeline.seg_engine(settings)
