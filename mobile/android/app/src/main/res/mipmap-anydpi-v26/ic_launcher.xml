@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 적응형 아이콘: 버터색 바탕 + 소리 막대·글줄, 테마 아이콘(단색) 지원 -->
+<!-- 적응형 아이콘: 바탕 + 웃는 쓰(ㅅㅅ 눈웃음 · 웃는 입 · 볼 점), 테마 아이콘(단색) 지원 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/ic_launcher_background" />
+    <background android:drawable="@drawable/ic_launcher_background" />
     <foreground android:drawable="@mipmap/ic_launcher_foreground" />
     <monochrome android:drawable="@mipmap/ic_launcher_monochrome" />
 </adaptive-icon>

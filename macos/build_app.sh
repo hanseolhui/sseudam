@@ -52,6 +52,25 @@ for s in 16 32 128 256 512; do
   sips -z $((s*2)) $((s*2)) macos/icon-1024.png --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+# macOS 26 식 아이콘 (Assets.car): 꽉 찬 원본을 시스템이 둥근 틀로 잘라 줌 — 없으면 다른 앱의 목록에서 옛 아이콘이 흐린 판 위에 작게 보임.
+# actool 이 함께 내놓는 icns 는 쓰지 않는다 (위에서 만든 둥근 판 icns 가 옛 macOS 용).
+if [ -f macos/icon-full-1024.png ] && xcrun --find actool >/dev/null 2>&1; then
+  XC="$BUILD/AppIcon.xcassets"; CAR="$BUILD/icon-car"; mkdir -p "$XC/AppIcon.appiconset" "$CAR"
+  echo '{"info":{"author":"xcode","version":1}}' > "$XC/Contents.json"
+  JSON=""
+  for s in 16 32 128 256 512; do for k in 1 2; do
+    sips -z $((s*k)) $((s*k)) macos/icon-full-1024.png --out "$XC/AppIcon.appiconset/i${s}@${k}x.png" >/dev/null
+    JSON="$JSON{\"filename\":\"i${s}@${k}x.png\",\"idiom\":\"mac\",\"scale\":\"${k}x\",\"size\":\"${s}x${s}\"},"
+  done; done
+  echo "{\"images\":[${JSON%,}],\"info\":{\"author\":\"xcode\",\"version\":1}}" > "$XC/AppIcon.appiconset/Contents.json"
+  if xcrun actool "$XC" --compile "$CAR" --platform macosx --minimum-deployment-target 12.0 \
+       --app-icon AppIcon --output-partial-info-plist "$BUILD/icon-partial.plist" >/dev/null && [ -f "$CAR/Assets.car" ]; then
+    cp "$CAR/Assets.car" "$APP/Contents/Resources/Assets.car"
+    /usr/libexec/PlistBuddy -c "Add :CFBundleIconName string AppIcon" "$APP/Contents/Info.plist"
+  else
+    echo "⚠︎ Assets.car 를 만들지 못함 — icns 만 들어갑니다"
+  fi
+fi
 
 # 4) 서명: Developer ID 인증서가 있으면 자동 사용(+ 공증), 없으면 ad-hoc
 if [ -z "${SIGN_ID:-}" ]; then
