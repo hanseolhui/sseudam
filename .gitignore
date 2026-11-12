@@ -10,6 +10,7 @@ __pycache__/
 
 mobile/ios/*.xcodeproj/xcuserdata/
 mobile/android/.gradle/
+mobile/android/.kotlin/
 mobile/android/build/
 mobile/android/app/build/
 mobile/android/local.properties

@@ -1,5 +1,5 @@
 # 윈도우 실제 PC 시험 — 릴리스의 설치 파일(Sseudam-Setup.exe)을 진짜 윈도우에 깔고 핵심 기능을 돌려 본다.
-# 릴리스가 나오면 자동으로, 또는 Actions 탭에서 'Run workflow'로 실행.
+# 공개 릴리스는 자동 시험. 공개 전에는 draft 태그 + 정확한 소스 SHA/설치 파일 SHA256으로 수동 시험.
 name: windows-smoke
 on:
   release:
@@ -7,38 +7,156 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "시험할 릴리스 태그 (비우면 최신)"
+        description: "시험할 릴리스 태그 (draft도 가능, 비우면 최신 공개 릴리스)"
         required: false
+        type: string
+      source_sha:
+        description: "검증할 소스의 전체 commit SHA (draft 시험은 필수)"
+        required: false
+        type: string
+      installer_sha256:
+        description: "Sseudam-Setup.exe SHA256 (draft 시험은 필수)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-smoke-${{ github.event.inputs.tag || github.event.release.tag_name || github.ref }}
+  cancel-in-progress: false
 
 jobs:
   smoke:
     runs-on: windows-latest
     timeout-minutes: 40
     env:
-      GH_TOKEN: ${{ github.token }}
       SETEUK_DATA: ${{ github.workspace }}\testdata
       SETEUK_PORT: "8790"
       SETEUK_NO_BROWSER: "1"
       PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
+      REQUESTED_TAG: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+      EXPECTED_SOURCE_SHA: ${{ github.event.inputs.source_sha }}
+      EXPECTED_INSTALLER_SHA256: ${{ github.event.inputs.installer_sha256 }}
     steps:
+      - name: 공개 또는 draft 릴리스와 검증 소스 지정
+        id: release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ($env:REQUESTED_TAG -and $env:REQUESTED_TAG -notmatch '^v\d+\.\d+\.\d+$') { throw "릴리스 태그 형식이 올바르지 않음" }
+          if ($env:EXPECTED_SOURCE_SHA -and $env:EXPECTED_SOURCE_SHA -notmatch '^[0-9a-fA-F]{40}$') { throw "전체 소스 SHA가 필요함" }
+          if ($env:EXPECTED_INSTALLER_SHA256 -and $env:EXPECTED_INSTALLER_SHA256 -notmatch '^[0-9a-fA-F]{64}$') { throw "설치 파일 SHA256 형식이 올바르지 않음" }
+          $releaseArgs = @("release", "view", "--repo", $env:GITHUB_REPOSITORY, "--json", "tagName,isDraft,targetCommitish,url")
+          if ($env:REQUESTED_TAG) { $releaseArgs += $env:REQUESTED_TAG }
+          $raw = & gh @releaseArgs
+          if ($LASTEXITCODE -ne 0) { throw "릴리스 정보를 읽지 못함" }
+          $release = $raw | ConvertFrom-Json
+          if ($release.tagName -notmatch '^v\d+\.\d+\.\d+$') { throw "릴리스 태그 형식이 올바르지 않음" }
+          if ($release.isDraft -and (-not $env:EXPECTED_SOURCE_SHA -or -not $env:EXPECTED_INSTALLER_SHA256)) {
+            throw "draft 검증은 source_sha와 installer_sha256을 모두 지정해야 함"
+          }
+          $source = if ($env:EXPECTED_SOURCE_SHA) { $env:EXPECTED_SOURCE_SHA } else { $release.tagName }
+          "source=$source" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "RELEASE_TAG=$($release.tagName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $release | ConvertTo-Json | Set-Content "$env:RUNNER_TEMP\release-verification.json" -Encoding utf8
+
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release.outputs.source }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 소스 SHA와 릴리스 버전 확인
+        shell: pwsh
+        run: |
+          @'
+          import ast, json, os, pathlib, re, subprocess
+          sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          expected = os.environ.get("EXPECTED_SOURCE_SHA", "")
+          assert not expected or sha == expected.lower(), "Source SHA mismatch"
+          release = json.loads((pathlib.Path(os.environ["RUNNER_TEMP"]) / "release-verification.json").read_text(encoding="utf-8-sig"))
+          target = release["targetCommitish"]
+          if re.fullmatch(r"[0-9a-fA-F]{40}", target):
+              assert target.lower() == sha, "Release target SHA mismatch"
+          module = ast.parse(pathlib.Path("app/version.py").read_text(encoding="utf-8"))
+          version = next(ast.literal_eval(n.value) for n in module.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "VERSION" for t in n.targets))
+          assert release["tagName"] == "v" + version, "Source version and release tag differ"
+          release.update(source_sha=sha, expected_version=version)
+          pathlib.Path("release-verification.json").write_text(json.dumps(release, indent=2), encoding="utf-8")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as output:
+              output.write("EXPECTED_APP_VERSION=" + version + "\n")
+          print("Source SHA:", sha, "version:", version, "draft:", release["isDraft"])
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: 전체 Python 시험 (백업 · 음성 · 클라우드 통합 포함)
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p "test_*.py" -v *> source-tests.log
+          $code = $LASTEXITCODE
+          Get-Content source-tests.log
+          if ($code -ne 0) { exit $code }
 
       - name: 설치 파일 받기
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "${{ github.event.inputs.tag || github.event.release.tag_name }}"
-          if ($tag) { gh release download $tag --pattern "Sseudam-Setup.exe" --dir dl } else { gh release download --pattern "Sseudam-Setup.exe" --dir dl }
+          $ErrorActionPreference = "Stop"
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern "Sseudam-Setup.exe" --dir dl
+          if ($LASTEXITCODE -ne 0) { throw "설치 파일 다운로드 실패" }
+          $hash = (Get-FileHash dl\Sseudam-Setup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($env:EXPECTED_INSTALLER_SHA256 -and $hash -ne $env:EXPECTED_INSTALLER_SHA256.ToLowerInvariant()) { throw "설치 파일 SHA256 불일치" }
+          $receipt = Get-Content release-verification.json -Raw | ConvertFrom-Json
+          $receipt | Add-Member -NotePropertyName installer_sha256 -NotePropertyValue $hash
+          $receipt | ConvertTo-Json | Set-Content release-verification.json -Encoding utf8
           Get-Item dl\Sseudam-Setup.exe | Format-List Name, Length
+          Write-Host "Installer SHA256: $hash"
 
       - name: 조용히 설치 (관리자 권한 없이)
         shell: pwsh
         run: |
-          Start-Process -Wait -FilePath dl\Sseudam-Setup.exe -ArgumentList "/S"
+          $process = Start-Process -Wait -PassThru -FilePath dl\Sseudam-Setup.exe -ArgumentList "/S"
+          if ($process.ExitCode -ne 0) { throw "설치 프로그램 종료 코드: $($process.ExitCode)" }
           $inst = "$env:LOCALAPPDATA\Programs\Sseudam"
           if (-not (Test-Path "$inst\python\pythonw.exe")) { throw "설치 실패: $inst 에 파이썬이 없음" }
           if (-not (Test-Path "$inst\app\server.py")) { throw "설치 실패: 앱 코드가 없음" }
           "INST=$inst" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Get-ChildItem $inst | Format-Table Name
+
+      - name: 설치된 코드가 검증 소스와 같은지 확인
+        shell: pwsh
+        run: |
+          @'
+          import hashlib, json, os, pathlib, subprocess
+          installed = pathlib.Path(os.environ["INST"])
+          tracked = subprocess.check_output(["git", "ls-files", "-z", "app"]).decode("utf-8").split("\0")
+          tracked = [name for name in tracked if name]
+          pairs = [(name, name) for name in tracked]
+          pairs += [("windows/launcher.pyw", "launcher.pyw"), ("windows/stop.py", "stop.py")]
+          checked = []
+          for source, destination in pairs:
+              # Git blob 비교는 Windows 체크아웃의 줄바꿈 변환에 영향받지 않는다.
+              expected = subprocess.check_output(["git", "show", "HEAD:" + source])
+              actual = (installed / destination).read_bytes()
+              assert actual == expected, "Installed source differs: " + destination
+              checked.append({"path": destination, "sha256": hashlib.sha256(actual).hexdigest()})
+          actual_names = {p.relative_to(installed).as_posix() for p in (installed / "app").rglob("*") if p.is_file() and "__pycache__" not in p.parts and p.suffix != ".pyc"}
+          assert actual_names == set(tracked), "Unexpected or missing installed app files"
+          receipt_path = pathlib.Path("release-verification.json")
+          receipt = json.loads(receipt_path.read_text(encoding="utf-8-sig"))
+          receipt.update(installed_source_matches=True, installed_files=checked)
+          receipt_path.write_text(json.dumps(receipt, ensure_ascii=False, indent=2), encoding="utf-8")
+          print("Installed source files matched:", len(checked))
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: 시험용 음성 파일 만들기
         shell: pwsh
@@ -49,18 +167,6 @@ jobs:
           $s.Speak("Today Minsu explained the photosynthesis graph very clearly.")
           $s.Dispose()
           Get-Item sample.wav | Format-List Name, Length
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: 백업 보존 · 연결 정보 · 클라우드 폴더 시험
-        shell: pwsh
-        run: |
-          python -m unittest discover -s tests -p "test_backup*.py"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p "test_cloud_folder.py"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: 쓰담 서버 켜고 핵심 기능 시험 (한 단계 안에서)
         shell: pwsh
@@ -74,7 +180,9 @@ jobs:
             try { $v = Invoke-RestMethod "http://127.0.0.1:8790/api/version"; Write-Host "켜짐: $($v.version)"; break } catch { Start-Sleep 1 }
           }
           if (-not $v) { Get-Content server.log, server.err; throw "서버가 켜지지 않음" }
+          if ($v.version -ne $env:EXPECTED_APP_VERSION) { throw "실행 중인 앱 버전 불일치: $($v.version)" }
           python tools/windows_smoke.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: 로그
         if: always()
@@ -91,3 +199,5 @@ jobs:
             server.log
             server.err
             smoke-report.txt
+            source-tests.log
+            release-verification.json

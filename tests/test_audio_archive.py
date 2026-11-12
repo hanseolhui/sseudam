@@ -1,5 +1,6 @@
 """음성 보관의 완전한 파일 공개와 원본 보존을 검증한다. 임시 파일만 사용하며 DB는 열지 않는다."""
 import os
+import stat
 import sys
 import tempfile
 import threading
@@ -58,6 +59,22 @@ class AudioArchiveTests(unittest.TestCase):
     def assert_no_staging_files(self):
         self.assertFalse([path.name for path in self.files() if path.name.endswith(".tmp")])
 
+    def make_readonly(self, path):
+        original_mode = stat.S_IMODE(path.stat().st_mode)
+        path.chmod(original_mode & ~(stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH))
+        # Windows에서는 읽기 전용 테스트 원본도 먼저 속성을 되돌려야 TemporaryDirectory를 비울 수 있다.
+        self.addCleanup(lambda: path.chmod(original_mode) if path.exists() else None)
+        return stat.S_IMODE(path.stat().st_mode)
+
+    def windows_delete(self):
+        """macOS에서도 Windows의 READONLY 삭제 거부 경로를 재현한다."""
+        remove = os.remove
+        def checked_remove(path, *args, **kwargs):
+            if not os.stat(path).st_mode & stat.S_IWUSR:
+                raise PermissionError("Synthetic Windows read-only deletion denied")
+            return remove(path, *args, **kwargs)
+        return checked_remove
+
     def test_copy_preserves_original_bytes_and_metadata(self):
         source = self.source()
         os.utime(source, (1600000000, 1600000000))
@@ -70,6 +87,25 @@ class AudioArchiveTests(unittest.TestCase):
         self.assertEqual(source.read_bytes(), original)
         self.assertEqual(archived.read_bytes(), original)
         self.assertEqual(archived.stat().st_mtime_ns, modified)
+        self.assert_no_staging_files()
+
+    def test_readonly_source_stays_readonly_and_archive_remains_writable(self):
+        source = self.source()
+        os.utime(source, (1600000000, 1600000000))
+        original = source.read_bytes()
+        modified = source.stat().st_mtime_ns
+        readonly_mode = self.make_readonly(source)
+
+        archived = self.archive(source)
+
+        self.assertEqual(source.read_bytes(), original)
+        self.assertEqual(stat.S_IMODE(source.stat().st_mode), readonly_mode)
+        self.assertEqual(archived.read_bytes(), original)
+        self.assertEqual(archived.stat().st_mtime_ns, modified)
+        self.assertTrue(archived.stat().st_mode & stat.S_IWUSR)
+        if hasattr(archived.stat(), "st_file_attributes"):
+            self.assertFalse(archived.stat().st_file_attributes & stat.FILE_ATTRIBUTE_READONLY)
+            self.assertTrue(source.stat().st_file_attributes & stat.FILE_ATTRIBUTE_READONLY)
         self.assert_no_staging_files()
 
     def test_move_deletes_source_only_after_complete_archive_is_available(self):
@@ -113,7 +149,7 @@ class AudioArchiveTests(unittest.TestCase):
                 output.write(payload[halfway:])
             return dst
 
-        with patch.object(db.shutil, "copy2", side_effect=paused_copy):
+        with patch.object(db.shutil, "copyfile", side_effect=paused_copy):
             with ThreadPoolExecutor(max_workers=1) as pool:
                 pending = pool.submit(self.archive, source)
                 try:
@@ -142,7 +178,7 @@ class AudioArchiveTests(unittest.TestCase):
 
         for copy in (True, False):
             with self.subTest(copy=copy):
-                with patch.object(db.shutil, "copy2", side_effect=fail_mid_copy):
+                with patch.object(db.shutil, "copyfile", side_effect=fail_mid_copy):
                     with self.assertRaisesRegex(OSError, "Synthetic disk full"):
                         self.archive(source, copy=copy)
                 self.assertEqual(source.read_bytes(), original)
@@ -206,6 +242,59 @@ class AudioArchiveTests(unittest.TestCase):
         self.assertEqual(archived.read_bytes(), original)
         self.assertEqual(source.read_bytes(), original)
         self.assertEqual(len(self.completed_files()), 2)
+        self.assert_no_staging_files()
+
+    def test_readonly_source_name_race_preserves_both_complete_files(self):
+        source = self.source()
+        original = source.read_bytes()
+        readonly_mode = self.make_readonly(source)
+        real_link = os.link
+        claimed = []
+        def competing_link(src, dst, *args, **kwargs):
+            if not claimed:
+                competitor = Path(dst)
+                competitor.write_bytes(b"another complete recording")
+                claimed.append(competitor)
+            return real_link(src, dst, *args, **kwargs)
+        with patch.object(db.os, "link", side_effect=competing_link), \
+                patch.object(db.os, "remove", side_effect=self.windows_delete()):
+            archived = self.archive(source)
+        self.assertEqual(archived.read_bytes(), original)
+        self.assertTrue(archived.stat().st_mode & stat.S_IWUSR)
+        self.assertEqual(claimed[0].read_bytes(), b"another complete recording")
+        self.assertEqual(source.read_bytes(), original)
+        self.assertEqual(stat.S_IMODE(source.stat().st_mode), readonly_mode)
+        self.assertEqual(len(self.completed_files()), 2)
+        self.assert_no_staging_files()
+
+    def test_readonly_input_failures_clean_writable_staging_and_preserve_original(self):
+        source = self.source()
+        original = source.read_bytes()
+        readonly_mode = self.make_readonly(source)
+        for operation in ("utime", "fsync", "link"):
+            with self.subTest(operation=operation):
+                message = "Synthetic " + operation + " failure"
+                with patch.object(db.os, operation, side_effect=OSError(message)), \
+                        patch.object(db.os, "remove", side_effect=self.windows_delete()):
+                    with self.assertRaisesRegex(OSError, message):
+                        self.archive(source, copy=False)
+                self.assertEqual(source.read_bytes(), original)
+                self.assertEqual(stat.S_IMODE(source.stat().st_mode), readonly_mode)
+                self.assertEqual(self.files(), [])
+
+    def test_readonly_move_rejection_keeps_original_and_complete_archive(self):
+        source = self.source()
+        original = source.read_bytes()
+        readonly_mode = self.make_readonly(source)
+        with patch.object(db.os, "remove", side_effect=self.windows_delete()):
+            with self.assertRaisesRegex(PermissionError, "read-only deletion denied"):
+                self.archive(source, copy=False)
+        self.assertEqual(source.read_bytes(), original)
+        self.assertEqual(stat.S_IMODE(source.stat().st_mode), readonly_mode)
+        completed = self.completed_files()
+        self.assertEqual(len(completed), 1)
+        self.assertEqual(completed[0].read_bytes(), original)
+        self.assertTrue(completed[0].stat().st_mode & stat.S_IWUSR)
         self.assert_no_staging_files()
 
     def test_concurrent_copy_and_move_keep_every_distinct_recording(self):

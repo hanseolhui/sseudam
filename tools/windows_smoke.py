@@ -136,9 +136,70 @@ def t_plus():
     return p
 
 
+def t_cloud_audio():
+    """설치된 API로 원본 음성의 동의·증분 복사·중지 동작을 시험한다 (CI 가짜 자료만)."""
+    import hashlib
+    from pathlib import Path
+    import shutil
+    import tempfile
+
+    assert os.environ.get("GITHUB_ACTIONS") == "true", "Cloud audio smoke requires an isolated Actions runner"
+    workspace = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
+    data = Path(os.environ["SETEUK_DATA"]).resolve()
+    assert data == workspace / "testdata", "Unexpected smoke data directory"
+    actual_data = Path(call("/api/settings")["data_dir"]).resolve()
+    assert actual_data == data, "Installed server is not using the smoke data directory"
+    original_state = call("/api/backup-folder")
+    assert not original_state.get("folder"), "Fresh smoke database unexpectedly has a backup folder"
+    assert not original_state.get("audio_enabled"), original_state
+    relative = Path("2099/01/synthetic-cloud-audio.wav")
+    source = data / "audio" / relative
+    assert not source.exists(), "Synthetic source already exists"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(workspace / "sample.wav", source)
+    original_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+    with tempfile.TemporaryDirectory(prefix="smoke-cloud-audio-", dir=workspace) as temporary:
+        destination = Path(temporary).resolve()
+        try:
+            selected = call("/api/backup-folder", {"path": str(destination)})
+            assert selected.get("folder") and not selected.get("audio_enabled"), selected
+            enabled = call("/api/backup-folder/audio", {"enabled": True})
+            assert enabled.get("audio_enabled") and not enabled.get("audio_error"), enabled
+            summary = enabled.get("audio_summary") or {}
+            assert summary.get("copied", 0) >= 1 and summary.get("ok"), summary
+            mirror_root = Path(summary["folder"]).resolve()
+            assert mirror_root.parent == destination, "Audio mirror escaped the synthetic destination"
+            saved = mirror_root / "audio" / relative
+            assert hashlib.sha256(saved.read_bytes()).hexdigest() == original_hash, "Audio copy differs"
+            manifest = json.loads((mirror_root / "manifest.json").read_text(encoding="utf-8"))
+            assert manifest["files"][relative.as_posix()]["sha256"] == original_hash, "Manifest hash differs"
+            repeated = call("/api/backup-folder/now", {})
+            assert not repeated.get("audio_error") and not repeated.get("error"), repeated
+            assert repeated["audio_summary"]["copied"] == 0, repeated["audio_summary"]
+            assert repeated["audio_summary"]["versions_saved"] == 0, repeated["audio_summary"]
+            disabled = call("/api/backup-folder/audio", {"enabled": False})
+            assert not disabled.get("audio_enabled"), disabled
+            # 끈 뒤 새 원본이 생겨도 복사하지 않으며 이미 보관한 사본은 유지한다.
+            disabled_source = source.with_name("synthetic-after-disabled.wav")
+            assert not disabled_source.exists(), "Disabled-test source already exists"
+            shutil.copyfile(source, disabled_source)
+            after_disabled = call("/api/backup-folder/now", {})
+            assert not after_disabled.get("audio_enabled"), after_disabled
+            assert not (saved.parent / disabled_source.name).exists(), "Audio copied after opt-out"
+            assert hashlib.sha256(saved.read_bytes()).hexdigest() == original_hash, "Opt-out removed or changed the saved copy"
+            assert hashlib.sha256(source.read_bytes()).hexdigest() == original_hash, "Source audio changed"
+            return {"copied_and_hashed": True, "repeat_copied": 0, "disabled_preserves_copy": True,
+                    "disabled_skips_new_audio": True, "remote_cloud_sync_tested": False}
+        finally:
+            call("/api/backup-folder/audio", {"enabled": False})
+            cleared = call("/api/backup-folder", {"path": ""})
+            assert not cleared.get("folder"), "Could not clear synthetic backup setting"
+
+
 for name, fn in [("서버 켜짐 · 버전", t_version), ("윈도우 경로 · 한글 폴더", t_korean_paths),
                  ("학생 명단 · 이름 기준 분리", t_segment), ("QR 연동(실제 중계 서버)", t_relay),
-                 ("Whisper 실행 파일 옵션", t_whisper_direct), ("Whisper 받기 · 녹음 받아쓰기", t_whisper), ("내장 AI 엔진 상태", t_llm_engine),
+                 ("Whisper 실행 파일 옵션", t_whisper_direct), ("Whisper 받기 · 녹음 받아쓰기", t_whisper),
+                 ("원본 음성 백업 · 중복 방지 · 끄기", t_cloud_audio), ("내장 AI 엔진 상태", t_llm_engine),
                  ("아이디어·오류 진단 정보", t_feedback_preview), ("쓰담 플러스 상태", t_plus)]:
     check(name, fn)
 

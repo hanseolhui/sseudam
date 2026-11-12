@@ -526,7 +526,11 @@ def move_audio_into_archive(src_path, recorded_at, class_hint, kind, copy=True):
         fd, tmp = tempfile.mkstemp(prefix=".recording-", suffix=".tmp", dir=folder)
         try:
             try:
-                shutil.copy2(src_path, tmp)
+                # 원본의 READONLY/권한은 복제하지 않는다. Windows에서 읽기 전용 .tmp는
+                # 성공·실패 뒤 모두 삭제할 수 없으므로 mkstemp의 쓰기 가능한 권한을 유지한다.
+                shutil.copyfile(src_path, tmp)
+                source_stat = os.stat(src_path)
+                os.utime(tmp, ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns))
                 os.fsync(fd)  # mkstemp의 쓰기 가능한 핸들을 유지 (Windows _commit 호환)
             finally:
                 os.close(fd)
