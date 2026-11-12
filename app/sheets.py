@@ -191,11 +191,14 @@ def _db_zip_bytes():
     try:
         dbfile = os.path.join(tmp, "seteuk.db")
         db.backup_to(dbfile)
+        import backupsafe
+        backupsafe.scrub(dbfile)   # AI 키 · 플러스 로그인 · 휴대폰 연결 열쇠는 밖으로 나가는 백업에 넣지 않는다
         zpath = os.path.join(tmp, "b.zip")
         with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
             z.write(dbfile, "seteuk.db")
             z.writestr("info.json", json.dumps({"app": "쓰담", "version": version.VERSION,
-                                                "created": datetime.datetime.now().isoformat()}))
+                                                "created": datetime.datetime.now().isoformat(),
+                                                "connections_included": False}))
         with open(zpath, "rb") as f:
             return f.read()
     finally:
@@ -289,14 +292,21 @@ def restore_from_bytes(data):
             chk.close()
         before = os.path.join(db.BACKUP_DIR, "seteuk-before-restore-%s.db" % datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
         db.backup_to(before)
+        import backupsafe
+        cur = db.connect()
+        keep = backupsafe.remember(cur)   # 이 컴퓨터의 로그인 · 휴대폰 연결 · AI 키는 복원해도 그대로
+        cur.close()
         s = sqlite3.connect(src)
         d = db.connect()
         with d:
             s.backup(d)
         s.close()
+        with d:
+            backupsafe.put_back(d, keep)
         d.close()
         db.init()  # 새 컬럼·설정 보충
-        return {"ok": True, "counts": counts, "before": before}
+        return {"ok": True, "counts": counts, "before": before,
+                "warning": "로그인 · 휴대폰 연결 · AI 키는 이 컴퓨터의 것을 그대로 두었습니다."}
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)

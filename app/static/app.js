@@ -1901,6 +1901,8 @@ async function viewSettings(section) {
         <div class="section-title"><h2>백업 · 복원 · 엑셀</h2>
           <span style="display:flex;gap:6px;flex-wrap:wrap"><button id="backup">지금 백업 (이 맥)</button><button id="xlsx-all" class="primary">전체 엑셀로 저장</button></span></div>
         <p class="help" style="margin-top:-4px">이 맥에는 매일 자동 백업(30일)됩니다. 구글 드라이브 백업까지 켜 두면 맥이 고장 나도 복원할 수 있습니다. 녹음 원본(오디오)은 용량 때문에 이 맥에만 보관되니, 타임머신 백업을 함께 쓰면 가장 안전합니다.</p>
+        <p class="help">백업은 이 컴퓨터와, 선생님이 켠 경우 본인의 클라우드 폴더 · 구글 드라이브에만 저장됩니다. 쓰담 서버에는 백업되지 않으니, 컴퓨터 고장에 대비하려면 아래의 클라우드 폴더 백업이나 구글 드라이브 백업을 켜 두세요. 컴퓨터 밖으로 나가는 백업에는 쓰담 플러스 로그인 · 휴대폰 연결 · AI 키가 들어가지 않아, 새 컴퓨터에서 복원한 뒤에는 다시 연결해야 합니다.</p>
+        <div class="source" id="cf-box" style="margin-top:10px"></div>
         <div class="split" style="margin-top:8px">
           <div><h3>복원할 백업 고르기</h3><div id="bk-list" class="small"><p class="muted">불러오는 중…</p></div></div>
           <div><h3>파일로 복원</h3><p class="help">받아 둔 백업 파일(.zip 또는 .db)을 고르세요. 복원 전에 지금 상태를 자동 백업합니다.</p>
@@ -2185,7 +2187,7 @@ async function viewSettings(section) {
     const r = await api('/api/restore/upload', f);
     toast(`복원했습니다 — 학급 ${r.counts.classes}, 학생 ${r.counts.students}, 기록 ${r.counts.notes}`); router(true);
   };
-  renderWhisper(); renderGoogle(); renderBackups(); renderPairing();
+  renderWhisper(); renderGoogle(); renderBackups(); renderCloudFolder(); renderPairing();
   $('#phone-scan').onclick = async () => { const r = await api('/api/phone/scan', {}); toast(`휴대폰 녹음 ${r.imported}개를 가져왔습니다`); };
   if (s.platform !== 'mac') $$('[data-maconly]').forEach(e => e.classList.add('hidden'));
 
@@ -2262,6 +2264,35 @@ async function renderGoogle() {
   parts.push(s.drive_last_backup ? `드라이브 마지막 백업: ${esc(s.drive_last_backup)}` : '드라이브 백업 기록 없음');
   $('#g-last').innerHTML = parts.join(' · ') + (s.sheets_last_error ? `<br><span class="bad-text">최근 오류: ${esc(s.sheets_last_error)}</span>` : '');
   $('#g-status').innerHTML = s.sheets_url ? (s.sheets_last_error ? '<span class="badge red">오류</span>' : '<span class="badge green">연결됨</span>') : '<span class="badge">연결 안 됨</span>';
+}
+
+// 내 클라우드 폴더 백업: 고른 폴더에 날마다 복원용 zip + 엑셀 (쓰담 서버로는 보내지 않음)
+async function renderCloudFolder(d) {
+  const box = $('#cf-box'); if (!box) return;
+  d = d || await api('/api/backup-folder', undefined, { silent: true }).catch(() => null);
+  if (!d) { box.innerHTML = ''; return; }
+  const run = async (btn, path, body, done) => {
+    btn.disabled = true;
+    try { const r = await api(path, body); if (done) toast(done(r)); renderCloudFolder(r.folder === undefined ? undefined : r); }
+    catch (e) { btn.disabled = false; }
+  };
+  if (d.folder) {
+    box.innerHTML = `<div class="section-title"><h3 style="margin:0">내 클라우드 폴더에도 백업</h3><span class="badge blue">켜짐</span></div>
+      <p class="help"><code>${esc(d.folder)}</code><br>날마다 복원용 파일(.zip)과 엑셀 파일(.xlsx)을 이 폴더에 둡니다 (30일치). 엑셀은 쓰담이 없어도 열 수 있고, 관찰 기록 · 초안의 모든 버전 · 녹음을 받아쓴 글이 들어 있습니다.${d.last ? ` 마지막 백업: ${esc(d.last)}` : ''}</p>
+      ${d.error ? `<p class="bad-text small">백업하지 못했습니다: ${esc(d.error)}</p>` : ''}
+      <div class="row" style="margin-top:8px"><button class="shrink" id="cf-now">지금 백업</button><button class="shrink" id="cf-open">폴더 열기</button><button class="shrink" id="cf-off">끄기</button></div>`;
+    $('#cf-now').onclick = e => run(e.target, '/api/backup-folder/now', {}, r => `폴더에 백업했습니다 (파일 ${r.made.length}개)`);
+    $('#cf-open').onclick = () => api('/api/backup-folder/open', {});
+    $('#cf-off').onclick = e => { if (confirmBox('이 폴더에 백업하는 것을 끌까요?\n(이미 둔 파일은 지우지 않습니다)')) run(e.target, '/api/backup-folder', { path: '' }); };
+    return;
+  }
+  box.innerHTML = `<div class="section-title"><h3 style="margin:0">내 클라우드 폴더에도 백업</h3><span class="badge">꺼짐</span></div>
+    <p class="help">폴더를 정하면 날마다 복원용 파일(.zip)과 엑셀 파일(.xlsx)을 그 폴더에 둡니다. 엑셀은 쓰담이 없어도 열 수 있고, 관찰 기록 · 초안의 모든 버전 · 녹음을 받아쓴 글이 들어 있습니다. 쓰담 서버로는 보내지 않고, 클라우드에 올리는 일은 그 클라우드 프로그램이 합니다.</p>
+    ${d.candidates.length ? `<div class="row" style="margin-top:8px;flex-wrap:wrap">${d.candidates.map(c => `<button class="shrink cf-pick" data-id="${esc(c.id)}" title="${esc(c.path)}">${esc(c.name)}에 켜기</button>`).join('')}</div>` : ''}
+    <div class="row" style="margin-top:8px"><input id="cf-path" placeholder="다른 폴더 주소 붙여넣기 (USB · 공유 폴더도 됩니다)"><button class="shrink" id="cf-set">이 폴더에 켜기</button></div>`;
+  const on = r => `이 폴더에 백업을 켰습니다 — ${r.folder}`;
+  $$('.cf-pick', box).forEach(b => b.onclick = e => run(e.target, '/api/backup-folder', { candidate: b.dataset.id }, on));
+  $('#cf-set').onclick = e => { const p = $('#cf-path').value.trim(); if (p) run(e.target, '/api/backup-folder', { path: p }, on); };
 }
 
 async function renderBackups() {
