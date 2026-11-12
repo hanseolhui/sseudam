@@ -89,6 +89,10 @@ DEFAULT_SETTINGS = {
     "sheets_last_sync": "",
     "sheets_last_error": "",
     "drive_last_backup": "",
+    # 내 클라우드 폴더 백업 (cloudfolder.py): 고른 폴더에 날마다 복원용 zip + 엑셀. 비면 꺼짐
+    "backup_folder": "",
+    "backup_folder_last": "",
+    "backup_folder_error": "",
     # 휴대폰 앱(아이폰·안드로이드) → 구글 드라이브 → 이 컴퓨터
     "drive_inbox": "1",
     "upload_token": "",
@@ -343,19 +347,88 @@ def note_in_area(note, class_kind, area):
     return area not in SCHOOL_AREA_IDS or note_area(note, class_kind) == area
 
 
+DAILY_BACKUP_KEEP = 30
+
+
+def _is_daily_backup(name):
+    """매일 자동 백업 파일 이름인지 (seteuk-20261112.db). seteuk-before-… · seteuk-manual-… 은 아니다."""
+    stamp = name[len("seteuk-"):-len(".db")]
+    return name.startswith("seteuk-") and name.endswith(".db") and len(stamp) == 8 and stamp.isdigit()
+
+
+AUTO_COPY_KEEP = 10
+# 자동으로 남기는 사본의 묶음. 업데이트가 잦아도 '복원 전' 사본이 밀려나지 않게 따로 센다
+_AUTO_COPY_GROUPS = {"before-update": "update", "before-app-update": "update", "before-auto-update": "update",
+                     "before-restore": "restore"}
+
+
+def _auto_copy(name):
+    """업데이트 전 · 복원 전 자동 사본(seteuk-before-…-20261112-101500.db)이면 (묶음, 시각), 아니면 None."""
+    if not (name.startswith("seteuk-") and name.endswith(".db")):
+        return None
+    body = name[len("seteuk-"):-len(".db")]
+    kind, sep, stamp = body[:-16], body[-16:-15], body[-15:]
+    if sep != "-" or len(stamp) != 15 or stamp[8] != "-" or not (stamp[:8] + stamp[9:]).isdigit():
+        return None
+    group = _AUTO_COPY_GROUPS.get(kind)
+    return (group, stamp) if group else None
+
+
 def daily_backup():
     if not os.path.exists(DB_PATH):
         return
     today = datetime.date.today().strftime("%Y%m%d")
     target = os.path.join(BACKUP_DIR, "seteuk-%s.db" % today)
     if not os.path.exists(target):
-        backup_to(target)
-    files = sorted(f for f in os.listdir(BACKUP_DIR) if f.startswith("seteuk-") and f.endswith(".db"))
-    for f in files[:-30]:
+        # 임시 이름으로 다 쓴 뒤에 제 이름을 붙인다 — 쓰는 도중 꺼져도 덜 쓴 파일이 그날 사본 자리를 차지하지 않게
+        tmp = target + ".tmp"
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        backup_to(tmp)
+        os.replace(tmp, target)
+    # 날짜 사본(seteuk-YYYYMMDD.db)만 30개로 센다. 업데이트 전 · 복원 전 · 수동 사본은 여기서 세지 않는다
+    # (함께 세면 이름순으로 뒤에 오는 그 사본들이 자리를 차지해 날짜 사본이 30일치보다 적게 남는다).
+    files = sorted(f for f in os.listdir(BACKUP_DIR) if _is_daily_backup(f))
+    for f in files[:-DAILY_BACKUP_KEEP]:
         try:
             os.remove(os.path.join(BACKUP_DIR, f))
         except OSError:
             pass
+    _prune_auto_copies()
+
+
+def _prune_auto_copies():
+    """업데이트 전 · 복원 전에 자동으로 남긴 사본은 묶음마다 최근 것만 둔다. 수동 백업과 다른 파일은 건드리지 않는다."""
+    groups = {}
+    for f in os.listdir(BACKUP_DIR):
+        found = _auto_copy(f)
+        if found:
+            groups.setdefault(found[0], []).append((found[1], f))
+    for items in groups.values():
+        for _, f in sorted(items)[:-AUTO_COPY_KEEP]:
+            try:
+                os.remove(os.path.join(BACKUP_DIR, f))
+            except OSError:
+                pass
+
+
+BACKUP_CHECK_SECONDS = 3600
+
+
+def _backup_loop():
+    """쓰담을 며칠씩 켜 둬도 날마다 사본이 생기게 한 시간마다 확인 (그날 사본이 있으면 아무것도 안 함)."""
+    import time
+    while True:
+        time.sleep(BACKUP_CHECK_SECONDS)
+        try:
+            daily_backup()
+        except Exception as e:  # noqa — 디스크가 가득 찼을 때 등. 다음 차례에 다시
+            print("자동 백업 실패:", e)
+
+
+def start_daily_backup():
+    import threading
+    threading.Thread(target=_backup_loop, daemon=True, name="daily-backup").start()
 
 
 def backup_to(path):

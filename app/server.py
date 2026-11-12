@@ -1616,6 +1616,41 @@ def drive_backup_now(h, q, b):
     return sheets.drive_backup()
 
 
+@route("GET", "/api/backup-folder")
+def backup_folder_get(h, q, b):
+    import cloudfolder
+    return cloudfolder.status()
+
+
+@route("POST", "/api/backup-folder")
+def backup_folder_set(h, q, b):
+    """내 클라우드 폴더 백업 켜기(폴더 주소 또는 찾아 둔 클라우드) · 끄기(둘 다 비움)."""
+    import cloudfolder
+    try:
+        return cloudfolder.set_folder(path=b.get("path") or "", candidate=b.get("candidate") or "")
+    except ValueError as e:
+        raise ApiError(str(e))
+
+
+@route("POST", "/api/backup-folder/now")
+def backup_folder_now(h, q, b):
+    import cloudfolder
+    r = cloudfolder.copy_now(force=True)
+    if not r.get("ok"):
+        raise ApiError(r.get("error") or "먼저 백업할 폴더를 정해 주세요.")
+    return dict(cloudfolder.status(), made=r["made"])
+
+
+@route("POST", "/api/backup-folder/open")
+def backup_folder_open(h, q, b):
+    import cloudfolder
+    f = cloudfolder.folder()
+    if not f or not os.path.isdir(f):
+        raise ApiError("폴더를 찾을 수 없어요.")
+    open_in_finder(f)
+    return {"ok": True}
+
+
 @route("GET", "/api/backups")
 def backups_list(h, q, b):
     out = {"local": sheets.local_backups(), "drive": [], "drive_error": ""}
@@ -2010,6 +2045,9 @@ def main():
     ensure_token()
     ensure_upload_token()
     pipeline.start_worker()
+    db.start_daily_backup()   # 켜 둔 채 날짜가 바뀌어도 그날 자동 백업
+    import cloudfolder
+    cloudfolder.start()       # 내 클라우드 폴더를 정해 둔 경우 날마다 그곳에도 (zip + 엑셀)
     watcher.start()
     sheets.start()
     sync_text.start()
