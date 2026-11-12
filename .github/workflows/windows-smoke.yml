@@ -29,6 +29,10 @@ concurrency:
 jobs:
   smoke:
     runs-on: windows-latest
+    # GitHub는 push 권한이 있는 토큰에만 draft 릴리스를 보여 준다.
+    # 토큰은 릴리스 조회·다운로드 단계에만 전달하고 체크아웃에 저장하지 않는다.
+    permissions:
+      contents: write
     timeout-minutes: 40
     env:
       SETEUK_DATA: ${{ github.workspace }}\testdata
