@@ -169,7 +169,12 @@ def t_device_help():
                 assert phrase in text, "Missing help content: " + phrase
             assert guide.locator('a[href$="#devices"]').count() == 1
             assert guide.locator('a[href$="#offline-online"]').count() == 1
-            assert page.get_by_text("지금: 이 컴퓨터 안에서 받아쓰기 — 외부 전송 없음", exact=True).is_visible()
+            page.locator('[data-stab="ai"]').click()
+            badge = page.get_by_text("지금: 이 컴퓨터 안에서 받아쓰기 — 외부 전송 없음", exact=True)
+            badge.wait_for(state="visible", timeout=15000)
+            badge.scroll_into_view_if_needed()
+            page.screenshot(path=str(screenshots / "windows-help-stt-label.png"))
+            guide.locator("summary").scroll_into_view_if_needed()
             layouts = []
             for width in (1280, 960):
                 page.set_viewport_size({"width": width, "height": 900})
