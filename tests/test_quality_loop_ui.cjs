@@ -11,13 +11,16 @@ function block(start, end) {
   return source.slice(from, to);
 }
 function element(props = {}) {
+  const listeners = new Map();
   return {isConnected: true, value: '', innerHTML: '', textContent: '', className: '',
-    dataset: {}, disabled: false, addEventListener() {}, ...props};
+    dataset: {}, disabled: false, selectionStart: 0, selectionEnd: 0,
+    addEventListener(name, callback) {listeners.set(name, callback);},
+    dispatch(name) {listeners.get(name)?.();}, ...props};
 }
 function harness(section) {
   const nodes = new Map();
   const editor = element({value: '가상 관찰 기록'});
-  for (const id of ['d-count', 'd-warn', 'd-review', 'd-rate', 'd-final']) nodes.set(`#${id}`, element());
+  for (const id of ['d-count', 'd-warn', 'd-review', 'd-rate', 'd-final', 'd-sources']) nodes.set(`#${id}`, element());
   nodes.set('#d-text', editor);
   const selected = {id: 1, content: editor.value, ai_text: editor.value, rated: false};
   const requests = [], toasts = [];
@@ -31,6 +34,7 @@ function harness(section) {
   }
   const context = vm.createContext({
     text: editor, sourceDraft: selected, current: {id: 2, content: editor.value, ai_text: '다른 생성 원문'},
+    notesInArea: [], document: {activeElement: editor},
     s: {id: 7, name: '가상학생'}, area: {id: 'subject'}, limit: 1500, FORBIDDEN: [],
     neisBytes: text => Buffer.byteLength(text), esc: value => String(value),
     $: selector => nodes.get(selector),
@@ -53,6 +57,7 @@ function harness(section) {
   });
   vm.runInContext(block('  const isCurrentEditor = () =>', '  const renderSources = () =>'), context);
   const sections = {
+    sources: ['  const renderSources = () => {', '  let checkedReview = null;'],
     review: ['  let checkedReview = null;', "  $('#st-edit').onclick"],
     rating: ['  const renderRating = () => {', "  $('#d-save').onclick"],
     confirm: ["  $('#d-final').onclick = async () => {", "  $$('[data-ver]').forEach"],
@@ -69,6 +74,26 @@ function harness(section) {
     replaceModal() {detachModal(); nodes.set('#unrelated-modal', element({innerHTML: '다른 작업'}));},
   };
 }
+
+test('editing selected text refreshes evidence without moving the cursor or focus', () => {
+  const h = harness('sources');
+  h.selected.sources = JSON.stringify([{content: '실험 결과를 표로 정리함.'}]);
+  h.editor.value = '예전 선택 문장';
+  h.editor.selectionStart = 0;
+  h.editor.selectionEnd = h.editor.value.length;
+  h.editor.dispatch('select');
+  assert.match(h.nodes.get('#d-sources').innerHTML, /예전 선택 문장/);
+
+  h.editor.value = '새로 입력한 글';
+  h.editor.selectionStart = h.editor.selectionEnd = 5;
+  h.editor.dispatch('input');
+  assert.doesNotMatch(h.nodes.get('#d-sources').innerHTML, /예전 선택 문장|선택한 문장:/);
+  assert.match(h.nodes.get('#d-sources').innerHTML, /실험 결과를 표로 정리함/);
+  assert.equal(h.editor.selectionStart, 5);
+  assert.equal(h.editor.selectionEnd, 5);
+  assert.equal(h.editor.value, '새로 입력한 글');
+  assert.equal(h.context.document.activeElement, h.editor);
+});
 
 test('review response after navigation does not overwrite the next student', async () => {
   const h = harness('review'), button = h.nodes.get('#d-review');

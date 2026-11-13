@@ -1500,6 +1500,7 @@ async function viewStudent(id, areaParam) {
       ranked.map(({n, score}) => `<div class="note"><div class="meta">${esc(n.date || '')}${selected && score ? ' · 비교 후보' : ''}</div><div class="content">${esc(n.content || '')}</div>${n.evidence ? `<div class="evidence">${esc(n.evidence)}</div>` : ''}${sourceRecording(n) ? `<a href="#/recording/${Number(sourceRecording(n))}" class="small">녹음 원본 보기</a>` : ''}</div>`).join('');
   };
   text.addEventListener('select', renderSources);
+  text.addEventListener('input', renderSources);
   renderSources();
   let checkedReview = null;
   const update = () => {
