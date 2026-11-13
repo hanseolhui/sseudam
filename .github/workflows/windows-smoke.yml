@@ -77,6 +77,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Windows Edge 화면 검증 도구 준비
+        run: python -m pip install playwright
+
       - name: 소스 SHA와 릴리스 버전 확인
         shell: pwsh
         run: |
@@ -152,7 +155,40 @@ jobs:
           Get-Item dl\Sseudam-Setup.exe | Format-List Name, Length
           Write-Host "Installer SHA256: $hash"
 
-      - name: 조용히 설치 (관리자 권한 없이)
+      - name: 이전 공개 버전 설치 · 합성 기록과 백업 설정 준비
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $raw = gh release list --repo $env:GITHUB_REPOSITORY --limit 30 --json tagName,isDraft,isPrerelease
+          if ($LASTEXITCODE -ne 0) { throw "이전 릴리스 조회 실패" }
+          $target = [version]($env:RELEASE_TAG.Substring(1))
+          $previous = ($raw | ConvertFrom-Json) | Where-Object { -not $_.isDraft -and -not $_.isPrerelease -and $_.tagName -match '^v\d+\.\d+\.\d+$' -and [version]($_.tagName.Substring(1)) -lt $target } | Sort-Object { [version]($_.tagName.Substring(1)) } -Descending | Select-Object -First 1
+          if (-not $previous) { throw "업그레이드 기준 공개 버전이 없음" }
+          gh release download $previous.tagName --repo $env:GITHUB_REPOSITORY --pattern "Sseudam-Setup.exe" --dir dl-previous
+          if ($LASTEXITCODE -ne 0) { throw "이전 설치 파일 다운로드 실패" }
+          $process = Start-Process -Wait -PassThru dl-previous\Sseudam-Setup.exe -ArgumentList "/S"
+          if ($process.ExitCode -ne 0) { throw "이전 버전 설치 실패" }
+          $inst = "$env:LOCALAPPDATA\Programs\Sseudam"
+          $oldVersion = $previous.tagName.Substring(1)
+          $env:SETEUK_DATA = "$env:GITHUB_WORKSPACE\upgrade-testdata"
+          $env:SETEUK_BIN = "$inst\bin"
+          & "$inst\python\python.exe" tools/windows_upgrade_smoke.py prepare --installed $inst --version $oldVersion
+          if ($LASTEXITCODE -ne 0) { throw "이전 버전 합성 자료 준비 실패" }
+          $server = Start-Process -PassThru "$inst\python\python.exe" -ArgumentList "`"$inst\app\server.py`"" -RedirectStandardOutput upgrade-before.log -RedirectStandardError upgrade-before.err
+          try {
+            $v = $null
+            for ($i = 0; $i -lt 60; $i++) { try { $v = Invoke-RestMethod "http://127.0.0.1:8790/api/version"; break } catch { Start-Sleep 1 } }
+            if (-not $v) { throw "이전 설치 앱 실행 실패" }
+            python tools/windows_upgrade_smoke.py capture --installed $inst --version $oldVersion
+            if ($LASTEXITCODE -ne 0) { throw "실행 중인 이전 앱의 기준 자료 확인 실패" }
+          } finally {
+            try { Invoke-RestMethod "http://127.0.0.1:8790/api/shutdown" -Method Post -Headers @{"X-Seteuk"="1"} -ContentType "application/json" -Body "{}" | Out-Null } catch {}
+            if (-not $server.WaitForExit(10000)) { Stop-Process -Id $server.Id -Force; throw "이전 시험 서버가 종료되지 않음" }
+          }
+
+      - name: 새 버전 덮어설치 (관리자 권한 없이)
         shell: pwsh
         run: |
           $process = Start-Process -Wait -PassThru -FilePath dl\Sseudam-Setup.exe -ArgumentList "/S"
@@ -189,6 +225,24 @@ jobs:
           print("Installed source files matched:", len(checked))
           '@ | python -
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: 업그레이드 후 기록 · 음성 · 백업 설정 보존 확인
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $env:SETEUK_DATA = "$env:GITHUB_WORKSPACE\upgrade-testdata"
+          $env:SETEUK_BIN = "$env:INST\bin"
+          $server = Start-Process -PassThru "$env:INST\python\python.exe" -ArgumentList "`"$env:INST\app\server.py`"" -RedirectStandardOutput upgrade-after.log -RedirectStandardError upgrade-after.err
+          try {
+            $v = $null
+            for ($i = 0; $i -lt 60; $i++) { try { $v = Invoke-RestMethod "http://127.0.0.1:8790/api/version"; break } catch { Start-Sleep 1 } }
+            if (-not $v) { throw "새 설치 앱 실행 실패" }
+            python tools/windows_upgrade_smoke.py verify --installed $env:INST --version $env:EXPECTED_APP_VERSION
+            if ($LASTEXITCODE -ne 0) { throw "업그레이드 보존 시험 실패" }
+          } finally {
+            try { Invoke-RestMethod "http://127.0.0.1:8790/api/shutdown" -Method Post -Headers @{"X-Seteuk"="1"} -ContentType "application/json" -Body "{}" | Out-Null } catch {}
+            if (-not $server.WaitForExit(10000)) { Stop-Process -Id $server.Id -Force; throw "업그레이드 시험 서버가 종료되지 않음" }
+          }
 
       - name: 시험용 음성 파일 만들기
         shell: pwsh
@@ -234,3 +288,10 @@ jobs:
             source-tests.log
             release-verification.json
             windows-stat-diagnostic.json
+            windows-upgrade-report.json
+            upgrade-baseline.json
+            upgrade-before.log
+            upgrade-before.err
+            upgrade-after.log
+            upgrade-after.err
+            output/playwright/windows-help-*.png

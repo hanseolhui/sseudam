@@ -47,6 +47,8 @@ def wait_job(jid, limit=900):
 def t_version():
     v = call("/api/version")
     assert v.get("version"), v
+    expected = os.environ.get("EXPECTED_APP_VERSION")
+    assert not expected or v["version"] == expected, "Installed version differs from the release source"
     return v
 
 
@@ -136,6 +138,50 @@ def t_plus():
     return p
 
 
+def t_device_help():
+    """Open the installed UI in real Windows Edge while blocking external network requests."""
+    from pathlib import Path
+    from playwright.sync_api import sync_playwright
+
+    assert os.environ.get("GITHUB_ACTIONS") == "true" and sys.platform == "win32"
+    call("/api/settings", {"onboarded": "1", "profile_asked": "1"})
+    screenshots = Path("output/playwright")
+    screenshots.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(channel="msedge", headless=True)
+        try:
+            context = browser.new_context(viewport={"width": 1280, "height": 900})
+            context.route("**/*", lambda route: route.continue_()
+                          if urllib.parse.urlparse(route.request.url).hostname in ("127.0.0.1", "localhost")
+                          else route.abort())
+            page = context.new_page()
+            errors = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(B + "/#/settings", wait_until="domcontentloaded")
+            guide = page.locator("#device-offline-guide")
+            guide.wait_for(state="visible", timeout=30000)
+            assert guide.get_attribute("open") is None, "Help should be collapsed initially"
+            page.screenshot(path=str(screenshots / "windows-help-collapsed.png"), full_page=True)
+            guide.locator("summary").click()
+            assert guide.get_attribute("open") is not None, "Help did not expand"
+            text = guide.inner_text()
+            for phrase in ("Windows 10·11", "인터넷이 없어도", "QR 연동은 인터넷", "로그인", "동기화", "백업", "컴퓨터 쓰담"):
+                assert phrase in text, "Missing help content: " + phrase
+            assert guide.locator('a[href$="#devices"]').count() == 1
+            assert guide.locator('a[href$="#offline-online"]').count() == 1
+            for width in (1280, 960):
+                page.set_viewport_size({"width": width, "height": 900})
+                assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Settings overflow at %spx" % width
+                page.screenshot(path=str(screenshots / ("windows-help-offline-expanded-%s.png" % width)), full_page=True)
+            guide.locator("summary").click()
+            assert guide.get_attribute("open") is None, "Help did not collapse again"
+            assert not errors, errors
+        finally:
+            browser.close()
+    return {"windows_edge": True, "bundled_help_with_external_network_blocked": True,
+            "expand_and_collapse": True, "tested_widths": [1280, 960], "horizontal_overflow": False}
+
+
 def t_cloud_audio():
     """설치된 API로 원본 음성의 동의·증분 복사·중지 동작을 시험한다 (CI 가짜 자료만)."""
     import hashlib
@@ -145,10 +191,13 @@ def t_cloud_audio():
 
     assert os.environ.get("GITHUB_ACTIONS") == "true", "Cloud audio smoke requires an isolated Actions runner"
     workspace = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
-    data = Path(os.environ["SETEUK_DATA"]).resolve()
-    assert data == workspace / "testdata", "Unexpected smoke data directory"
     actual_data = Path(call("/api/settings")["data_dir"]).resolve()
-    assert actual_data == data, "Installed server is not using the smoke data directory"
+    if os.environ.get("SSEUDAM_SMOKE_MSIX") == "1":
+        data = Path(os.environ["USERPROFILE"]).resolve() / "쓰담" / "data"
+    else:
+        data = Path(os.environ["SETEUK_DATA"]).resolve()
+        assert data == workspace / "testdata", "Unexpected smoke data directory"
+    assert actual_data == data, "Installed server is not using the expected isolated runner data directory"
     original_state = call("/api/backup-folder")
     assert not original_state.get("folder"), "Fresh smoke database unexpectedly has a backup folder"
     assert not original_state.get("audio_enabled"), original_state
@@ -200,7 +249,8 @@ for name, fn in [("서버 켜짐 · 버전", t_version), ("윈도우 경로 · �
                  ("학생 명단 · 이름 기준 분리", t_segment), ("QR 연동(실제 중계 서버)", t_relay),
                  ("Whisper 실행 파일 옵션", t_whisper_direct), ("Whisper 받기 · 녹음 받아쓰기", t_whisper),
                  ("원본 음성 백업 · 중복 방지 · 끄기", t_cloud_audio), ("내장 AI 엔진 상태", t_llm_engine),
-                 ("아이디어·오류 진단 정보", t_feedback_preview), ("쓰담 플러스 상태", t_plus)]:
+                 ("아이디어·오류 진단 정보", t_feedback_preview), ("쓰담 플러스 상태", t_plus),
+                 ("Windows Edge · 오프라인 기기 안내", t_device_help)]:
     check(name, fn)
 
 lines = ["%-4s %-28s %6ss  %s" % (r[0], r[1], r[2], json.dumps(r[3], ensure_ascii=False)[:300]) for r in results]
