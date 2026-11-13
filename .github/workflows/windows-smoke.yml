@@ -42,6 +42,7 @@ jobs:
       PYTHONUTF8: "1"
       REQUESTED_TAG: ${{ github.event.inputs.tag || github.event.release.tag_name }}
       EXPECTED_SOURCE_SHA: ${{ github.event.inputs.source_sha }}
+      VALIDATION_SOURCE_SHA: ${{ github.sha }}
       EXPECTED_INSTALLER_SHA256: ${{ github.event.inputs.installer_sha256 }}
     steps:
       - name: 공개 또는 draft 릴리스와 검증 소스 지정
@@ -73,6 +74,16 @@ jobs:
           ref: ${{ steps.release.outputs.source }}
           persist-credentials: false
 
+      # 앱 소스는 릴리스 SHA에 고정하고, 시험 도구는 이번 workflow commit을 사용한다.
+      # 캡처/검증 도구만 수정했을 때 이미 만든 릴리스 태그를 바꾸지 않기 위함이다.
+      - name: 현재 검증 도구 가져오기
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: .ci-validation
+          sparse-checkout: tools
+          persist-credentials: false
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -95,7 +106,7 @@ jobs:
           module = ast.parse(pathlib.Path("app/version.py").read_text(encoding="utf-8"))
           version = next(ast.literal_eval(n.value) for n in module.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "VERSION" for t in n.targets))
           assert release["tagName"] == "v" + version, "Source version and release tag differ"
-          release.update(source_sha=sha, expected_version=version)
+          release.update(source_sha=sha, expected_version=version, validation_source_sha=os.environ["VALIDATION_SOURCE_SHA"])
           pathlib.Path("release-verification.json").write_text(json.dumps(release, indent=2), encoding="utf-8")
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as output:
               output.write("EXPECTED_APP_VERSION=" + version + "\n")
@@ -174,14 +185,14 @@ jobs:
           $oldVersion = $previous.tagName.Substring(1)
           $env:SETEUK_DATA = "$env:GITHUB_WORKSPACE\upgrade-testdata"
           $env:SETEUK_BIN = "$inst\bin"
-          & "$inst\python\python.exe" tools/windows_upgrade_smoke.py prepare --installed $inst --version $oldVersion
+          & "$inst\python\python.exe" .ci-validation/tools/windows_upgrade_smoke.py prepare --installed $inst --version $oldVersion
           if ($LASTEXITCODE -ne 0) { throw "이전 버전 합성 자료 준비 실패" }
           $server = Start-Process -PassThru "$inst\python\python.exe" -ArgumentList "`"$inst\app\server.py`"" -RedirectStandardOutput upgrade-before.log -RedirectStandardError upgrade-before.err
           try {
             $v = $null
             for ($i = 0; $i -lt 60; $i++) { try { $v = Invoke-RestMethod "http://127.0.0.1:8790/api/version"; break } catch { Start-Sleep 1 } }
             if (-not $v) { throw "이전 설치 앱 실행 실패" }
-            python tools/windows_upgrade_smoke.py capture --installed $inst --version $oldVersion
+            python .ci-validation/tools/windows_upgrade_smoke.py capture --installed $inst --version $oldVersion
             if ($LASTEXITCODE -ne 0) { throw "실행 중인 이전 앱의 기준 자료 확인 실패" }
           } finally {
             try { Invoke-RestMethod "http://127.0.0.1:8790/api/shutdown" -Method Post -Headers @{"X-Seteuk"="1"} -ContentType "application/json" -Body "{}" | Out-Null } catch {}
@@ -237,7 +248,7 @@ jobs:
             $v = $null
             for ($i = 0; $i -lt 60; $i++) { try { $v = Invoke-RestMethod "http://127.0.0.1:8790/api/version"; break } catch { Start-Sleep 1 } }
             if (-not $v) { throw "새 설치 앱 실행 실패" }
-            python tools/windows_upgrade_smoke.py verify --installed $env:INST --version $env:EXPECTED_APP_VERSION
+            python .ci-validation/tools/windows_upgrade_smoke.py verify --installed $env:INST --version $env:EXPECTED_APP_VERSION
             if ($LASTEXITCODE -ne 0) { throw "업그레이드 보존 시험 실패" }
           } finally {
             try { Invoke-RestMethod "http://127.0.0.1:8790/api/shutdown" -Method Post -Headers @{"X-Seteuk"="1"} -ContentType "application/json" -Body "{}" | Out-Null } catch {}
@@ -267,7 +278,7 @@ jobs:
           }
           if (-not $v) { Get-Content server.log, server.err; throw "서버가 켜지지 않음" }
           if ($v.version -ne $env:EXPECTED_APP_VERSION) { throw "실행 중인 앱 버전 불일치: $($v.version)" }
-          python tools/windows_smoke.py
+          python .ci-validation/tools/windows_smoke.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: 로그

@@ -161,7 +161,7 @@ def t_device_help():
             guide = page.locator("#device-offline-guide")
             guide.wait_for(state="visible", timeout=30000)
             assert guide.get_attribute("open") is None, "Help should be collapsed initially"
-            page.screenshot(path=str(screenshots / "windows-help-collapsed.png"), full_page=True)
+            page.screenshot(path=str(screenshots / "windows-help-collapsed.png"))
             guide.locator("summary").click()
             assert guide.get_attribute("open") is not None, "Help did not expand"
             text = guide.inner_text()
@@ -169,17 +169,20 @@ def t_device_help():
                 assert phrase in text, "Missing help content: " + phrase
             assert guide.locator('a[href$="#devices"]').count() == 1
             assert guide.locator('a[href$="#offline-online"]').count() == 1
+            layouts = []
             for width in (1280, 960):
                 page.set_viewport_size({"width": width, "height": 900})
-                assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Settings overflow at %spx" % width
-                page.screenshot(path=str(screenshots / ("windows-help-offline-expanded-%s.png" % width)), full_page=True)
+                layout = page.evaluate("({viewport: innerWidth, width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight})")
+                layouts.append(layout)
+                assert layout["width"] <= layout["viewport"], "Settings overflow at %spx: %s" % (width, layout)
+                page.screenshot(path=str(screenshots / ("windows-help-offline-expanded-%s.png" % width)))
             guide.locator("summary").click()
             assert guide.get_attribute("open") is None, "Help did not collapse again"
             assert not errors, errors
         finally:
             browser.close()
     return {"windows_edge": True, "bundled_help_with_external_network_blocked": True,
-            "expand_and_collapse": True, "tested_widths": [1280, 960], "horizontal_overflow": False}
+            "expand_and_collapse": True, "layouts": layouts, "horizontal_overflow": False}
 
 
 def t_cloud_audio():
