@@ -16,6 +16,6 @@ object PlusBilling {
     @Suppress("UNUSED_PARAMETER") fun init(ctx: Context) {}
     @Suppress("UNUSED_PARAMETER") suspend fun loadOffers(basePlans: List<String>) {}
     @Suppress("UNUSED_PARAMETER") suspend fun launch(activity: Activity, offer: PlusOffer, accountId: String): String? =
-        Plus.SALES_NOTICE
+        Plus.STORE_PURCHASE_NOTICE
     @Suppress("UNUSED_PARAMETER") suspend fun resendPurchases(all: Boolean = false) {}
 }

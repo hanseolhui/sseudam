@@ -2,7 +2,6 @@ package kr.sseudam.app
 
 import android.app.Activity
 import android.content.Context
-import com.android.billingclient.api.AcknowledgePurchaseParams
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingClientStateListener
 import com.android.billingclient.api.BillingFlowParams
@@ -12,7 +11,6 @@ import com.android.billingclient.api.ProductDetails
 import com.android.billingclient.api.Purchase
 import com.android.billingclient.api.QueryProductDetailsParams
 import com.android.billingclient.api.QueryPurchasesParams
-import com.android.billingclient.api.acknowledgePurchase
 import com.android.billingclient.api.queryProductDetails
 import com.android.billingclient.api.queryPurchasesAsync
 import kotlinx.coroutines.CoroutineScope
@@ -33,21 +31,15 @@ import kotlin.coroutines.resume
 object PlusBilling {
     const val AVAILABLE = true
     private const val PRODUCT = "plus"
-    /** 서버가 계속 실패할 때만: 3일 안에 확인하지 않으면 플레이가 자동 환불하므로, 이틀 지난 결제는 폰에서 확인해 둔다 */
-    private const val SELF_ACK_AFTER_MS = 2L * 24 * 3600 * 1000
-    private const val SELF_ACK_FAILS = 5
-
     private val _offers = MutableStateFlow<List<PlusOffer>>(emptyList())
     val offers: StateFlow<List<PlusOffer>> = _offers
     private val details = mutableMapOf<String, Pair<ProductDetails, String>>()   // 기본 요금제 → (상품, 혜택 토큰)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private lateinit var ctx: Context
     private lateinit var client: BillingClient
 
     fun init(c: Context) {
         if (::client.isInitialized) return
-        ctx = c.applicationContext
-        client = BillingClient.newBuilder(ctx)
+        client = BillingClient.newBuilder(c.applicationContext)
             .setListener { r, purchases -> onPurchases(r, purchases) }
             .enablePendingPurchases(PendingPurchasesParams.newBuilder().enableOneTimeProducts().build())
             .enableAutoServiceReconnection()
@@ -68,20 +60,31 @@ object PlusBilling {
 
     /** 플레이에서 상품·가격 받기 (가격은 기기 나라 통화로) */
     suspend fun loadOffers(basePlans: List<String>) {
-        if (!Plus.SALES_ENABLED) { _offers.value = emptyList(); details.clear(); return }
-        if (!connected()) return
+        _offers.value = emptyList(); details.clear()
+        if (!Plus.SALES_ENABLED || !Plus.salesReady.value || basePlans.isEmpty()) return
+        if (!connected()) { Plus.message.value = "플레이 스토어에 연결하지 못했어요. 잠시 후 다시 해 주세요."; return }
         val params = QueryProductDetailsParams.newBuilder().setProductList(listOf(
             QueryProductDetailsParams.Product.newBuilder().setProductId(PRODUCT).setProductType(BillingClient.ProductType.SUBS).build())).build()
         val r = client.queryProductDetails(params)
+        if (r.billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
+            Plus.message.value = "구독 상품을 확인하지 못했어요. 잠시 후 다시 해 주세요."; return
+        }
         val pd = r.productDetailsList?.firstOrNull() ?: return
         val list = mutableListOf<PlusOffer>()
-        details.clear()
         // 기본 요금제마다 하나: 추가 혜택(offerId 있음)이 아닌 기본 요금제 자체
         for (plan in basePlans) {
-            val o = pd.subscriptionOfferDetails?.filter { it.basePlanId == plan }?.let { l -> l.firstOrNull { it.offerId == null } ?: l.firstOrNull() } ?: continue
-            val price = o.pricingPhases.pricingPhaseList.lastOrNull()?.formattedPrice ?: continue
+            val o = pd.subscriptionOfferDetails?.firstOrNull { it.basePlanId == plan && it.offerId == null } ?: continue
+            val phases = o.pricingPhases.pricingPhaseList
+            val phase = phases.lastOrNull() ?: continue
+            val price = phase.formattedPrice
+            val benefit = Plus.planBenefits[plan]
+            val breakdown = benefit?.let { recurringPriceBreakdown(
+                phase.priceAmountMicros, phase.priceCurrencyCode, phase.billingPeriod,
+                phase.recurrenceMode == ProductDetails.RecurrenceMode.INFINITE_RECURRING,
+                phases.size, it.months) }
             details[plan] = pd to o.offerToken
-            list += PlusOffer(plan, planTitle(plan), price)
+            list += PlusOffer(plan, planTitle(plan), price, breakdown?.months, breakdown?.monthlyText,
+                if (breakdown != null) benefit.cap else null)
         }
         _offers.value = list
     }
@@ -93,6 +96,7 @@ object PlusBilling {
     /** 결제 화면 열기. 문제가 있으면 안내 문구를 돌려준다 */
     suspend fun launch(activity: Activity, offer: PlusOffer, accountId: String): String? {
         if (!Plus.SALES_ENABLED) return Plus.SALES_NOTICE
+        if (!Plus.canPurchaseFor(accountId)) return Plus.purchaseNotice.value.ifEmpty { "로그인 계정과 구독 판매 상태를 다시 확인해 주세요." }
         if (!connected()) return "플레이 스토어에 연결하지 못했어요. 잠시 후 다시 해 주세요."
         // 이미 소유한 상품은 결제창을 다시 열지 않고 현재 쓰담 계정과 대조한다.
         val owned = client.queryPurchasesAsync(QueryPurchasesParams.newBuilder()
@@ -104,7 +108,7 @@ object PlusBilling {
             existing.forEach { handle(it, all = true) }
             return null
         }
-        if (Plus.accountToken != accountId) return "로그인 계정이 바뀌었어요. 다시 눌러 주세요."
+        if (!Plus.canPurchaseFor(accountId)) return "로그인 계정이나 구독 판매 상태가 바뀌었어요. 다시 눌러 주세요."
         val (pd, offerToken) = details[offer.basePlanId] ?: return "상품 정보를 받지 못했어요. 잠시 후 다시 해 주세요."
         val params = BillingFlowParams.newBuilder()
             .setProductDetailsParamsList(listOf(BillingFlowParams.ProductDetailsParams.newBuilder()
@@ -129,10 +133,11 @@ object PlusBilling {
     }
 
     /** 결제 하나를 서버로. 확인 안 된 것만 (이미 확인된 것은 서버가 받은 것) */
-    private suspend fun handle(p: Purchase, all: Boolean = false) {
+    internal suspend fun handle(p: Purchase, all: Boolean = false, currentAccount: String? = Plus.accountToken,
+                                verifyPurchase: suspend (String) -> Boolean = { Plus.sendPurchase(it) }) {
         if (PRODUCT !in p.products) return
         val owner = p.accountIdentifiers?.obfuscatedAccountId
-        if (purchaseAccountMismatch(owner, Plus.accountToken)) {
+        if (purchaseAccountMismatch(owner, currentAccount)) {
             Plus.message.value = "이 Google Play 구독은 다른 쓰담 계정에 연결되어 있어요. 구매할 때 사용한 쓰담 계정으로 로그인해 주세요. 현재 계정으로 새로 구매하려면 기존 구독이 없는 Play 계정을 사용해 주세요. 중복 결제는 진행하지 않았어요."
             return
         }
@@ -142,20 +147,14 @@ object PlusBilling {
             else -> return
         }
         if (p.isAcknowledged && !all) return
-        val prefs = ctx.getSharedPreferences("sseudam_plus", Context.MODE_PRIVATE)
-        val key = "iapFail_" + p.purchaseToken.hashCode()
-        if (Plus.sendPurchase(p.purchaseToken)) { prefs.edit().remove(key).apply(); return }
-        // 서버에 못 보냄: 확인하지 않고 둔다 (다음 실행 때 다시 보내고, 서버도 플레이 알림으로 처리)
-        val fails = prefs.getInt(key, 0) + 1
-        prefs.edit().putInt(key, fails).apply()
-        if (fails >= SELF_ACK_FAILS && System.currentTimeMillis() - p.purchaseTime > SELF_ACK_AFTER_MS) {
-            val ack = client.acknowledgePurchase(AcknowledgePurchaseParams.newBuilder().setPurchaseToken(p.purchaseToken).build())
-            if (ack.responseCode == BillingClient.BillingResponseCode.OK) prefs.edit().remove(key).apply()
-        }
+        // Only the server validates and acknowledges a purchase. Failure remains retryable;
+        // never acknowledge locally to suppress Play's refund before entitlement is verified.
+        verifyPurchase(p.purchaseToken)
     }
 
     /** 앱을 켤 때: 아직 서버에 안 간(확인 안 된) 결제를 다시 보낸다. 구매 복원(all)은 지금 구독 중인 결제를 모두 */
     suspend fun resendPurchases(all: Boolean = false) {
+        if (Plus.accountToken == null) { Plus.message.value = "계정 정보를 받지 못했어요. 로그인 상태를 다시 확인해 주세요."; return }
         if (!connected()) { Plus.message.value = "Play 구매 내역에 연결하지 못했어요. 다시 시도해 주세요."; return }
         val r = client.queryPurchasesAsync(QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.SUBS).build())
         if (r.billingResult.responseCode != BillingClient.BillingResponseCode.OK) { Plus.message.value = "Play 구매 내역을 확인하지 못했어요. 다시 시도해 주세요."; return }
