@@ -10,18 +10,44 @@ import time
 
 import db
 
+REASONS = ("unsupported", "missing", "wording", "length", "other")
+
 SCHEMA = """CREATE TABLE IF NOT EXISTS draft_stats (
     id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, event TEXT, engine TEXT, area TEXT,
     ms INTEGER, edit_pct REAL, sent INTEGER DEFAULT 0)"""
 
 
 def migrate(conn):
-    conn.execute(SCHEMA)
+    # These draft columns are used by the editor even without usage statistics.
     cols = {r[1] for r in conn.execute("PRAGMA table_info(drafts)")}
     if "ai_text" not in cols:     # AI가 처음 쓴 글 (선생님이 고쳐도 그대로 둠 → 확정할 때 고친 비율 계산)
         conn.execute("ALTER TABLE drafts ADD COLUMN ai_text TEXT DEFAULT ''")
     if "origin" not in cols:      # 이 초안을 쓴 엔진
         conn.execute("ALTER TABLE drafts ADD COLUMN origin TEXT DEFAULT ''")
+    conn.execute("SAVEPOINT quality_migration")
+    try:
+        conn.execute(SCHEMA)
+        stat_cols = {r[1] for r in conn.execute("PRAGMA table_info(draft_stats)")}
+        for name, spec in (("draft_id", "INTEGER"), ("reason", "TEXT DEFAULT ''")):
+            if name not in stat_cols:
+                conn.execute("ALTER TABLE draft_stats ADD COLUMN %s %s" % (name, spec))
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS draft_rating_once ON draft_stats(draft_id) "
+                     "WHERE draft_id IS NOT NULL AND event IN ('up','down')")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS draft_confirm_once ON draft_stats(draft_id) "
+                     "WHERE draft_id IS NOT NULL AND event='confirm'")
+        # Local-only deduplication survives the 90-day event cleanup. No text,
+        # student identifiers, reasons or timestamps are retained here.
+        conn.execute("CREATE TABLE IF NOT EXISTS draft_quality_marks ("
+                     "draft_id INTEGER NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('rating','confirm')), "
+                     "PRIMARY KEY(draft_id, kind))")
+        conn.execute("INSERT OR IGNORE INTO draft_quality_marks(draft_id, kind) "
+                     "SELECT draft_id, CASE WHEN event='confirm' THEN 'confirm' ELSE 'rating' END "
+                     "FROM draft_stats WHERE draft_id IS NOT NULL AND event IN ('up','down','confirm')")
+    except Exception as e:  # optional statistics must not prevent opening records
+        conn.execute("ROLLBACK TO quality_migration")
+        print("[초안 통계] 준비 못 함:", e)
+    finally:
+        conn.execute("RELEASE quality_migration")
 
 
 def engine_of(settings, op_params=None):
@@ -34,13 +60,50 @@ def engine_of(settings, op_params=None):
     return "manual"
 
 
-def record(conn, event, engine, area, ms=None, edit_pct=None):
+def record(conn, event, engine, area, ms=None, edit_pct=None, draft_id=None, reason=""):
+    savepoint = False
     try:
-        conn.execute("INSERT INTO draft_stats(ts, event, engine, area, ms, edit_pct) VALUES (?,?,?,?,?,?)",
+        if not conn.in_transaction:
+            conn.execute("BEGIN")  # releasing our savepoint must not commit the caller's work
+        conn.execute("SAVEPOINT quality_record")
+        savepoint = True
+        kind = "rating" if event in ("up", "down") else "confirm" if event == "confirm" else None
+        if draft_id is not None and kind:
+            marker = conn.execute("INSERT OR IGNORE INTO draft_quality_marks(draft_id, kind) VALUES (?,?)", (draft_id, kind))
+            if not marker.rowcount:
+                conn.execute("RELEASE quality_record")
+                return False
+        cur = conn.execute("INSERT OR IGNORE INTO draft_stats(ts, event, engine, area, ms, edit_pct, draft_id, reason) VALUES (?,?,?,?,?,?,?,?)",
                      (time.time(), event, engine or "none", area or "subject",
-                      int(ms) if ms is not None else None, edit_pct))
+                      max(0, int(ms)) if ms is not None else None, edit_pct, draft_id,
+                      reason if reason in REASONS and event == "down" else ""))
+        conn.execute("RELEASE quality_record")
+        return bool(cur.rowcount)
     except Exception as e:  # noqa — 통계 때문에 초안 저장이 막히면 안 됨
+        if savepoint:
+            try:
+                conn.execute("ROLLBACK TO quality_record")
+                conn.execute("RELEASE quality_record")
+            except Exception:
+                pass
         print("[초안 통계] 기록 못 함:", e)
+        return False
+
+
+def rated_draft_ids(conn, student_id):
+    """None means statistics are unavailable; the student page still opens."""
+    try:
+        return {r[0] for r in conn.execute("SELECT m.draft_id FROM draft_quality_marks m "
+                    "JOIN drafts d ON d.id=m.draft_id WHERE m.kind='rating' AND d.student_id=?", (student_id,))}
+    except Exception:
+        return None
+
+
+def is_rated(conn, draft_id):
+    try:
+        return bool(conn.execute("SELECT 1 FROM draft_quality_marks WHERE draft_id=? AND kind='rating'", (draft_id,)).fetchone())
+    except Exception:
+        return False
 
 
 def edit_pct(ai_text, final):
@@ -53,14 +116,26 @@ def edit_pct(ai_text, final):
     return round((1 - difflib.SequenceMatcher(None, a, b, autojunk=False).ratio()) * 100, 1)
 
 
-def on_confirm(conn, student_id, area, final):
-    """확정할 때: 가장 최근 AI 초안과 비교해 고친 비율을 남긴다. AI 초안이 없으면 '직접 씀'."""
-    src = db.row(conn, "SELECT ai_text, origin FROM drafts WHERE student_id=? AND area=? AND ai_text<>'' "
-                       "ORDER BY id DESC LIMIT 1", (student_id, area))
-    if src:
-        record(conn, "confirm", src["origin"], area, edit_pct=edit_pct(src["ai_text"], final))
-    else:
-        record(conn, "confirm", "none", area)
+def on_confirm(conn, student_id, area, final, draft_id=None):
+    """확정한 버전의 생성 원문과만 비교한다. 다른 최신 초안을 대신 사용하지 않는다."""
+    try:
+        src = db.row(conn, "SELECT ai_text, origin FROM drafts WHERE id=? AND student_id=? AND area=?",
+                     (draft_id, student_id, area)) or {}
+        return record(conn, "confirm", src.get("origin") or "none", area,
+                      edit_pct=edit_pct(src.get("ai_text"), final), draft_id=draft_id)
+    except Exception as e:
+        print("[초안 통계] 확정 집계 못 함:", e)
+        return False
+
+
+def rate(conn, draft_id, up, reason=""):
+    if not isinstance(up, bool) or reason not in ("",) + REASONS or (up and reason):
+        raise ValueError("평가 종류와 이유를 확인해 주세요.")
+    draft = db.row(conn, "SELECT area, origin, ai_text FROM drafts WHERE id=?", (draft_id,))
+    if not draft or not draft.get("ai_text"):
+        raise ValueError("평가할 AI 초안을 찾지 못했어요.")
+    return record(conn, "up" if up else "down", draft["origin"] or "none", draft["area"],
+                  draft_id=draft_id, reason=reason)
 
 
 def summary(mark_sent=False):
@@ -70,10 +145,13 @@ def summary(mark_sent=False):
         rows = db.rows(conn, "SELECT * FROM draft_stats WHERE sent=0 ORDER BY id")
         out = {}
         for r in rows:
-            e = out.setdefault(r["engine"] or "none", {"draft": 0, "regen": 0, "shorten": 0, "confirm": 0, "up": 0, "down": 0,
-                                                       "edit_sum": 0.0, "edit_n": 0, "ms_sum": 0, "ms_n": 0})
+            e = out.setdefault(r["engine"] or "none", {"draft": 0, "regen": 0, "shorten": 0, "confirm": 0, "up": 0, "down": 0, "failed": 0,
+                                                       "edit_sum": 0.0, "edit_n": 0, "ms_sum": 0, "ms_n": 0,
+                                                       **{"reason_" + reason: 0 for reason in REASONS}})
             if r["event"] in e:
                 e[r["event"]] += 1
+            if r["event"] == "down" and r.get("reason") in REASONS:
+                e["reason_" + r["reason"]] += 1
             if r["edit_pct"] is not None:
                 e["edit_sum"] += r["edit_pct"]
                 e["edit_n"] += 1

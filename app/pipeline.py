@@ -951,6 +951,26 @@ def _run_api(op, params, job_id=None):
     if op in ("draft", "shorten"):   # 초안 통계: 어느 엔진 · 걸린 시간 (숫자만)
         import quality
         params = dict(params, _engine=quality.engine_of(settings, params), _t0=time.time())
+    try:
+        return _execute_api(op, params, settings, job_id)
+    except Exception:
+        # Failed draft attempts belong in the denominator too. No error text or
+        # student identifiers are included in the usage summary.
+        if op == "draft":
+            conn = None
+            try:
+                conn = db.connect()
+                quality.record(conn, "failed", params.get("_engine"), params.get("area") or "subject")
+                conn.commit()
+            except Exception:
+                pass  # Preserve the actual generation error even if stats cannot be saved.
+            finally:
+                if conn is not None:
+                    conn.close()
+        raise
+
+
+def _execute_api(op, params, settings, job_id=None):
     if op == "transcribe" and use_whisper(settings):
         return _run_whisper(params, job_id)
     if op == "segment_local":

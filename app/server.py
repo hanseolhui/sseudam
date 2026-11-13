@@ -553,7 +553,11 @@ def student_detail(h, q, b, sid):
                                  FROM notes n LEFT JOIN recordings r ON r.id=n.recording_id
                                  WHERE n.student_id=? ORDER BY n.date DESC, n.id DESC""", (int(sid),))
         drafts = db.rows(conn, "SELECT * FROM drafts WHERE student_id=? ORDER BY id DESC", (int(sid),))
+        import quality
+        rated = quality.rated_draft_ids(conn, int(sid))
         for d in drafts:
+            d["rated"] = d["id"] in (rated or ())
+            d["rating_available"] = rated is not None
             d["forbidden"] = prompts.check_forbidden(d["content"]) if (d.get("area") or "subject") in db.SCHOOL_AREA_IDS else []
             try:   # 관찰기록에 견줘 확인할 거리 (빠진 한정 기록 · 기록에 없는 변화 표현)
                 d["review"] = prompts.review_hints(d["content"], json.loads(d.get("sources") or "[]"), keep_weak=not prompts.omit_weak(db.get_settings(conn)))
@@ -1192,26 +1196,30 @@ def drafts_save(h, q, b):
     if not content:
         raise ApiError("내용이 비어 있습니다.")
     conn = db.connect()
-    status = b.get("status") or "초안"
-    area = b.get("area") or "subject"
-    if status == "확정":
-        conn.execute("UPDATE drafts SET status='초안' WHERE student_id=? AND area=? AND status='확정'",
-                     (int(b["student_id"]), area))
-        import quality
-        quality.on_confirm(conn, int(b["student_id"]), area, content)
-    if b.get("id") and not b.get("as_new"):
-        conn.execute("UPDATE drafts SET content=?, bytes=?, status=? WHERE id=?",
-                     (content, db.neis_bytes(content), status, int(b["id"])))
-    else:
-        # 선생님이 고쳐 저장한 버전도 어느 AI 초안에서 나왔는지 이어 둠 (초안 통계 · 👍👎용)
-        src = db.row(conn, "SELECT ai_text, origin, sources FROM drafts WHERE id=? AND student_id=? AND area=?",
-                     (b.get("source_draft_id"), int(b["student_id"]), area)) or {}
-        conn.execute("INSERT INTO drafts(student_id, content, bytes, status, area, ai_text, origin, sources) VALUES (?,?,?,?,?,?,?,?)",
-                     (int(b["student_id"]), content, db.neis_bytes(content), status, area,
-                      src.get("ai_text") or "", src.get("origin") or "", src.get("sources") or "[]"))
-    conn.commit()
-    conn.close()
-    return {"ok": True}
+    try:
+        status = b.get("status") or "초안"
+        area = b.get("area") or "subject"
+        sid = int(b["student_id"])
+        if b.get("id") and not b.get("as_new"):
+            did = int(b["id"])
+            if not db.row(conn, "SELECT id FROM drafts WHERE id=? AND student_id=? AND area=?", (did, sid, area)):
+                raise ApiError("이 학생·영역의 초안을 찾지 못했어요.", 404)
+            conn.execute("UPDATE drafts SET content=?, bytes=?, status=? WHERE id=?",
+                         (content, db.neis_bytes(content), status, did))
+        else:
+            src = db.row(conn, "SELECT ai_text, origin, sources FROM drafts WHERE id=? AND student_id=? AND area=?",
+                         (b.get("source_draft_id"), sid, area)) or {}
+            did = conn.execute("INSERT INTO drafts(student_id, content, bytes, status, area, ai_text, origin, sources) VALUES (?,?,?,?,?,?,?,?)",
+                         (sid, content, db.neis_bytes(content), status, area,
+                          src.get("ai_text") or "", src.get("origin") or "", src.get("sources") or "[]")).lastrowid
+        if status == "확정":
+            conn.execute("UPDATE drafts SET status='초안' WHERE student_id=? AND area=? AND status='확정' AND id<>?", (sid, area, did))
+            import quality
+            quality.on_confirm(conn, sid, area, content, draft_id=did)
+        conn.commit()
+        return {"ok": True, "id": did}
+    finally:
+        conn.close()
 
 
 @route("POST", "/api/drafts/rate")
@@ -1220,14 +1228,36 @@ def drafts_rate(h, q, b):
     import quality
     conn = db.connect()
     try:
-        d = db.row(conn, "SELECT area, origin FROM drafts WHERE id=?", (int(b["id"]),))
-        if not d:
-            raise ApiError("초안을 찾지 못했어요.")
-        quality.record(conn, "up" if b.get("up") else "down", d["origin"] or "none", d["area"])
+        recorded = quality.rate(conn, int(b["id"]), b.get("up"), b.get("reason") or "")
+        if not recorded and not quality.is_rated(conn, int(b["id"])):
+            raise ApiError("평가를 저장하지 못했어요. 잠시 후 다시 시도해 주세요.", 503)
         conn.commit()
+    except ValueError as e:
+        raise ApiError(str(e))
     finally:
         conn.close()
-    return {"ok": True}
+    return {"ok": True, "recorded": recorded}
+
+
+@route("POST", "/api/drafts/review")
+def drafts_review(h, q, b):
+    """고친 글도 선택한 버전의 관찰 원문과 비교한다. 외부 AI 호출·저장 없음."""
+    text = (b.get("content") or "").strip()
+    if len(text) > 30000:
+        raise ApiError("검토할 글은 30,000자 이내로 입력해 주세요.")
+    conn = db.connect()
+    try:
+        d = db.row(conn, "SELECT sources FROM drafts WHERE id=? AND student_id=? AND area=?",
+                   (b.get("source_draft_id"), int(b["student_id"]), b.get("area") or "subject"))
+        try:
+            sources = json.loads(d["sources"] or "[]") if d else []
+        except (ValueError, TypeError):
+            sources = []
+        sources = [n for n in sources if isinstance(n, dict)] if isinstance(sources, list) else []
+        return {"hasSources": bool(sources), "review": prompts.review_hints(text, sources,
+                keep_weak=not prompts.omit_weak(db.get_settings(conn))) if sources else {}}
+    finally:
+        conn.close()
 
 
 @route("POST", "/api/drafts/delete")

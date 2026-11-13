@@ -1467,11 +1467,12 @@ async function viewStudent(id, areaParam) {
           ${olderFinal ? '<p class="info-box">최신 초안을 검토하고 있어요. 기존 확정본은 버전 기록에 남아 있으며, 이 내용을 확정하기 전까지 내보내기에 사용돼요.</p>' : ''}
           <textarea id="d-text" rows="12" style="margin-top:12px" placeholder="ChatGPT·Gemini에서 만든 세특 초안을 여기에 붙여넣으세요. 직접 작성·수정한 뒤 아래 저장 버튼을 누르세요.">${esc(current ? current.content : '')}</textarea>
           <div class="row" style="margin-top:6px;align-items:center"><span class="counter" id="d-count"></span><span></span>
-            ${current && current.ai_text ? `<span class="small muted" id="d-rate">AI 초안 어땠나요? <button class="shrink sm ghost" data-rate="1" title="좋아요">👍</button><button class="shrink sm ghost" data-rate="0" title="아쉬워요">👎</button></span>` : ''}
+            <span class="small muted" id="d-rate"></span>
             <button class="shrink sm" id="d-short" title="문장을 고치지 않고 통째로 덜어내 분량을 맞춰요. AI를 쓰지 않아요.">문장 덜어 줄이기</button><button class="shrink sm" id="d-copy">복사</button></div>
           <div id="d-warn"></div>
           <details style="margin-top:12px"><summary>초안의 관찰 근거 확인</summary>
             <p class="small muted">생성 당시 입력한 기록입니다. 초안에서 문장을 선택하면 비슷한 표현이 있는 기록을 먼저 보여 줍니다. 일치 후보가 사실을 증명하는 것은 아니므로 원문과 비교해 주세요.</p>
+            <button class="sm" id="d-review">고친 글도 관찰 근거와 점검</button><span class="small muted"> 컴퓨터 안에서 확인 · AI 횟수 사용 없음</span>
             <div id="d-sources"></div>
           </details>
           <div class="row" style="margin-top:12px"><span></span><button class="shrink" id="d-save">새 버전으로 저장</button><button class="shrink primary" id="d-final">확정</button></div>
@@ -1484,6 +1485,7 @@ async function viewStudent(id, areaParam) {
   const reload = () => router(true);
   $$('[data-area]').forEach(b => b.onclick = () => { location.hash = `#/student/${s.id}/${b.dataset.area}`; });
   const text = $('#d-text');
+  const isCurrentEditor = () => text.isConnected && $('#d-text') === text;
   const renderSources = () => {
     let sources = [];
     try { sources = JSON.parse(sourceDraft?.sources || '[]'); } catch (_) {}
@@ -1499,7 +1501,9 @@ async function viewStudent(id, areaParam) {
   };
   text.addEventListener('select', renderSources);
   renderSources();
+  let checkedReview = null;
   const update = () => {
+    if (!isCurrentEditor()) return;
     const b = neisBytes(text.value);
     $('#d-count').className = 'counter' + (b > limit ? ' over' : '');
     $('#d-count').textContent = `${b.toLocaleString()} / ${limit.toLocaleString()} 바이트 · ${text.value.length}자`;
@@ -1509,7 +1513,8 @@ async function viewStudent(id, areaParam) {
     if (found.length) warn += `<div class="warn">기재 금지 가능성이 있는 표현: <b>${found.map(esc).join(', ')}</b> — 학생부 기재요령을 확인하세요.</div>`;
     if (nameHit) warn += `<div class="warn">본문에 학생 이름이 들어 있습니다. 학생부에는 이름을 쓰지 않습니다.</div>`;
     // 저장된 초안 그대로일 때만: 관찰기록에 견줘 확인할 거리
-    const rv = (current && text.value.trim() === (current.content || '').trim() && current.review) || {};
+    const rv = (checkedReview && checkedReview.id === sourceDraft?.id && checkedReview.text === text.value ? checkedReview.review : null) ||
+      (sourceDraft && text.value.trim() === (sourceDraft.content || '').trim() && sourceDraft.review) || {};
     if ((rv.missing || []).length) warn += `<div class="warn">관찰기록의 이 내용이 초안에 빠졌을 수 있어요: <b>${rv.missing.map(esc).join(' / ')}</b></div>`;
     if ((rv.added || []).length) warn += `<div class="warn">관찰기록에 없는 변화 표현일 수 있어요: <b>${rv.added.map(esc).join(', ')}</b> — 근거를 확인하세요.</div>`;
     if ((rv.negative || []).length) warn += `<div class="warn">관찰기록에 없는 부정 표현일 수 있어요: <b>${rv.negative.map(esc).join(' / ')}</b> — 근거를 확인하세요.</div>`;
@@ -1518,6 +1523,18 @@ async function viewStudent(id, areaParam) {
     $('#d-warn').innerHTML = warn;
   };
   text.addEventListener('input', update); update();
+  $('#d-review').onclick = async () => {
+    const button = $('#d-review'), input = text.value, id = sourceDraft?.id;
+    button.disabled = true;
+    try {
+      const r = await api('/api/drafts/review', { student_id: s.id, area: area.id, source_draft_id: id, content: input });
+      if (!isCurrentEditor()) return;
+      if (text.value !== input || sourceDraft?.id !== id) return toast('글이 바뀌었어요. 다시 점검해 주세요.');
+      checkedReview = { id, text: input, review: r.review }; update();
+      toast(!r.hasSources ? '생성 당시 근거가 없어요. 관찰기록과 직접 비교해 주세요.' :
+        Object.values(r.review).some(v => v.length) ? '위의 확인할 표현과 관찰 근거를 비교해 주세요.' : '자동 점검에서 확인할 표현을 찾지 못했어요. 사실 여부는 원문과 직접 확인해 주세요.');
+    } finally { button.disabled = false; }
+  };
   $('#st-edit').onclick = () => editStudentModal(s, reload);
   $('#n-add').onclick = () => editNoteModal({ date: today(), kind: '수업', category: '', content: '', use_in_draft: 1, student_id: s.id, area: multi ? area.id : '' }, reload, s.id, areas);
   $('#n-copy').onclick = async () => { const t = await api(`/api/students/${s.id}/notes_text?area=${area.id}`); copyText(t.text); };
@@ -1548,25 +1565,47 @@ async function viewStudent(id, areaParam) {
     runAI('shorten', { student_id: s.id, text: text.value, area: area.id, source_draft_id: sourceDraft?.id }, `${area.name} ${s.name}`, reload);
   };
   $('#d-copy').onclick = () => copyText(text.value);
-  // 👍👎: 숫자만 남겨서 초안 품질을 살핌 (내용은 보내지 않음)
-  $$('[data-rate]').forEach(b => b.onclick = async () => {
-    await api('/api/drafts/rate', { id: current.id, up: b.dataset.rate === '1' });
-    $('#d-rate').innerHTML = '<span class="ok-text">고맙습니다 ✓</span>';
-  });
+  // A vote belongs to the version actually being reviewed, not the newest one.
+  const renderRating = () => {
+    if (!isCurrentEditor()) return;
+    const draft = sourceDraft, box = $('#d-rate');
+    box.innerHTML = !draft?.ai_text ? '' : draft.rating_available === false ? '지금은 평가를 남길 수 없어요.' : draft.rated ? '평가를 남긴 초안이에요 ✓' :
+      '이 버전의 AI 초안 어땠나요? <button class="shrink sm ghost" data-rate="1" title="좋아요">👍</button><button class="shrink sm ghost" data-rate="0" title="아쉬워요">👎</button>';
+    const send = async (up, reason = '') => {
+      await api('/api/drafts/rate', { id: draft.id, up, reason });
+      draft.rated = true;
+      if (isCurrentEditor()) { renderRating(); toast('평가를 남겼습니다. 고맙습니다.'); }
+    };
+    $$('[data-rate]', box).forEach(button => button.onclick = async () => {
+      if (button.dataset.rate === '1') { button.disabled = true; try { await send(true); } finally { button.disabled = false; } return; }
+      modal(`<h2>어떤 점이 아쉬웠나요?</h2><p>이 초안에서 고치고 싶은 점을 하나 골라 주세요.</p>
+        <label class="field"><span>이유</span><select id="draft-reason"><option value="unsupported">기록에 없는 내용이 들어감</option><option value="missing">중요한 관찰 내용이 빠짐</option><option value="wording">표현이 부자연스럽거나 반복됨</option><option value="length">분량이 맞지 않음</option><option value="other">그 밖의 이유</option></select></label>
+        <p class="small muted">학생 기록과 초안 내용은 보내지 않습니다. 선택한 이유와 횟수만 사용 통계에 포함하며, 설정에서 사용 정보 보내기를 끌 수 있습니다.</p>
+        <div class="modal-actions"><button id="draft-rate-cancel">취소</button><button class="primary" id="draft-rate-send">평가 남기기</button></div>`, () => {
+          $('#draft-rate-cancel').onclick = closeModal;
+          $('#draft-rate-send').onclick = async () => { const submit = $('#draft-rate-send'); submit.disabled = true;
+            try {
+              await send(false, $('#draft-reason').value);
+              if (submit.isConnected && $('#draft-rate-send') === submit) closeModal();
+            } finally { submit.disabled = false; } };
+        });
+    });
+  };
+  renderRating();
   $('#d-save').onclick = async () => {
     await api('/api/drafts/save', { student_id: s.id, content: text.value, status: '초안', area: area.id, source_draft_id: sourceDraft?.id });
     delete text.dataset.dirty; toast('저장했습니다'); reload();
   };
   $('#d-final').onclick = async () => {
-    const same = current && current.content === text.value.trim();
-    await api('/api/drafts/save', { student_id: s.id, content: text.value, status: '확정', id: same ? current.id : null, as_new: !same, area: area.id, source_draft_id: sourceDraft?.id });
+    const same = sourceDraft && sourceDraft.content === text.value.trim();
+    await api('/api/drafts/save', { student_id: s.id, content: text.value, status: '확정', id: same ? sourceDraft.id : null, as_new: !same, area: area.id, source_draft_id: sourceDraft?.id });
     delete text.dataset.dirty; toast('확정했습니다'); reload();
   };
   $$('[data-ver]').forEach(el => {
     const v = drafts.find(x => x.id === +el.dataset.ver);
     el.onclick = e => {
       if (e.target.classList.contains('v-del')) return;
-      sourceDraft = v; text.value = v.content; text.dataset.dirty = '1'; renderSources(); update(); toast('이 버전을 편집기에 불러왔습니다');
+      sourceDraft = v; checkedReview = null; text.value = v.content; text.dataset.dirty = '1'; renderSources(); renderRating(); update(); toast('이 버전을 편집기에 불러왔습니다');
     };
     $('.v-del', el).onclick = async () => { const res = await api('/api/drafts/delete', { id: v.id }); trashedToast('초안 버전', res); reload(); };
   });
@@ -1976,7 +2015,7 @@ async function viewSettings(section) {
     const plusOn = !!(plusSt.loggedIn && plusSt.sub && plusSt.sub.active);
     const ymd = d => d ? new Date(d).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' }) : '';
     $('#ai-tiles').innerHTML =
-      (st.plus_enabled ? tileHtml('plus', '💜', '쓰담 플러스', '로그인으로 연결 · 텍스트는 외부 AI로 처리', plusOn ? `✓ ${esc(plusSt.sub.planName)} · ${ymd(plusSt.sub.endsAt)}까지` : '유료 상품 곧 오픈', choice === 'plus', false) : '') +
+      (st.plus_enabled ? tileHtml('plus', '💜', '쓰담 플러스', '로그인으로 연결 · 텍스트는 외부 AI로 처리', plusOn ? `✓ ${esc(plusSt.sub.planName)} · ${ymd(plusSt.sub.endsAt)}까지` : '앱 스토어 구독 · 학교 이용권 연결', choice === 'plus', false) : '') +
       tileHtml('apple', '🍎', '기기 내 기록 정리', '학생별 나누기 · 지원 기기에서 사용', st.apple.text, st.active_seg === 'apple', st.apple.state !== 'ready') +
       tileHtml('manual', '✋', '이름 기준 기록 정리', 'AI 없이 학생 이름을 기준으로 나누기', '', st.active_seg === 'rules', false);
     $('#ai-now').textContent = `기록 정리: ${st.active_seg === 'apple' ? '기기 안 AI' : '이름 기준'} · 세특 초안: ${st.draft === 'gemini' ? '플러스 클라우드 AI' : '외부에서 작성 후 붙여넣기'}`;
@@ -1986,7 +2025,7 @@ async function viewSettings(section) {
     let d = '';
     if (st.plus_enabled && (choice === 'plus' || showPlus)) {
       if (!plusSt.loggedIn) {
-        d = `<div class="spec">💜 <b>유료 상품 곧 오픈</b> — 이름 기준 기록 정리와 프롬프트 복사·결과 붙여넣기 등 기존 무료 기능을 이용해 주세요. 기존 이용권이 있으면 로그인해 주세요.
+        d = `<div class="spec">💜 <b>쓰담 플러스 연결</b> — 휴대폰 쓰담 앱에서 구독하거나 학교 이용권을 받은 이메일로 로그인해 주세요. 이름 기준 기록 정리와 프롬프트 복사·결과 붙여넣기는 무료로 계속 쓸 수 있어요.
           <div class="small muted" style="margin-top:4px">학생 이름은 이 컴퓨터에서 '학생1'처럼 가린 뒤 보내요. 서리아트 서버는 내용을 저장하지 않아요.</div>
           ${plusSt.googleUrl ? `<div class="row" style="margin-top:10px"><a class="btn sm primary shrink" id="plus-google" href="${esc(plusSt.googleUrl)}" target="_blank">구글로 로그인 ↗</a><span class="small muted">브라우저에서 로그인하면 여기로 돌아와요 · 또는 아래 이메일 인증번호로</span></div>` : ''}
           <div class="row" style="margin-top:10px"><input id="plus-email" type="email" placeholder="이메일 주소" value="${esc(plusEmail)}" style="max-width:260px"><button class="sm primary shrink" id="plus-send">인증번호 받기</button></div>
@@ -1999,11 +2038,11 @@ async function viewSettings(section) {
         const renew = !u.autoRenew && u.plan !== 'staff' && !school;   // 자동 결제가 없으면 연장하기 (미리 사도 남은 기간 뒤에 이어 붙음)
         d = `<div class="spec">💜 <b>${esc(plusSt.email)}</b> · ${esc(u.planName)} · <b>${ymd(u.endsAt)}</b>까지 (<b${renew && (u.daysToEnd ?? u.daysLeft) <= 7 ? ' style="color:var(--amber)"' : ''}>${u.daysToEnd ?? u.daysLeft}일 남음</b>)${u.autoRenew ? ' · 자동 결제' : ''}
           <div class="small muted" style="margin-top:4px">AI 초안 ${(u.cap || 0) >= 1e8 ? '무제한' : Math.max(0, (u.cap || 0) - (u.used || 0)).toLocaleString() + '회 남음'}${(u.deepCap || 0) > 0 ? ' · 정성 초안 ' + ((u.deepCap || 0) >= 1e8 ? '무제한' : Math.max(0, (u.deepCap || 0) - (u.deepUsed || 0)) + '회 남음') : ''} · 등록된 컴퓨터 ${plusSt.devices.length}/${plusSt.deviceLimit}대 (${plusSt.devices.map(x => esc(x.device_name)).join(', ')})${plusSt.offline ? ' · 지금은 서버 확인이 안 돼서 마지막 상태를 보여요' : ''}</div>
-          <div class="small muted" style="margin-top:4px">${school ? '학교에서 받은 좌석이에요. 좌석에 대한 문의는 학교 담당 선생님께 해 주세요.' : '유료 상품 곧 오픈 · 현재 이용 기간은 그대로 유지돼요.'}</div>
+          <div class="small muted" style="margin-top:4px">${school ? '학교에서 받은 좌석이에요. 좌석에 대한 문의는 학교 담당 선생님께 해 주세요.' : '새 구독과 구매 복원은 구매한 스토어의 쓰담 앱에서 진행해요. 같은 이메일로 로그인해 주세요.'}</div>
           <div class="row" style="margin-top:8px">${choice !== 'plus' ? '<button class="sm primary shrink" id="plus-use">쓰담 플러스로 쓰기</button>' : ''}<a class="btn sm shrink" href="https://apps.seoriarts.com/sseudam/plus" target="_blank">구독·결제 관리 ↗</a><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`;
       } else {
-        d = `<div class="spec">💜 <b>유료 상품 곧 오픈</b>
-          <div class="small muted" style="margin-top:4px">이름 기준 기록 정리와 프롬프트 복사·결과 붙여넣기 등 기존 무료 기능을 이용해 주세요. 기존 이용권은 구매한 스토어의 앱에서 복원한 뒤 다시 확인할 수 있어요.</div>
+        d = `<div class="spec">💜 <b>이용권을 연결해 주세요</b>
+          <div class="small muted" style="margin-top:4px">이름 기준 기록 정리와 프롬프트 복사·결과 붙여넣기 등 기존 무료 기능을 이용해 주세요. 개인 구독은 App Store·Google Play의 쓰담 앱에서 구매한 뒤 같은 이메일로 로그인해 주세요. 기존 이용권은 앱에서 구매 복원 후 다시 확인할 수 있어요.</div>
           <div class="row" style="margin-top:8px"><button class="sm shrink" id="plus-refresh">구독 다시 확인</button><a class="btn sm shrink" href="https://apps.seoriarts.com/sseudam/school" target="_blank">학교 코드가 있어요 ↗</a><a class="btn sm shrink" href="https://apps.seoriarts.com/sseudam/plus" target="_blank">구독·결제 관리 ↗</a><button class="sm ghost shrink" id="plus-out">이 컴퓨터 로그아웃</button></div></div>`;
       }
     } else if (choice === 'apple') {
@@ -2479,7 +2518,7 @@ async function checkPlusRenew() {
     const key = 'plus-renew-hide-' + new Date().toISOString().slice(0, 10);
     try { if (localStorage.getItem(key)) return; } catch (e) { /* */ }
     const end = new Date(u.endsAt).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
-    b.innerHTML = `<b>💜 쓰담 플러스가 ${u.daysToEnd ? u.daysToEnd + '일 뒤' : '오늘'}(${end}) 끝나요</b> 유료 상품 곧 오픈 · 이용 기간이 끝나도 기존 무료 기능은 계속 쓸 수 있어요.
+    b.innerHTML = `<b>💜 쓰담 플러스가 ${u.daysToEnd ? u.daysToEnd + '일 뒤' : '오늘'}(${end}) 끝나요</b> 이용 기간이 끝나도 기존 무료 기능은 계속 쓸 수 있어요.
       <a class="btn sm primary" href="https://apps.seoriarts.com/sseudam/plus" target="_blank">구독·결제 관리 ↗</a> <button class="sm ghost" id="pb-x">닫기</button>`;
     b.classList.remove('hidden');
     $('#pb-x').onclick = () => { b.classList.add('hidden'); try { localStorage.setItem(key, '1'); } catch (e) { /* */ } };
