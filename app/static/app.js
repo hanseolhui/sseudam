@@ -210,7 +210,7 @@ async function runAI(op, params, label, onDone, opts) {
   try { res = await api('/api/ai/run', { op, params, label: label || '', manual: !!(opts && opts.manual) }, { silent: true }); }
   catch (e) {
     if (e.message === 'NEED_WHISPER_MODEL') {
-      modal(`<h2>받아쓰기 모델이 필요합니다</h2><p>녹음을 이 맥 안에서 글자로 바꾸려면 Whisper 모델(550MB)을 한 번 내려받아야 합니다. 받는 동안 다른 작업을 계속해도 되고, 끝나면 이 녹음이 자동으로 받아써집니다.</p>
+      modal(`<h2>받아쓰기 모델이 필요합니다</h2><p>녹음을 이 컴퓨터 안에서 글자로 바꾸려면 Whisper 모델(550MB)을 한 번 내려받아야 합니다. 받는 동안 다른 작업을 계속해도 되고, 끝나면 이 녹음이 자동으로 받아써집니다.</p>
         <div class="modal-actions"><button id="m-x">나중에</button><button class="primary" id="m-dl">지금 내려받기</button></div>`, box => {
         $('#m-x', box).onclick = closeModal;
         $('#m-dl', box).onclick = async () => { await api('/api/whisper/download', { id: 'turbo-q5' }); closeModal(); toast('내려받기를 시작했습니다. 진행 상황은 설정 → 받아쓰기 엔진에서 볼 수 있어요.'); };
@@ -1914,7 +1914,7 @@ async function viewSettings(section) {
             <li><b>배포 › 새 배포</b> → 톱니바퀴 <b>웹 앱</b> → 실행: <b>나</b> · 액세스: <b>모든 사용자</b> → 배포</li>
             <li>권한 검토 → 내 계정 → (경고가 뜨면 <b>고급 → 이동</b>) → <b>허용</b></li>
             <li>나온 <b>웹 앱 URL</b>을 오른쪽에 붙여넣고 <b>연결 확인</b></li></ol>
-            <p class="small muted" style="margin:6px 0 0">'스크립트 복사'에는 이 맥 전용 보안 토큰이 들어 있어서, 주소를 알아도 다른 사람은 기록에 접근할 수 없습니다.</p></div>
+            <p class="small muted" style="margin:6px 0 0">'스크립트 복사'에는 이 컴퓨터 전용 보안 토큰이 들어 있어서, 주소를 알아도 다른 사람은 기록에 접근할 수 없습니다.</p></div>
           <div>
             <label class="field"><span>웹 앱 URL</span><input id="sheets_url" value="${esc(s.sheets_url)}" placeholder="https://script.google.com/macros/s/…/exec"></label>
             <div class="row" style="margin-top:8px"><button class="shrink" id="g-test">연결 확인</button><span id="g-test-r" class="small"></span></div>
@@ -1961,7 +1961,7 @@ async function viewSettings(section) {
       </div>
       <div class="card" style="grid-column:1 / -1;order:1" id="backup-card" data-pane="data">
         <div class="section-title"><h2>백업 · 복원 · 엑셀</h2>
-          <span style="display:flex;gap:6px;flex-wrap:wrap"><button id="backup">지금 백업 (이 맥)</button><button id="xlsx-all" class="primary">전체 엑셀로 저장</button></span></div>
+          <span style="display:flex;gap:6px;flex-wrap:wrap"><button id="backup">지금 백업 (이 컴퓨터)</button><button id="xlsx-all" class="primary">전체 엑셀로 저장</button></span></div>
         <p class="help" style="margin-top:-4px">이 컴퓨터에는 매일 기록이 자동 백업(30일)됩니다. 클라우드 백업을 켜 두면 컴퓨터 밖에도 기록 사본을 보관할 수 있습니다. 녹음 원본은 아래 ‘녹음 원본도 이 클라우드 폴더에 자동 백업’을 따로 켜야 함께 보관됩니다.</p>
         <p class="help">백업은 이 컴퓨터와, 선생님이 켠 경우 본인의 클라우드 폴더 · 구글 드라이브에만 저장됩니다. 쓰담 서버에는 백업되지 않으니, 컴퓨터 고장에 대비하려면 아래의 클라우드 폴더 백업이나 구글 드라이브 백업을 켜 두세요. 컴퓨터 밖으로 나가는 백업에는 쓰담 플러스 로그인 · 휴대폰 연결 · AI 키가 들어가지 않아, 새 컴퓨터에서 복원한 뒤에는 다시 연결해야 합니다.</p>
         <div class="source" id="cf-box" style="margin-top:10px"></div>
@@ -2371,7 +2371,7 @@ async function renderBackups() {
   const box = $('#bk-list'); if (!box) return;
   const d = await api('/api/backups', undefined, { silent: true }).catch(e => ({ local: [], drive: [], drive_error: e.message }));
   const kb = n => n > 1048576 ? (n / 1048576).toFixed(1) + 'MB' : Math.round(n / 1024) + 'KB';
-  const row = (kind, id, name, time, size) => `<tr><td>${kind === 'drive' ? '<span class="badge blue">드라이브</span>' : '<span class="badge">이 맥</span>'}</td>
+  const row = (kind, id, name, time, size) => `<tr><td>${kind === 'drive' ? '<span class="badge blue">드라이브</span>' : '<span class="badge">이 컴퓨터</span>'}</td>
     <td>${esc(time)}</td><td class="muted">${esc(name)}</td><td class="num">${kb(size)}</td><td class="right"><button class="sm bk-go" data-kind="${kind}" data-id="${esc(id)}" data-name="${esc(name)}">복원</button></td></tr>`;
   const rows = d.drive.slice(0, 10).map(f => row('drive', f.id, f.name, (f.time || '').replace('T', ' ').slice(0, 16), f.size))
     .concat(d.local.slice(0, 10).map(f => row('local', f.name, f.name, f.time, f.size)));
@@ -2392,8 +2392,9 @@ async function renderWhisper() {
   const w = await api('/api/whisper', undefined, { silent: true }).catch(() => null);
   if (!w) return;
   const hasModel = w.models.some(m => m.installed);
-  $('#stt-active').innerHTML = w.engine === 'gemini' || !w.supported ? '<span class="badge amber">지금: Gemini로 받아쓰기 (외부 전송)</span>'
-    : hasModel ? '<span class="badge green">지금: 내 맥 안에서 받아쓰기 — 외부 전송 없음</span>' : '<span class="badge red">모델을 내려받아야 받아쓰기가 됩니다</span>';
+  $('#stt-active').innerHTML = w.engine === 'gemini' ? '<span class="badge amber">지금: Gemini로 받아쓰기 (외부 전송)</span>'
+    : !w.supported ? '<span class="badge amber">이 컴퓨터는 로컬 받아쓰기를 지원하지 않아요</span>'
+    : hasModel ? '<span class="badge green">지금: 이 컴퓨터 안에서 받아쓰기 — 외부 전송 없음</span>' : '<span class="badge red">모델을 내려받아야 받아쓰기가 됩니다</span>';
   if (!w.supported) { box.innerHTML = '<div class="warn">이 컴퓨터는 쓰담의 로컬 Whisper 받아쓰기를 지원하지 않아요. 받아쓴 글을 가져오거나, 인터넷과 별도 Gemini API 설정으로 받아쓰기를 사용하세요.</div>'; return; }
   if (!w.binary) { box.innerHTML = '<div class="warn">Whisper 실행 파일이 없습니다. 쓰담을 최신 설치 파일로 다시 설치하세요.</div>'; return; }
   let downloading = false;
@@ -2425,7 +2426,7 @@ async function whisperBanner(el) {
     <div class="section-title"><h2>🎙 받아쓰기 모델 설치 (처음 한 번)</h2>
       ${dl ? `<span class="small"><div class="bar" style="width:200px;display:inline-flex"><div class="b1" style="width:${pct}%"></div></div> ${pct}% 내려받는 중</span>`
            : `<button class="primary" id="wb-go">지금 내려받기 (550MB)</button>`}</div>
-    <p class="muted small" style="margin:0">녹음을 <b>이 맥 안에서</b> 글자로 바꾸는 Whisper 모델입니다. 인터넷·API 키·비용 없이 동작하고 녹음이 외부로 나가지 않습니다.
+    <p class="muted small" style="margin:0">녹음을 <b>이 컴퓨터 안에서</b> 글자로 바꾸는 Whisper 모델입니다. 인터넷·API 키·비용 없이 동작하고 녹음이 외부로 나가지 않습니다.
     ${m.download && m.download.status === 'error' ? `<br><span class="bad-text">${esc(m.download.error)}</span>` : ''} 설치가 끝나면 기다리던 녹음이 자동으로 받아써집니다.</p></div>`;
   if ($('#wb-go', el)) $('#wb-go', el).onclick = async () => { await api('/api/whisper/download', { id: 'turbo-q5' }); whisperBanner(el); };
   if (dl) setTimeout(() => { if (document.body.contains(el)) whisperBanner(el); }, 1500);
