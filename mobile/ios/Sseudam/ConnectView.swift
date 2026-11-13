@@ -14,6 +14,7 @@ struct ConnectView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     qrCard
+                    offlineHelpCard
                     computerPicker
                     if store.autoSend && !store.computerSeen && !Relay.paired { waitingCard }
                     if store.computer == "mac" { macCards } else { windowsCards }
@@ -36,6 +37,37 @@ struct ConnectView: View {
                 Button("연결") { handle(manual); manual = "" }
                 Button("취소", role: .cancel) {}
             } message: { Text("컴퓨터 쓰담의 QR 아래 ‘코드 복사’로 받은 내용을 붙여넣으세요.") }
+        }
+    }
+
+    var offlineHelpCard: some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 14) {
+                offlineHelpItem("연결 없이도 남길 수 있어요", "녹음과 한 줄 메모를 기기에 저장하고, 이미 저장된 학생 기록과 초안을 보고 고칠 수 있어요. 기본 녹음·기록에는 쓰담 계정 로그인이 필요하지 않아요.")
+                offlineHelpItem("받아쓰기는 기기 준비 상태에 따라 달라요", "한국어 기기 내 받아쓰기를 지원하고 필요한 모델이 준비된 아이폰·아이패드에서는 오프라인으로 글자로 바꿔요. 모델을 처음 내려받을 때는 인터넷이 필요할 수 있어요. 지원하지 않거나 준비되지 않았다면 음성을 보관한 뒤 연결된 컴퓨터에서 처리하세요.")
+                offlineHelpItem("기기 안 AI는 지원 기기에서", "이름이 없는 문장을 학생별로 나누는 보정은 iOS·iPadOS 26 이상, Apple Intelligence 지원 기기에서 해당 기능과 모델이 준비돼야 해요. 사용할 수 없을 때도 이름 기준으로 나눌 수 있어요.")
+                offlineHelpItem("인터넷이 필요한 작업", "QR 중계 연결, iCloud·구글 드라이브 전송과 다른 기기 기록 맞추기, 계정 로그인, 구독 결제·구매 복원, 업데이트에는 인터넷이 필요해요. QR 연결도 인터넷을 거쳐요. 컴퓨터가 기록을 받으려면 그 컴퓨터의 쓰담이 켜져 있고 연결되어 있어야 해요.")
+                offlineHelpItem("플러스 이용권과 기록 연결은 별개예요", "현재 쓰담 플러스 AI 정리·초안은 컴퓨터 쓰담에서 온라인으로 사용해요. 같은 쓰담 계정으로 로그인하면 이용권이 연결되지만, 기록은 QR이나 iCloud 연결을 통해 따로 맞춰요. 기기에서 쓰담의 iCloud 사용이 허용되면 같은 Apple 계정의 학생 기록을 맞출 수 있으며, 녹음 iCloud 전송 스위치와는 별개예요. 휴대폰의 ‘요청문 복사’는 기기에서 만들고, ChatGPT·Gemini에 보내 답을 받는 과정에는 인터넷이 필요해요.")
+                offlineHelpItem("기기에 저장됨과 백업 완료는 달라요", "연결이 없을 때 남긴 기록은 기기에 보관돼요. 다시 연결한 뒤 전송 상태와 ‘컴퓨터가 받음’을 확인해 주세요. 클라우드 폴더에 저장됐다는 표시만으로 원격 업로드까지 끝난 것은 아니며, 해당 클라우드의 동기화 상태도 확인해야 해요. 앱을 지우기 전에는 사본을 따로 보관하세요.")
+                Link(destination: URL(string: "https://apps.seoriarts.com/sseudam-guide#offline-online")!) {
+                    Label("기기별·인터넷 연결 상세 안내 (온라인)", systemImage: "arrow.up.right.square")
+                        .font(Theme.font(13, .semibold))
+                }
+            }
+            .padding(.top, 10)
+        } label: {
+            Label("인터넷 없이 쓸 때", systemImage: "wifi.slash").font(Theme.font(16, .bold))
+        }
+        .tint(Theme.blue)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
+    }
+
+    func offlineHelpItem(_ title: String, _ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(Theme.font(14, .semibold)).foregroundStyle(Theme.ink)
+            Text(text).font(Theme.font(13)).foregroundStyle(Theme.soft)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

@@ -15,6 +15,10 @@
 
 사용자 안내: [사용설명서.md](사용설명서.md) · [녹음 원본 백업·복원 안내](docs/클라우드-녹음-백업.md) · 구조: [ARCHITECTURE.md](ARCHITECTURE.md)
 
+지원 대상은 **Windows 10·11 x64, macOS 12 이상, iOS·iPadOS 16 이상 아이폰·아이패드, Android 8 이상 안드로이드폰**입니다. 맥의 로컬 Whisper 받아쓰기는 M1 이상, 기기 내 AI 학생별 정리는 macOS 26 이상과 Apple Intelligence 준비가 필요합니다. Intel 맥은 텍스트 가져오기 또는 별도 Gemini API를 통한 온라인 받아쓰기를 사용합니다. Windows ARM·32비트, Linux·Chromebook은 현재 정식 지원 대상이 아닙니다. [기기별 자세한 조건](https://apps.seoriarts.com/sseudam-guide#devices)
+
+기록 조회·편집·로컬 백업과 모델 준비가 끝난 로컬 받아쓰기는 오프라인으로 사용할 수 있습니다. 새 플러스 AI 초안, 로그인·구매 확인, QR 연동·기기 간 동기화, 클라우드 업로드에는 인터넷이 필요합니다. 같은 계정 로그인만으로 기록이 동기화되지는 않으며, 폴더에 백업 사본을 저장한 상태와 클라우드 업로드 완료도 다릅니다. [오프라인·온라인 상세 안내](https://apps.seoriarts.com/sseudam-guide#offline-online)
+
 ## 설치 (사용자)
 ```bash
 curl -fsSL https://raw.githubusercontent.com/hanseolhui/sseudam/main/install.sh | bash

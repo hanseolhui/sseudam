@@ -10,6 +10,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -86,6 +88,8 @@ fun ConnectScreen() {
                 fontSize = 12.sp, color = T.ink)
         }
 
+        OfflineHelpCard()
+
         // 쓰담 플러스: 계정 · 구독 (컴퓨터 쓰담의 AI 정리·초안)
         PlusCard()
 
@@ -129,4 +133,41 @@ fun ConnectScreen() {
         text = { OutlinedTextField(code, { code = it }, placeholder = { Text("sseudam://pair?…") }) },
         confirmButton = { TextButton({ manual = false; handle(code); code = "" }) { Text("연결") } },
         dismissButton = { TextButton({ manual = false }) { Text("취소") } })
+}
+
+@Composable
+private fun OfflineHelpCard() {
+    val ctx = LocalContext.current
+    var expanded by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().card(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        TextButton(
+            onClick = { expanded = !expanded },
+            modifier = Modifier.fillMaxWidth().semantics { stateDescription = if (expanded) "펼침" else "접힘" }
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("인터넷 없이 쓸 때", fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                    color = T.ink, modifier = Modifier.weight(1f))
+                Text(if (expanded) "접기" else "펼치기", fontSize = 13.sp, color = T.blue)
+            }
+        }
+        if (expanded) {
+            OfflineHelpItem("연결 없이도 남길 수 있어요", "녹음과 한 줄 메모를 기기에 저장하고, 이미 저장된 학생 기록과 초안을 보고 고칠 수 있어요. 기본 녹음·기록에는 쓰담 계정 로그인이 필요하지 않아요.")
+            OfflineHelpItem("짧은 받아쓰기는 휴대폰에 따라 달라요", "한 줄 메모의 마이크는 Android 12 이상에서 기기 내 한국어 인식기가 있으면 우선 사용해요. 사용할 수 없으면 일반 음성 인식기로 전환하므로, 기기·언어 설정에 따라 인터넷이 필요하고 음성이 인식 서비스로 전송될 수 있어요. 오프라인일 때는 키보드로 메모하거나 녹음만 저장할 수 있어요.")
+            OfflineHelpItem("긴 녹음은 컴퓨터에서 글자로", "안드로이드 쓰담은 녹음 원본을 보관하고, 연결된 컴퓨터의 쓰담에서 긴 녹음을 받아써요. 휴대폰에 녹음만 저장된 상태에서는 글자 변환까지 끝난 것이 아니에요.")
+            OfflineHelpItem("인터넷이 필요한 작업", "QR 중계 연결, 구글 드라이브 전송과 다른 기기 기록 맞추기, 계정 로그인, 구독 결제·구매 복원, 업데이트에는 인터넷이 필요해요. QR 연결도 인터넷을 거쳐요. 컴퓨터가 기록을 받으려면 그 컴퓨터의 쓰담이 켜져 있고 연결되어 있어야 해요.")
+            OfflineHelpItem("플러스 이용권과 기록 연결은 별개예요", "현재 쓰담 플러스 AI 정리·초안은 컴퓨터 쓰담에서 온라인으로 사용해요. 같은 쓰담 계정으로 로그인하면 이용권이 연결되지만, 기록을 맞추려면 QR 연결이나 기록 파일 가져오기가 필요해요. 휴대폰의 ‘요청문 복사’는 기기에서 만들고, ChatGPT·Gemini에 보내 답을 받는 과정에는 인터넷이 필요해요.")
+            OfflineHelpItem("기기에 저장됨과 백업 완료는 달라요", "연결이 없을 때 남긴 기록은 기기에 보관돼요. 다시 연결한 뒤 전송 상태와 ‘컴퓨터가 받음’을 확인해 주세요. 기록 파일(.json) 내보내기에는 글만 들어가고 녹음 원본은 빠져요. 앱을 지우기 전에는 글과 음성 사본을 각각 보관하고, 클라우드로 옮겼다면 업로드 완료도 확인해 주세요.")
+            TextButton({ openUrl(ctx, "https://apps.seoriarts.com/sseudam-guide#offline-online") }) {
+                Text("기기별·인터넷 연결 상세 안내 (온라인)", fontSize = 13.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun OfflineHelpItem(title: String, text: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = T.ink)
+        Text(text, fontSize = 13.sp, color = T.soft)
+    }
 }

@@ -1790,7 +1790,7 @@ async function viewTermReview() {
 // ───────────────────────── 설정 ─────────────────────────
 
 function aiGuidance(st, plus) {
-  if (plus.offline) return '플러스 연결을 확인해 주세요. 연결되지 않으면 프롬프트를 복사해 외부에서 작성하고 결과를 저장할 수 있어요.';
+  if (plus.offline) return '플러스 서버에 연결되지 않았어요. 저장된 기록·초안은 계속 보고 수정할 수 있어요. 새 플러스 AI 초안은 인터넷 연결 후 다시 요청해 주세요. ChatGPT·Gemini 같은 외부 AI도 인터넷이 필요해요.';
   return st.draft === 'gemini'
     ? '기록 정리는 기기 안에서, 세특 초안은 플러스 클라우드 AI로 만들어요. 이름을 가리지만 관찰 내용은 외부 AI로 전송돼요. 초안은 기록과 대조해 확인해 주세요.'
     : '무료: 프롬프트 복사 → ChatGPT·Gemini에서 작성 → 결과 붙여넣기 → 저장·수정. 직접 붙여넣은 내용은 해당 서비스로 전달돼요. 앱 안에서 바로 만드는 초안은 플러스 전용이에요.';
@@ -1801,6 +1801,26 @@ async function viewSettings(section) {
   state.settings = s;
   view.innerHTML = `
     <div class="page-head"><div><h1>설정</h1><div class="muted">기록 원본은 이 컴퓨터의 <a href="#" id="open-data">data 폴더</a>에 저장돼요. 외부 AI·구글시트·클라우드 백업을 사용하면 해당 서비스에도 내용이 전송돼요.</div></div></div>
+    <details class="card" id="device-offline-guide" style="margin-bottom:18px">
+      <summary><b>지원 기기 · 인터넷 없이 쓰기</b><span class="small muted" style="display:block;margin-top:5px">기록은 이 컴퓨터에 저장돼요. 새 플러스 AI 초안·기기 간 연결·클라우드 업로드에는 인터넷이 필요해요.</span></summary>
+      <div class="small" style="margin-top:16px">
+        <h3>내 기기에서 쓸 수 있나요?</h3>
+        <p>컴퓨터는 <b>Windows 10·11 64비트(x64)</b>와 <b>macOS 12 이상</b>을 대상으로 해요. Windows ARM·32비트, Linux·Chromebook은 현재 정식 지원 대상이 아니에요. 학교의 설치·보안 정책에 따라 설치나 연결이 제한될 수 있어요.</p>
+        <p>맥의 로컬 받아쓰기는 <b>M1 이상</b>, 학생별 기기 내 AI 정리는 <b>macOS 26 이상과 Apple Intelligence 준비</b>가 필요해요. Windows는 이름 기준으로 정리해요. Intel 맥은 받아쓴 글을 가져오거나 별도 Gemini API 설정으로 온라인 받아쓰기를 사용할 수 있어요.</p>
+        <p><b>아이폰·아이패드는 iOS·iPadOS 16 이상, 안드로이드폰은 Android 8 이상</b>에서 녹음·메모와 컴퓨터 연결을 사용해요. 현재 플러스 AI 초안은 <b>컴퓨터 쓰담</b>에서 만들어요. 휴대폰에서 구매한 이용권도 컴퓨터에서 같은 계정으로 로그인해 사용해요.</p>
+        <h3>인터넷이 없어도 할 수 있어요</h3>
+        <p>이 컴퓨터에 저장된 학급·학생·관찰기록과 초안을 보고 수정하고, 녹음을 재생하거나 엑셀로 내보내고 로컬·USB 백업을 만들 수 있어요. 이름 기준 학생별 정리도 가능해요.</p>
+        <p>지원 컴퓨터에서 <b>Whisper 모델과 필요한 도구를 미리 설치</b>했다면 받아쓰기도 기기 안에서 해요. 처음 모델을 받을 때는 인터넷이 필요해요. 클라우드에만 있는 녹음·백업은 미리 이 컴퓨터에 내려받아 주세요.</p>
+        <h3>이럴 때는 인터넷이 필요해요</h3>
+        <p>새 플러스 AI 초안·다시 쓰기, Gemini 받아쓰기, 로그인·구매 확인·복원, 모델 다운로드·업데이트에 필요해요. 마지막 로그인·이용권 상태가 보여도 새 AI 요청은 서버에 연결되어야 해요.</p>
+        <p><b>QR 연동은 인터넷을 거쳐요.</b> 같은 Wi-Fi일 필요는 없지만 양쪽 기기에 인터넷이 필요하고, 컴퓨터에서 쓰담이 실행 중이어야 해요. 인터넷이 끊겨도 이 컴퓨터에 이미 저장된 기록은 유지돼요.</p>
+        <h3>로그인 · 동기화 · 백업은 역할이 달라요</h3>
+        <p><b>로그인</b>은 계정과 이용권을 확인해요. 같은 계정으로 로그인만 해서는 기록이 다른 기기에 자동으로 옮겨지지 않아요. <b>동기화</b>는 QR 등으로 따로 연결한 기기 사이에 기록을 맞추는 기능이에요. 컴퓨터끼리 자동 맞추기는 플러스 기능이에요.</p>
+        <p><b>백업</b>은 나중에 복원할 사본을 보관해요. iCloud·OneDrive 폴더의 ‘저장 완료’는 이 컴퓨터의 폴더에 사본을 만든 상태이고, 인터넷을 통한 업로드는 해당 클라우드 앱이 해요. 원격 업로드 완료는 클라우드 앱에서 확인해 주세요. Google Drive·Sheets 연결도 인터넷이 필요해요.</p>
+        <p>자동 폴더 백업은 <b>쓰담 실행 중</b>에 확인해요. 녹음 원본은 별도로 백업을 켜야 함께 보관되며, 기록 ZIP만 복원하면 음성 파일까지 돌아오지는 않아요.</p>
+        <p class="muted" style="margin-bottom:0">이 안내는 인터넷 없이도 볼 수 있어요. <a href="https://apps.seoriarts.com/sseudam-guide#devices" target="_blank" rel="noopener">기기별 자세한 조건 ↗</a> · <a href="https://apps.seoriarts.com/sseudam-guide#offline-online" target="_blank" rel="noopener">저장·연결·백업 상세 안내 ↗</a>는 인터넷 연결이 필요해요.</p>
+      </div>
+    </details>
     <div class="tabs settings-tabs" role="tablist" aria-label="설정 종류">
       <button role="tab" data-stab="me" aria-controls="settings-grid">👩‍🏫 선생님</button>
       <button role="tab" data-stab="ai" aria-controls="settings-grid">🧠 AI</button>
@@ -1870,10 +1890,10 @@ async function viewSettings(section) {
       <div class="card" style="grid-column:1 / -1;order:2" id="stt" data-pane="ai">
         <div class="section-title"><h2>받아쓰기(음성 → 글자) 엔진</h2><span id="stt-active" class="small"></span></div>
         <div class="row" style="gap:18px;align-items:center">
-          <label class="check shrink"><input type="radio" name="stt_engine" value="whisper" ${s.stt_engine !== 'gemini' ? 'checked' : ''}> <b>내 맥에서 (Whisper)</b> — 권장 · 녹음이 외부로 나가지 않음 · 무료</label>
+          <label class="check shrink"><input type="radio" name="stt_engine" value="whisper" ${s.stt_engine !== 'gemini' ? 'checked' : ''}> <b>이 컴퓨터에서 (Whisper)</b> — 지원 기기에서 사용 · 무료</label>
           <label class="check shrink"><input type="radio" name="stt_engine" value="gemini" ${s.stt_engine === 'gemini' ? 'checked' : ''}> Gemini — 녹음을 구글로 보내서 받아쓰기</label>
         </div>
-        <p class="help"><b>Whisper</b>는 오픈AI가 공개한 음성 인식 모델을 이 맥에서 직접 돌립니다. 모델을 받은 뒤에는 API 키 없이 <b>녹음을 이 컴퓨터에서 처리</b>합니다. 모델 다운로드에는 인터넷이 필요해요. 별도로 켠 클라우드 동기화·백업은 해당 서비스로 전송됩니다.</p>
+        <p class="help"><b>Whisper</b>는 오픈AI가 공개한 음성 인식 모델을 이 컴퓨터에서 직접 돌립니다. 모델을 받은 뒤에는 API 키 없이 <b>녹음을 이 컴퓨터에서 처리</b>합니다. 모델 다운로드에는 인터넷이 필요해요. 별도로 켠 클라우드 동기화·백업은 해당 서비스로 전송됩니다.</p>
         <div id="wh-box" style="margin-top:10px"><p class="muted">확인 중…</p></div>
       </div>
       <div class="card" style="grid-column:1 / -1;order:1" id="ai-card" data-pane="ai">
@@ -1907,7 +1927,7 @@ async function viewSettings(section) {
       </div>
       <div class="card" style="grid-column:1 / -1;order:0" id="qr-link" data-pane="phone">
         <div class="section-title"><h2>📱 휴대폰 연결 — QR 한 번</h2><span id="rl-state" class="small"></span></div>
-        <p class="help" style="margin-top:-4px">아이폰·안드로이드 어떤 폰이든, 맥·윈도우 어떤 컴퓨터든 <b>이 방법 하나</b>면 돼요. 휴대폰 쓰담 앱 → <b>연결</b> 탭 → 아래 QR을 찍으면 끝. 녹음 · 한 줄 메모 · 학생 기록이 저절로 오가요.</p>
+        <p class="help" style="margin-top:-4px">지원되는 아이폰·안드로이드와 맥·윈도우를 연결해요. 휴대폰 쓰담 앱 → <b>연결</b> 탭에서 아래 QR을 찍으세요. <b>양쪽 인터넷과 실행 중인 컴퓨터 쓰담</b>이 필요해요. 같은 Wi-Fi일 필요는 없어요. 연결한 기기 사이에 녹음 · 한 줄 메모 · 학생 기록이 오가요.</p>
         <div class="combo" id="combo">
           <div class="combo-tabs">${[['ios-mac', '아이폰 → 맥'], ['ios-win', '아이폰 → 윈도우'], ['and-mac', '안드로이드 → 맥'], ['and-win', '안드로이드 → 윈도우']]
             .map(([k, n]) => `<button type="button" data-combo="${k}" class="${k === (s.platform === 'win' ? 'ios-win' : 'ios-mac') ? 'on' : ''}">${n}</button>`).join('')}</div>
@@ -2374,7 +2394,7 @@ async function renderWhisper() {
   const hasModel = w.models.some(m => m.installed);
   $('#stt-active').innerHTML = w.engine === 'gemini' || !w.supported ? '<span class="badge amber">지금: Gemini로 받아쓰기 (외부 전송)</span>'
     : hasModel ? '<span class="badge green">지금: 내 맥 안에서 받아쓰기 — 외부 전송 없음</span>' : '<span class="badge red">모델을 내려받아야 받아쓰기가 됩니다</span>';
-  if (!w.supported) { box.innerHTML = '<div class="warn">이 맥은 Intel 칩이라 Whisper를 쓸 수 없습니다. Gemini 받아쓰기를 사용하세요.</div>'; return; }
+  if (!w.supported) { box.innerHTML = '<div class="warn">이 컴퓨터는 쓰담의 로컬 Whisper 받아쓰기를 지원하지 않아요. 받아쓴 글을 가져오거나, 인터넷과 별도 Gemini API 설정으로 받아쓰기를 사용하세요.</div>'; return; }
   if (!w.binary) { box.innerHTML = '<div class="warn">Whisper 실행 파일이 없습니다. 쓰담을 최신 설치 파일로 다시 설치하세요.</div>'; return; }
   let downloading = false;
   box.innerHTML = '<div class="table-wrap"><table><tbody>' + w.models.map(m => {
